@@ -1,0 +1,165 @@
+import Anthropic from '@anthropic-ai/sdk'
+
+export const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+})
+
+export const MODEL = 'claude-sonnet-4-6'
+
+export async function generateClone(
+  htmlContent: string,
+  screenshotBase64: string,
+  url: string
+): Promise<{ html: string; tokensUsed: number }> {
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 8192,
+    system: `You are an expert web developer specializing in HTML, CSS, and JavaScript.
+Your task is to recreate websites as clean, self-contained HTML files.
+- Output ONLY the complete HTML file, starting with <!DOCTYPE html>
+- Inline all CSS in a <style> tag
+- Use modern CSS (flexbox, grid, custom properties)
+- Preserve the visual design, layout, colors, typography, and structure
+- Make the clone responsive
+- Replace external fonts with system fonts or Google Fonts CDN links
+- Keep all text content from the original
+- Do not include any external JavaScript that may fail
+- Replace form submissions and external API calls with placeholder alerts
+- Output nothing except the HTML code itself`,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/jpeg',
+              data: screenshotBase64,
+            },
+          },
+          {
+            type: 'text',
+            text: `Please recreate this website (${url}) as a complete, self-contained HTML file.
+
+Here is the original HTML source for reference:
+\`\`\`html
+${htmlContent.slice(0, 50000)}
+\`\`\`
+
+Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`,
+          },
+        ],
+      },
+    ],
+  })
+
+  const content = response.content[0]
+  if (content.type !== 'text') {
+    throw new Error('Unexpected response type from Claude')
+  }
+
+  let html = content.text.trim()
+  // Strip markdown code blocks if present
+  if (html.startsWith('```')) {
+    html = html.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '')
+  }
+
+  return {
+    html,
+    tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
+  }
+}
+
+export async function chatWithProject(
+  currentHtml: string,
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  imageBase64?: string,
+  imageMimeType?: string
+): Promise<{ html: string; message: string; tokensUsed: number }> {
+  const lastUserMessage = messages[messages.length - 1]
+
+  const userContent: Anthropic.MessageParam['content'] = []
+
+  if (imageBase64 && imageMimeType) {
+    userContent.push({
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: imageMimeType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+        data: imageBase64,
+      },
+    })
+  }
+
+  userContent.push({
+    type: 'text',
+    text: lastUserMessage.content,
+  })
+
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 8192,
+    system: `You are an expert web developer helping users modify their cloned website.
+The user will ask you to make changes to the HTML.
+
+IMPORTANT: Always respond with:
+1. A brief explanation of what you changed (1-3 sentences)
+2. Then the complete updated HTML file
+
+Format your response EXACTLY like this:
+EXPLANATION: [your explanation here]
+HTML:
+[complete html file starting with <!DOCTYPE html>]
+
+Always output the complete HTML file, not just the changed parts.`,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `Here is the current HTML of the website:\n\`\`\`html\n${currentHtml}\n\`\`\`\n\n${lastUserMessage.content}`,
+          },
+          ...(imageBase64 && imageMimeType
+            ? [
+                {
+                  type: 'image' as const,
+                  source: {
+                    type: 'base64' as const,
+                    media_type: imageMimeType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+                    data: imageBase64,
+                  },
+                },
+              ]
+            : []),
+        ],
+      },
+    ],
+  })
+
+  const content = response.content[0]
+  if (content.type !== 'text') {
+    throw new Error('Unexpected response type')
+  }
+
+  const text = content.text
+
+  // Parse the response
+  const explanationMatch = text.match(/EXPLANATION:\s*([\s\S]*?)(?=\nHTML:|$)/)
+  const htmlMatch = text.match(/HTML:\s*\n?([\s\S]*)$/)
+
+  let explanation = explanationMatch ? explanationMatch[1].trim() : 'Changes applied.'
+  let html = htmlMatch ? htmlMatch[1].trim() : currentHtml
+
+  // Strip markdown if present
+  if (html.startsWith('```')) {
+    html = html.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '')
+  }
+
+  return {
+    html,
+    message: explanation,
+    tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
+  }
+}

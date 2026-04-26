@@ -1,7 +1,27 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx create-next-app@latest:*)"
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"const s = require\\('@stripe/stripe-js'\\); console.log\\('ok'\\)\")",
+      "Bash(node -e \"const pkg = require\\('/Users/travisjohn/Desktop/website-cloner/clone-app/node_modules/stripe/package.json'\\); console.log\\(pkg.version\\)\")",
+      "Bash(node:*)",
+      "Bash(npm run:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(pkill -f \"next dev\")",
+      "Read(//tmp/**)",
+      "Bash(python3 -c \"import sys; content = sys.stdin.read\\(\\); print\\(content[:3000]\\)\")",
+      "Bash(python3 -c \"import sys; content = sys.stdin.read\\(\\); print\\(content[3000:6000]\\)\")",
+      "Bash(curl -s \"http://localhost:3000/_next/static/chunks/app_globals_0jn8.0u.css\")",
+      "Bash(python3 -c \"import sys; c=sys.stdin.read\\(\\); print\\('CSS length:', len\\(c\\)\\); print\\('Has bg-white:', '.bg-white' in c\\); print\\('Has text neutral:', 'neutral-900' in c\\); print\\('Has flex:', '.flex' in c\\)\")",
+      "Bash(npx playwright:*)",
+      "Bash(mkdir -p \"/Users/travisjohn/Desktop/website-cloner/clone-app/app/sign-in/[[...sign-in]]\")",
+      "Bash(mkdir -p \"/Users/travisjohn/Desktop/website-cloner/clone-app/app/sign-up/[[...sign-up]]\")",
+      "Read(//private/tmp/**)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
     ]
   }
 }
