@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { PreviewPane } from './preview-pane'
 import { CodeEditor } from './code-editor'
 import { ChatPanel } from './chat-panel'
@@ -25,6 +25,7 @@ import {
   Loader2,
   Plus,
   LayoutGrid,
+  Zap,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { Project, ProjectVersion, ChatMessage } from '@/types'
@@ -61,7 +62,17 @@ export function SplitView({
   const [viewMode, setViewMode] = useState<ViewMode>('preview')
   const [panelMode, setPanelMode] = useState<PanelMode>('chat')
   const [deploying, setDeploying] = useState(false)
+  const [showUpgradeBadge, setShowUpgradeBadge] = useState(false)
   const router = useRouter()
+
+  useEffect(() => {
+    fetch('/api/user')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.plan === 'free' && !data.is_admin) setShowUpgradeBadge(true)
+      })
+      .catch(() => {})
+  }, [])
 
   const html = project.html_content
 
@@ -193,6 +204,18 @@ export function SplitView({
           <Download className="w-3 h-3" />
           Download
         </Button>
+
+        {showUpgradeBadge && (
+          <Link href="/pricing">
+            <Button
+              size="sm"
+              className="h-7 px-3 text-xs gap-1 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white border-0"
+            >
+              <Zap className="w-3 h-3" />
+              Upgrade
+            </Button>
+          </Link>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
