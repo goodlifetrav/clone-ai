@@ -9,7 +9,7 @@ interface PreviewPaneProps {
   className?: string
 }
 
-export function PreviewPane({ projectId, className = '' }: PreviewPaneProps) {
+export function PreviewPane({ projectId, html, className = '' }: PreviewPaneProps) {
   return (
     <div className={`relative flex flex-col h-full ${className}`}>
       {/* Toolbar */}
@@ -22,23 +22,24 @@ export function PreviewPane({ projectId, className = '' }: PreviewPaneProps) {
         <div className="flex-1 mx-2 bg-white dark:bg-neutral-800 rounded text-xs text-neutral-400 px-2 py-0.5 border border-neutral-200 dark:border-neutral-700 truncate">
           preview
         </div>
-      </div>
-
-      {/* Placeholder */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-neutral-50 dark:bg-neutral-900 text-center px-6">
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
-          Preview loading... Click <span className="font-semibold text-neutral-700 dark:text-neutral-200">Split</span> to see code.
-        </p>
         <Button
           variant="outline"
           size="sm"
-          className="gap-2"
+          className="gap-1.5 h-6 text-xs px-2"
           onClick={() => window.open(`/preview/${projectId}`, '_blank')}
         >
-          <ExternalLink className="w-4 h-4" />
+          <ExternalLink className="w-3 h-3" />
           Open in new tab
         </Button>
       </div>
+
+      {/* Preview iframe */}
+      <iframe
+        srcDoc={html}
+        className="flex-1 w-full border-0"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        title="Preview"
+      />
     </div>
   )
 }
