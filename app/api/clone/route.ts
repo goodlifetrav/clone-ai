@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { auth, currentUser } from '@clerk/nextjs/server'
+import { Resend } from 'resend'
 import { createServiceClient, uploadThumbnail } from '@/lib/supabase'
 import { scrapeWebsite } from '@/lib/playwright'
 import { generateClone } from '@/lib/anthropic'
@@ -163,6 +164,26 @@ export async function POST(request: NextRequest) {
         })
 
         send({ done: true, projectId: project.id })
+
+        // Send completion email
+        const resendKey = process.env.RESEND_API_KEY
+        const userEmail = user.email
+        if (resendKey && userEmail) {
+          try {
+            const resend = new Resend(resendKey)
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+            const editorLink = `${appUrl}/editor/${project.id}`
+            await resend.emails.send({
+              from: 'CloneAI <noreply@cloneai.app>',
+              to: userEmail,
+              subject: 'Your clone is ready!',
+              html: `<p>Your clone of <strong>${url}</strong> is ready to view and edit.</p><p><a href="${editorLink}">Open in editor</a></p>`,
+            })
+          } catch (emailErr) {
+            // Non-fatal — log but don't fail the request
+            console.error('Failed to send completion email:', emailErr)
+          }
+        }
       } catch (err) {
         const error = err as Error
         console.error('Clone API error:', error.message, error.stack)

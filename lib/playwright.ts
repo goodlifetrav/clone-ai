@@ -43,7 +43,7 @@ export async function scrapeWebsite(
       await page.evaluate(async () => {
         await new Promise<void>((resolve) => {
           const distance = 400        // px per scroll step
-          const delay = 120           // ms between steps
+          const delay = 500           // ms between steps
           const maxScrollTime = 8000  // bail out after 8s regardless
           const start = Date.now()
           let lastHeight = 0
@@ -87,6 +87,9 @@ export async function scrapeWebsite(
             )
         )
       })
+
+      // Wait for any lazy-loaded network requests to finish
+      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {})
 
       onProgress?.('Taking screenshot...')
 
