@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useUser } from '@clerk/nextjs'
+import { useUser, UserProfile } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [portalLoading, setPortalLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
+  const [showProfileModal, setShowProfileModal] = useState(false)
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -149,11 +150,9 @@ export default function SettingsPage() {
                 </div>
               </div>
               <Separator />
-              <Button variant="outline" size="sm" asChild>
-                <a href="https://accounts.clerk.dev/user" target="_blank" rel="noopener noreferrer">
-                  Edit Profile
-                  <ArrowUpRight className="w-3 h-3 ml-1" />
-                </a>
+              <Button variant="outline" size="sm" onClick={() => setShowProfileModal(true)}>
+                Edit Profile
+                <ArrowUpRight className="w-3 h-3 ml-1" />
               </Button>
             </CardContent>
           </Card>
@@ -273,6 +272,19 @@ export default function SettingsPage() {
           </Card>
         </div>
       </main>
+
+      {/* Clerk UserProfile modal */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setShowProfileModal(false)}
+          />
+          <div className="relative z-10 max-h-[90vh] overflow-auto rounded-2xl shadow-2xl">
+            <UserProfile />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
