@@ -82,12 +82,11 @@ export default function Home() {
           <span>IgualAI</span>
         </div>
         <div className="flex items-center gap-6">
-          <Link href="/pricing" className="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
-            Pricing
-          </Link>
-          <Link href="/dashboard" className="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
-            Dashboard
-          </Link>
+          <Link href="/pricing" className="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">Pricing</Link>
+          <Link href="/dashboard" className="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">Dashboard</Link>
+          <Link href="/terms" className="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">Terms</Link>
+          <Link href="/privacy" className="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">Privacy</Link>
+          <Link href="/acceptable-use" className="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">Acceptable Use</Link>
         </div>
       </footer>
     </div>
