@@ -34,12 +34,14 @@ export function PreviewPane({ projectId, html, className = '' }: PreviewPaneProp
       </div>
 
       {/* Preview iframe */}
-      <iframe
-        srcDoc={html}
-        className="flex-1 w-full border-0"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-        title="Preview"
-      />
+      <div className="flex-1 min-h-0">
+        <iframe
+          srcDoc={html}
+          className="w-full h-full border-0"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          title="Preview"
+        />
+      </div>
     </div>
   )
 }
