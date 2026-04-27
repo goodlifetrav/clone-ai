@@ -31,12 +31,12 @@ export default function Home() {
         <UrlInput />
 
         {/* Stats */}
-        <p className="mt-8 text-sm text-neutral-400 dark:text-neutral-500">
+        <p className="mt-6 text-sm text-neutral-400 dark:text-neutral-500">
           10,000+ websites cloned
         </p>
 
         {/* Feature grid */}
-        <div className="mt-24 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-3xl w-full">
+        <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-3xl w-full">
           {[
             {
               icon: <Globe className="w-5 h-5" />,
