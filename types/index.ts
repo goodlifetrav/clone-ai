@@ -8,6 +8,7 @@ export interface User {
   plan: Plan
   tokens_used: number
   clones_count: number
+  is_admin: boolean
   stripe_customer_id: string | null
   created_at: string
 }

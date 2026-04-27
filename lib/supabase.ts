@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS users (
   plan TEXT DEFAULT 'free' CHECK (plan IN ('free', 'starter', 'pro', 'growth', 'max')),
   tokens_used INTEGER DEFAULT 0,
   clones_count INTEGER DEFAULT 0,
+  is_admin BOOLEAN DEFAULT FALSE,
   stripe_customer_id TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import { auth, currentUser } from '@clerk/nextjs/server'
 import { createServiceClient, uploadThumbnail } from '@/lib/supabase'
 import { scrapeWebsite } from '@/lib/playwright'
 import { generateClone } from '@/lib/anthropic'
@@ -39,12 +39,16 @@ export async function POST(request: NextRequest) {
           .single()
 
         if (userError || !user) {
+          const clerkUser = await currentUser()
+          const email = clerkUser?.emailAddresses?.[0]?.emailAddress ?? ''
+          const name = clerkUser ? `${clerkUser.firstName ?? ''} ${clerkUser.lastName ?? ''}`.trim() : ''
+
           const { data: newUser, error: createError } = await supabase
             .from('users')
             .insert({
               clerk_id: userId,
-              email: '',
-              name: '',
+              email,
+              name,
               plan: 'free',
               tokens_used: 0,
               clones_count: 0,
@@ -61,8 +65,8 @@ export async function POST(request: NextRequest) {
           user = newUser
         }
 
-        // Check free tier limits
-        if (user.plan === 'free' && user.clones_count >= 1) {
+        // Check free tier limits — admins are exempt
+        if (!user.is_admin && user.plan === 'free' && user.clones_count >= 1) {
           send({
             error: 'Free tier limit reached. Upgrade to clone more websites.',
             upgradeRequired: true,
