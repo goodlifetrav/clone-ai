@@ -13,7 +13,7 @@ export async function generateClone(
 ): Promise<{ html: string; tokensUsed: number }> {
   const response = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 8192,
+    max_tokens: 16000,
     system: `You are an expert web developer specializing in HTML, CSS, and JavaScript.
 Your task is to recreate websites as clean, self-contained HTML files.
 - Output ONLY the complete HTML file, starting with <!DOCTYPE html>
@@ -59,14 +59,27 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
     throw new Error('Unexpected response type from Claude')
   }
 
-  let html = content.text.trim()
-  // Strip markdown code blocks if present
-  if (html.startsWith('```')) {
-    html = html.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '')
+  const raw = content.text
+
+  // Extract the HTML document regardless of surrounding prose or code fences.
+  // Look for content from <!DOCTYPE or <html through to the closing </html>.
+  const htmlMatch = raw.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i)
+    ?? raw.match(/<html[\s\S]*<\/html>/i)
+
+  if (!htmlMatch) {
+    // Fall back to stripping markdown fences if no document tags found
+    let html = raw.trim()
+    if (html.startsWith('```')) {
+      html = html.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '').trim()
+    }
+    if (!html) {
+      throw new Error('Claude returned empty HTML — please try again')
+    }
+    return { html, tokensUsed: response.usage.input_tokens + response.usage.output_tokens }
   }
 
   return {
-    html,
+    html: htmlMatch[0],
     tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
   }
 }
