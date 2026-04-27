@@ -34,7 +34,7 @@ export function TerminalPanel({ html }: { html: string }) {
     {
       id: '1',
       type: 'info',
-      text: 'CloneAI Terminal v1.0 — type "help" to see available commands',
+      text: 'IgualAI Terminal v1.0 — type "help" to see available commands',
       timestamp: new Date().toISOString(),
     },
   ])

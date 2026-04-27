@@ -38,7 +38,7 @@ export async function pushFileToGitHub(
   owner: string,
   repo: string,
   content: string,
-  commitMessage: string = 'Initial commit from CloneAI'
+  commitMessage: string = 'Initial commit from IgualAI'
 ): Promise<void> {
   const encodedContent = Buffer.from(content).toString('base64')
 

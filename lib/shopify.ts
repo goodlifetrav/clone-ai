@@ -8,7 +8,7 @@ export async function deployToShopify(
   shopDomain: string,
   accessToken: string,
   htmlContent: string,
-  themeName: string = 'CloneAI Theme'
+  themeName: string = 'IgualAI Theme'
 ): Promise<{ themeId: number; previewUrl: string }> {
   const baseUrl = `https://${shopDomain}/admin/api/2024-01`
 

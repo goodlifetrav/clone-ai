@@ -58,7 +58,7 @@ export function VisualEditor({ onStyleChange, className = '' }: VisualEditorProp
 
   const generateCss = useCallback((cfg: StyleConfig): string => {
     return `
-<style id="cloneai-visual-editor">
+<style id="igualai-visual-editor">
   :root {
     --primary-color: ${cfg.primaryColor};
     --background-color: ${cfg.backgroundColor};
