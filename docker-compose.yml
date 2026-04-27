@@ -1,0 +1,18 @@
+services:
+  cloneai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    volumes:
+      # Persist Playwright browser cache across container restarts so Chromium
+      # is only downloaded once.
+      - playwright-cache:/root/.cache/ms-playwright
+    restart: unless-stopped
+    command: ["sh", "startup.sh"]
+
+volumes:
+  playwright-cache:
