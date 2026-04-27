@@ -43,8 +43,8 @@ export async function scrapeWebsite(
       await page.evaluate(async () => {
         await new Promise<void>((resolve) => {
           const distance = 400        // px per scroll step
-          const delay = 500           // ms between steps
-          const maxScrollTime = 8000  // bail out after 8s regardless
+          const delay = 1000          // ms between steps
+          const maxScrollTime = 15000 // bail out after 15s regardless
           const start = Date.now()
           let lastHeight = 0
 
