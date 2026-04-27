@@ -4,12 +4,12 @@ import { ThemeProvider } from 'next-themes'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'CloneAI — Clone Any Website with AI',
+  title: 'IgualAI — Clone Any Website',
   description:
     'Paste a URL and get an editable, AI-powered clone in seconds. Powered by Claude AI.',
   keywords: ['website cloner', 'AI', 'web development', 'clone', 'design'],
   openGraph: {
-    title: 'CloneAI — Clone Any Website with AI',
+    title: 'IgualAI — Clone Any Website',
     description: 'Paste a URL and get an editable, AI-powered clone in seconds.',
     type: 'website',
   },

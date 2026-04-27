@@ -58,7 +58,7 @@ export function SplitView({
   onSaveVersion,
   onRestoreVersion,
 }: SplitViewProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('split')
+  const [viewMode, setViewMode] = useState<ViewMode>('preview')
   const [panelMode, setPanelMode] = useState<PanelMode>('chat')
   const [deploying, setDeploying] = useState(false)
   const router = useRouter()

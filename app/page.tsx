@@ -19,8 +19,6 @@ export default function Home() {
         {/* Headline */}
         <h1 className="text-5xl md:text-7xl font-bold text-center tracking-tight text-neutral-900 dark:text-white max-w-3xl leading-tight mb-6">
           Clone Any Website
-          <br />
-          <span className="text-neutral-400 dark:text-neutral-500">with AI</span>
         </h1>
 
         {/* Subtitle */}
@@ -81,7 +79,7 @@ export default function Home() {
       <footer className="border-t border-neutral-100 dark:border-neutral-800/60 py-8 px-6 flex items-center justify-between text-xs text-neutral-400 dark:text-neutral-500">
         <div className="flex items-center gap-2">
           <Zap className="w-3 h-3" />
-          <span>CloneAI</span>
+          <span>IgualAI</span>
         </div>
         <div className="flex items-center gap-6">
           <Link href="/pricing" className="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">

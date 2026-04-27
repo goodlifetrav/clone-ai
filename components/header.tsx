@@ -27,7 +27,7 @@ export function Header() {
         <div className="w-7 h-7 rounded-lg bg-neutral-900 dark:bg-white flex items-center justify-center">
           <Zap className="w-4 h-4 text-white dark:text-neutral-900" />
         </div>
-        <span className="dark:text-white">CloneAI</span>
+        <span className="dark:text-white">IgualAI</span>
       </Link>
 
       {/* Nav */}
