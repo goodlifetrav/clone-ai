@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
             const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
             const editorLink = `${appUrl}/editor/${project.id}`
             await resend.emails.send({
-              from: 'CloneAI <noreply@cloneai.app>',
+              from: 'IgualAI <noreply@igualai.com>',
               to: userEmail,
               subject: 'Your clone is ready!',
               html: `<p>Your clone of <strong>${url}</strong> is ready to view and edit.</p><p><a href="${editorLink}">Open in editor</a></p>`,
