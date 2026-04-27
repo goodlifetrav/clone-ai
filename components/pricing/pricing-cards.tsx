@@ -118,6 +118,10 @@ export function PricingCards({ currentPlan }: { currentPlan?: Plan }) {
         body: JSON.stringify({ plan }),
       })
       const data = await res.json()
+      if (!res.ok) {
+        alert(data.error || 'Failed to start checkout. Please try again.')
+        return
+      }
       if (data.url) {
         window.location.href = data.url
       }

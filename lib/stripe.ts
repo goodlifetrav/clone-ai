@@ -1,6 +1,9 @@
 import Stripe from 'stripe'
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+// Use a placeholder key when the env var is missing so the module loads
+// without throwing. Routes that call stripe.* will get a clear auth error
+// from the Stripe API rather than a silent module-import crash.
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? 'missing_stripe_key')
 
 export const PRICE_IDS = {
   starter: process.env.STRIPE_STARTER_PRICE_ID!,
