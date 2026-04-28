@@ -5,6 +5,7 @@ import { createServiceClient, uploadThumbnail } from '@/lib/supabase'
 import { scrapeWebsite } from '@/lib/playwright'
 import { generateCloneStreaming } from '@/lib/anthropic'
 import { extractDomain } from '@/lib/utils'
+import { isAdminEmail } from '@/lib/admin'
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder()
@@ -72,8 +73,9 @@ export async function POST(request: NextRequest) {
           user = newUser
         }
 
-        // Check free tier limits — admins are exempt
-        if (!user.is_admin && user.plan === 'free' && user.clones_count >= 1) {
+        // Check free tier limits — DB admins and ADMIN_EMAILS are exempt
+        const adminByEmail = isAdminEmail(user.email)
+        if (!user.is_admin && !adminByEmail && user.plan === 'free' && user.clones_count >= 1) {
           send({
             error: 'Free tier limit reached. Upgrade to clone more websites.',
             upgradeRequired: true,

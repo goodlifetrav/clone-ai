@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import type { Project } from '@/types'
+import type { Project, Folder } from '@/types'
 import { formatDate, extractDomain } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,6 +10,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -21,15 +24,29 @@ import {
   Globe,
   Loader2,
   AlertCircle,
+  FolderInput,
+  FolderOpen,
 } from 'lucide-react'
 
 interface ProjectCardProps {
   project: Project
+  folders?: Folder[]
   onDelete?: (id: string) => void
   onFork?: (id: string) => void
+  onMoveToFolder?: (projectId: string, folderId: string | null) => void
+  onDragStart?: (projectId: string) => void
+  onDragEnd?: () => void
 }
 
-export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
+export function ProjectCard({
+  project,
+  folders = [],
+  onDelete,
+  onFork,
+  onMoveToFolder,
+  onDragStart,
+  onDragEnd,
+}: ProjectCardProps) {
   const [deleting, setDeleting] = useState(false)
   const [forking, setForking] = useState(false)
 
@@ -54,7 +71,11 @@ export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
     try {
       const res = await fetch(`/api/projects/${project.id}/fork`, { method: 'POST' })
       const data = await res.json()
-      if (res.ok) onFork?.(data.project.id)
+      if (res.ok) {
+        onFork?.(data.project.id)
+      } else {
+        alert(data.error || 'Failed to fork project')
+      }
     } catch {
       alert('Failed to fork project')
     } finally {
@@ -65,7 +86,11 @@ export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
   const handleDownload = async () => {
     try {
       const res = await fetch(`/api/projects/${project.id}/download`)
-      if (!res.ok) throw new Error('Failed to download')
+      if (!res.ok) {
+        const data = await res.json()
+        alert(data.error || 'Failed to download')
+        return
+      }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -81,12 +106,16 @@ export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
   }
 
   return (
-    <div className="group relative rounded-xl border border-neutral-200 bg-white overflow-hidden hover:shadow-md transition-all duration-200 dark:border-neutral-800 dark:bg-neutral-900">
+    <div
+      className="group relative rounded-xl border border-neutral-200 bg-white overflow-hidden hover:shadow-md transition-all duration-200 dark:border-neutral-800 dark:bg-neutral-900 cursor-grab active:cursor-grabbing"
+      draggable={!isProcessing && !isError}
+      onDragStart={() => onDragStart?.(project.id)}
+      onDragEnd={() => onDragEnd?.()}
+    >
       {/* Thumbnail */}
       <Link href={`/editor/${project.id}`}>
         <div className="relative h-40 bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-700 overflow-hidden">
           {isProcessing ? (
-            // Processing overlay
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
               <Loader2 className="w-8 h-8 text-neutral-400 animate-spin" />
               <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
@@ -94,7 +123,6 @@ export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
               </span>
             </div>
           ) : isError ? (
-            // Error overlay
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
               <AlertCircle className="w-8 h-8 text-red-400" />
               <span className="text-xs text-red-500 font-medium">Failed</span>
@@ -111,7 +139,6 @@ export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
             </div>
           )}
 
-          {/* Hover overlay (only when not processing/error) */}
           {!isProcessing && !isError && (
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
               <span className="text-white text-sm font-medium bg-black/60 px-3 py-1.5 rounded-full">
@@ -120,7 +147,6 @@ export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
             </div>
           )}
 
-          {/* Status badge */}
           {isProcessing && (
             <div className="absolute top-2 left-2 flex items-center gap-1 bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 text-xs font-medium px-2 py-0.5 rounded-full">
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -176,6 +202,41 @@ export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
                 <Download className="w-4 h-4 mr-2" />
                 Download ZIP
               </DropdownMenuItem>
+
+              {/* Move to folder */}
+              {onMoveToFolder && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <FolderInput className="w-4 h-4 mr-2" />
+                    Move to folder
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {project.folder_id && (
+                      <DropdownMenuItem
+                        onClick={() => onMoveToFolder(project.id, null)}
+                      >
+                        <FolderOpen className="w-4 h-4 mr-2" />
+                        Remove from folder
+                      </DropdownMenuItem>
+                    )}
+                    {folders.length === 0 && (
+                      <DropdownMenuItem disabled>No folders yet</DropdownMenuItem>
+                    )}
+                    {folders
+                      .filter((f) => f.id !== project.folder_id)
+                      .map((folder) => (
+                        <DropdownMenuItem
+                          key={folder.id}
+                          onClick={() => onMoveToFolder(project.id, folder.id)}
+                        >
+                          <FolderInput className="w-4 h-4 mr-2" />
+                          {folder.name}
+                        </DropdownMenuItem>
+                      ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
+
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-red-600 dark:text-red-400"

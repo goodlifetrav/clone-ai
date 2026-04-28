@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
+import { isAdminEmail } from '@/lib/admin'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,13 +16,14 @@ export async function POST(request: NextRequest) {
     // Get user and project
     const { data: user } = await supabase
       .from('users')
-      .select('id, plan')
+      .select('id, plan, email, is_admin')
       .eq('clerk_id', userId)
       .single()
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    if (user.plan === 'free' || user.plan === 'starter') {
+    const adminOverride = user.is_admin || isAdminEmail(user.email)
+    if (!adminOverride && (user.plan === 'free' || user.plan === 'starter')) {
       return NextResponse.json(
         { error: 'Upgrade to Pro or above to deploy to Vercel', upgradeRequired: true },
         { status: 403 }

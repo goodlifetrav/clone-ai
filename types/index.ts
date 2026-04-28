@@ -21,8 +21,16 @@ export interface Project {
   thumbnail_url: string | null
   html_content: string
   status?: 'processing' | 'complete' | 'error'
+  folder_id?: string | null
   created_at: string
   updated_at: string
+}
+
+export interface Folder {
+  id: string
+  user_id: string
+  name: string
+  created_at: string
 }
 
 export interface ProjectVersion {

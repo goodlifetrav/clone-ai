@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
+import { isAdminEmail } from '@/lib/admin'
 
 export async function GET(
   request: NextRequest,
@@ -16,19 +17,11 @@ export async function GET(
     // Get user
     const { data: user } = await supabase
       .from('users')
-      .select('id, plan')
+      .select('id, plan, email, is_admin')
       .eq('clerk_id', userId)
       .single()
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-
-    // Check download permission
-    if (user.plan === 'free') {
-      return NextResponse.json(
-        { error: 'Upgrade to Starter or above to download projects', upgradeRequired: true },
-        { status: 403 }
-      )
-    }
 
     // Get project
     const { data: project } = await supabase

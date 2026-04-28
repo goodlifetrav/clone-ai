@@ -7,6 +7,7 @@ import { ChatPanel } from './chat-panel'
 import { VisualEditor } from './visual-editor'
 import { TerminalPanel } from './terminal-panel'
 import { VersionHistory } from './version-history'
+import { ConnectIntegrationModal } from './connect-integration-modal'
 import { Button } from '@/components/ui/button'
 import {
   Eye,
@@ -20,7 +21,6 @@ import {
   GitBranch,
   ShoppingBag,
   ChevronDown,
-  Loader2,
   Plus,
   LayoutGrid,
   Zap,
@@ -65,8 +65,8 @@ export function SplitView({
   const [rightTab, setRightTab] = useState<RightTab>('preview')
   const [mobileTab, setMobileTab] = useState<MobileTab>('preview')
   const [desktopChatVisible, setDesktopChatVisible] = useState(true)
-  const [deploying, setDeploying] = useState(false)
   const [isFreeUser, setIsFreeUser] = useState(false)
+  const [integrationModal, setIntegrationModal] = useState<'github' | 'vercel' | 'shopify' | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -107,23 +107,8 @@ export function SplitView({
     }
   }
 
-  const handleDeploy = async () => {
-    setDeploying(true)
-    try {
-      const res = await fetch('/api/deploy/vercel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: project.id }),
-      })
-      const data = await res.json()
-      if (data.deployUrl) {
-        window.open(data.deployUrl, '_blank')
-      }
-    } catch {
-      alert('Deploy failed. Check Vercel integration.')
-    } finally {
-      setDeploying(false)
-    }
+  const handleDeploy = () => {
+    setIntegrationModal('vercel')
   }
 
   const rightTabs: { id: RightTab; label: string; icon: React.ReactNode }[] = [
@@ -224,12 +209,8 @@ export function SplitView({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" className="h-7 px-3 text-xs gap-1 flex-shrink-0" disabled={deploying}>
-              {deploying ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <Rocket className="w-3 h-3" />
-              )}
+            <Button size="sm" className="h-7 px-3 text-xs gap-1 flex-shrink-0">
+              <Rocket className="w-3 h-3" />
               <span className="hidden sm:inline">Deploy</span>
               <ChevronDown className="w-3 h-3" />
             </Button>
@@ -239,15 +220,11 @@ export function SplitView({
               <Rocket className="w-4 h-4 mr-2" />
               Deploy to Vercel
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => alert('Connect GitHub in settings to push to a repo')}
-            >
+            <DropdownMenuItem onClick={() => setIntegrationModal('github')}>
               <GitBranch className="w-4 h-4 mr-2" />
               Push to GitHub
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => alert('Connect Shopify in settings to deploy')}
-            >
+            <DropdownMenuItem onClick={() => setIntegrationModal('shopify')}>
               <ShoppingBag className="w-4 h-4 mr-2" />
               Deploy to Shopify
             </DropdownMenuItem>
@@ -373,6 +350,15 @@ export function SplitView({
           </div>
         </div>
       </div>
+
+      {/* Integration connect modals */}
+      {integrationModal && (
+        <ConnectIntegrationModal
+          service={integrationModal}
+          projectId={project.id}
+          onClose={() => setIntegrationModal(null)}
+        />
+      )}
     </div>
   )
 }
