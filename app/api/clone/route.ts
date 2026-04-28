@@ -11,22 +11,27 @@ export async function POST(request: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      // Wrapping send() in try/catch means stream write errors (e.g. client
+      // disconnected) never abort the server-side processing — the scrape and
+      // AI generation continue even if the browser tab is closed.
       function send(data: Record<string, unknown>) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+        } catch {
+          // Client disconnected — processing continues server-side
+        }
       }
 
       try {
         const { userId } = await auth()
         if (!userId) {
           send({ error: 'Unauthorized' })
-          controller.close()
           return
         }
 
         const { url } = await request.json()
         if (!url) {
           send({ error: 'URL is required' })
-          controller.close()
           return
         }
 
@@ -42,7 +47,9 @@ export async function POST(request: NextRequest) {
         if (userError || !user) {
           const clerkUser = await currentUser()
           const email = clerkUser?.emailAddresses?.[0]?.emailAddress ?? ''
-          const name = clerkUser ? `${clerkUser.firstName ?? ''} ${clerkUser.lastName ?? ''}`.trim() : ''
+          const name = clerkUser
+            ? `${clerkUser.firstName ?? ''} ${clerkUser.lastName ?? ''}`.trim()
+            : ''
 
           const { data: newUser, error: createError } = await supabase
             .from('users')
@@ -60,7 +67,6 @@ export async function POST(request: NextRequest) {
           if (createError) {
             console.error('Error creating user:', createError)
             send({ error: 'Failed to create user record' })
-            controller.close()
             return
           }
           user = newUser
@@ -72,9 +78,35 @@ export async function POST(request: NextRequest) {
             error: 'Free tier limit reached. Upgrade to clone more websites.',
             upgradeRequired: true,
           })
-          controller.close()
           return
         }
+
+        // Create project row immediately so it appears in the dashboard as
+        // "processing" even if the user closes the tab before we finish.
+        const { data: project, error: projectCreateError } = await supabase
+          .from('projects')
+          .insert({
+            user_id: user.id,
+            name: extractDomain(url) || new URL(url).hostname,
+            url,
+            thumbnail_url: null,
+            html_content: '',
+            status: 'processing',
+          })
+          .select()
+          .single()
+
+        if (projectCreateError) {
+          console.error('Project create error:', projectCreateError)
+          send({ error: 'Failed to create project' })
+          return
+        }
+
+        // Send the project ID immediately — client redirects to the editor
+        // which shows a processing state, and can safely close the tab.
+        send({ processing: true, projectId: project.id })
+
+        // ── Everything below runs even if the client disconnects ──────────
 
         // Scrape with live progress
         let scrapeResult
@@ -83,6 +115,10 @@ export async function POST(request: NextRequest) {
         } catch (err: unknown) {
           const error = err as Error
           console.error('Scrape error:', error)
+          await supabase
+            .from('projects')
+            .update({ status: 'error' })
+            .eq('id', project.id)
           if (
             error.message?.includes('playwright') ||
             error.message?.includes('chromium') ||
@@ -92,7 +128,6 @@ export async function POST(request: NextRequest) {
           } else {
             send({ error: `Failed to access website: ${error.message}` })
           }
-          controller.close()
           return
         }
 
@@ -109,8 +144,11 @@ export async function POST(request: NextRequest) {
         } catch (err: unknown) {
           const error = err as Error
           console.error('Claude error:', error)
+          await supabase
+            .from('projects')
+            .update({ status: 'error' })
+            .eq('id', project.id)
           send({ error: `AI generation failed: ${error.message}` })
-          controller.close()
           return
         }
 
@@ -119,27 +157,17 @@ export async function POST(request: NextRequest) {
         const projectName =
           scrapeResult.title || extractDomain(url) || new URL(url).hostname
 
-        // Insert project first to get the ID, then upload thumbnail using it
-        const { data: project, error: projectError } = await supabase
+        // Update project with final HTML, real name, and completed status
+        await supabase
           .from('projects')
-          .insert({
-            user_id: user.id,
+          .update({
             name: projectName,
-            url,
-            thumbnail_url: null,
             html_content: html,
+            status: 'complete',
           })
-          .select()
-          .single()
+          .eq('id', project.id)
 
-        if (projectError) {
-          console.error('Project insert error:', projectError)
-          send({ error: 'Failed to save project' })
-          controller.close()
-          return
-        }
-
-        // Upload thumbnail to Supabase Storage and update the project row
+        // Upload thumbnail
         const pngBuffer = Buffer.from(scrapeResult.screenshotBase64, 'base64')
         const thumbnailUrl = await uploadThumbnail(project.id, pngBuffer)
         if (thumbnailUrl) {
@@ -149,6 +177,7 @@ export async function POST(request: NextRequest) {
             .eq('id', project.id)
         }
 
+        // Update user stats
         await supabase
           .from('users')
           .update({
@@ -189,7 +218,11 @@ export async function POST(request: NextRequest) {
         console.error('Clone API error:', error.message, error.stack)
         send({ error: error.message || 'Internal server error' })
       } finally {
-        controller.close()
+        try {
+          controller.close()
+        } catch {
+          // Already closed
+        }
       }
     },
   })

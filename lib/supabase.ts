@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS projects (
   url TEXT NOT NULL,
   thumbnail_url TEXT,
   html_content TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'complete' CHECK (status IN ('processing', 'complete', 'error')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -20,6 +20,7 @@ import {
   Download,
   Globe,
   Loader2,
+  AlertCircle,
 } from 'lucide-react'
 
 interface ProjectCardProps {
@@ -31,6 +32,9 @@ interface ProjectCardProps {
 export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
   const [deleting, setDeleting] = useState(false)
   const [forking, setForking] = useState(false)
+
+  const isProcessing = project.status === 'processing'
+  const isError = project.status === 'error'
 
   const handleDelete = async () => {
     if (!confirm('Delete this project? This cannot be undone.')) return
@@ -81,7 +85,21 @@ export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
       {/* Thumbnail */}
       <Link href={`/editor/${project.id}`}>
         <div className="relative h-40 bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-700 overflow-hidden">
-          {project.thumbnail_url ? (
+          {isProcessing ? (
+            // Processing overlay
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+              <Loader2 className="w-8 h-8 text-neutral-400 animate-spin" />
+              <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
+                Generating…
+              </span>
+            </div>
+          ) : isError ? (
+            // Error overlay
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+              <AlertCircle className="w-8 h-8 text-red-400" />
+              <span className="text-xs text-red-500 font-medium">Failed</span>
+            </div>
+          ) : project.thumbnail_url ? (
             <img
               src={project.thumbnail_url}
               alt={project.name}
@@ -92,12 +110,29 @@ export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
               <Globe className="w-10 h-10 text-neutral-400 dark:text-neutral-500" />
             </div>
           )}
-          {/* Hover overlay */}
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-            <span className="text-white text-sm font-medium bg-black/60 px-3 py-1.5 rounded-full">
-              Open Editor
-            </span>
-          </div>
+
+          {/* Hover overlay (only when not processing/error) */}
+          {!isProcessing && !isError && (
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+              <span className="text-white text-sm font-medium bg-black/60 px-3 py-1.5 rounded-full">
+                Open Editor
+              </span>
+            </div>
+          )}
+
+          {/* Status badge */}
+          {isProcessing && (
+            <div className="absolute top-2 left-2 flex items-center gap-1 bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 text-xs font-medium px-2 py-0.5 rounded-full">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Processing
+            </div>
+          )}
+          {isError && (
+            <div className="absolute top-2 left-2 flex items-center gap-1 bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300 text-xs font-medium px-2 py-0.5 rounded-full">
+              <AlertCircle className="w-3 h-3" />
+              Error
+            </div>
+          )}
         </div>
       </Link>
 
@@ -133,11 +168,11 @@ export function ProjectCard({ project, onDelete, onFork }: ProjectCardProps) {
                   Open Editor
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleFork} disabled={forking}>
+              <DropdownMenuItem onClick={handleFork} disabled={forking || isProcessing}>
                 <GitFork className="w-4 h-4 mr-2" />
                 Fork Project
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleDownload}>
+              <DropdownMenuItem onClick={handleDownload} disabled={isProcessing}>
                 <Download className="w-4 h-4 mr-2" />
                 Download ZIP
               </DropdownMenuItem>

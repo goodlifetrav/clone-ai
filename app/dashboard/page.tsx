@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
 import { Header } from '@/components/header'
@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -29,8 +30,8 @@ export default function DashboardPage() {
     fetchProjects()
   }, [isSignedIn])
 
-  const fetchProjects = async () => {
-    setLoading(true)
+  const fetchProjects = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const res = await fetch('/api/projects')
       const data = await res.json()
@@ -38,9 +39,28 @@ export default function DashboardPage() {
     } catch {
       // silently fail
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
+
+  // Auto-refresh every 4 seconds while any project is processing
+  useEffect(() => {
+    const hasProcessing = projects.some((p) => p.status === 'processing')
+
+    if (hasProcessing) {
+      pollRef.current = setInterval(() => fetchProjects(true), 4000)
+    } else {
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    }
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects])
 
   const handleDelete = (id: string) => {
     setProjects((prev) => prev.filter((p) => p.id !== id))

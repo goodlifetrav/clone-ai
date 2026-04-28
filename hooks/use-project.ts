@@ -24,6 +24,18 @@ export function useProject(projectId: string) {
     }
   }, [projectId])
 
+  // Silent refresh — does not set loading:true so the UI doesn't flash
+  const silentRefetch = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`)
+      if (!res.ok) return
+      const data = await res.json()
+      setProject(data.project)
+    } catch {
+      // silently fail
+    }
+  }, [projectId])
+
   const fetchVersions = useCallback(async () => {
     try {
       const res = await fetch(`/api/projects/${projectId}/versions`)
@@ -80,6 +92,24 @@ export function useProject(projectId: string) {
     fetchProject()
     fetchVersions()
   }, [fetchProject, fetchVersions])
+
+  // Poll every 3 seconds while the project is still being processed
+  useEffect(() => {
+    if (!project || project.status !== 'processing') return
+
+    const interval = setInterval(() => {
+      silentRefetch()
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [project?.status, silentRefetch])
+
+  // When status transitions from processing → complete, load versions too
+  useEffect(() => {
+    if (project?.status === 'complete' && versions.length === 0) {
+      fetchVersions()
+    }
+  }, [project?.status, versions.length, fetchVersions])
 
   return {
     project,

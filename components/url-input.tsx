@@ -131,6 +131,13 @@ export function UrlInput() {
             activateStep(data.step, normalizedUrl)
           }
 
+          // Redirect as soon as the project ID is available so the user
+          // can close the tab and clone continues in the background.
+          if (data.processing && data.projectId) {
+            router.push(`/editor/${data.projectId as string}`)
+            return
+          }
+
           if (data.done && data.projectId) {
             completeAllSteps()
             await new Promise((r) => setTimeout(r, 400))
