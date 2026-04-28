@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import type { Project, Folder as FolderType } from '@/types'
 import { cn } from '@/lib/utils'
+import { DeleteConfirmDialog } from '@/components/ui/delete-confirm-dialog'
 
 export default function DashboardPage() {
   const { isSignedIn, isLoaded } = useUser()
@@ -45,6 +46,7 @@ export default function DashboardPage() {
   const [newFolderName, setNewFolderName] = useState('')
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null)
   const [renameName, setRenameName] = useState('')
+  const [deletingFolder, setDeletingFolder] = useState<FolderType | null>(null)
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null)
   const dragProjectId = useRef<string | null>(null)
 
@@ -128,12 +130,12 @@ export default function DashboardPage() {
   }
 
   const handleDeleteFolder = async (id: string) => {
-    if (!confirm('Delete this folder? Projects inside will be moved to root.')) return
     try {
       await fetch(`/api/folders/${id}`, { method: 'DELETE' })
       setFolders((prev) => prev.filter((f) => f.id !== id))
       setProjects((prev) => prev.map((p) => (p.folder_id === id ? { ...p, folder_id: null } : p)))
     } catch { /* ignore */ }
+    setDeletingFolder(null)
   }
 
   // ── Project actions ──────────────────────────────────────────────────────
@@ -392,7 +394,7 @@ export default function DashboardPage() {
                               className="text-red-600 dark:text-red-400"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                handleDeleteFolder(folder.id)
+                                setDeletingFolder(folder)
                               }}
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
@@ -472,6 +474,15 @@ export default function DashboardPage() {
           </>
         )}
       </main>
+
+      {deletingFolder && (
+        <DeleteConfirmDialog
+          title="Delete Folder"
+          description={`"${deletingFolder.name}" will be deleted. Projects inside will be moved to root.`}
+          onConfirm={() => handleDeleteFolder(deletingFolder.id)}
+          onCancel={() => setDeletingFolder(null)}
+        />
+      )}
     </div>
   )
 }

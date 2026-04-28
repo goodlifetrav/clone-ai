@@ -66,6 +66,7 @@ export function SplitView({
   const [mobileTab, setMobileTab] = useState<MobileTab>('preview')
   const [desktopChatVisible, setDesktopChatVisible] = useState(true)
   const [isFreeUser, setIsFreeUser] = useState(false)
+  const [userPlan, setUserPlan] = useState<string>('free')
   const [integrationModal, setIntegrationModal] = useState<'github' | 'vercel' | 'shopify' | null>(null)
   // True while the clone is generating OR the AI chat is streaming
   const [isGenerating, setIsGenerating] = useState(project.status === 'processing')
@@ -107,6 +108,7 @@ export function SplitView({
       .then((r) => r.json())
       .then((data) => {
         if (data.plan === 'free' && !data.is_admin) setIsFreeUser(true)
+        if (data.plan) setUserPlan(data.is_admin ? 'admin' : data.plan)
       })
       .catch(() => {})
   }, [])
@@ -349,46 +351,37 @@ export function SplitView({
             ))}
           </div>
 
-          {/* Right content — all panels use absolute inset-0 so they never
-              stack on top of each other (which caused the tab-switching bug). */}
+          {/* Right content — two stacked absolute layers:
+              1. Mobile layer (sm:hidden): always shows PreviewPane, swaps to
+                 CodeEditor while generating so the user sees live code.
+              2. Desktop layer (hidden sm:block): pure JS conditionals pick
+                 the active tab — no responsive-class visibility tricks. */}
           <div className="flex-1 min-h-0 relative overflow-hidden">
 
-            {/* Preview — mobile: show when mobileTab=preview, desktop: only when rightTab=preview */}
-            <div className={cn(
-              'absolute inset-0',
-              mobileTab === 'preview' ? '' : 'hidden',
-              rightTab === 'preview' ? 'sm:block' : 'sm:hidden'
-            )}>
-              <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
+            {/* ── Mobile layer ─────────────────────────────────────────── */}
+            <div className="absolute inset-0 sm:hidden">
+              {isGenerating ? (
+                <CodeEditor value={html} onChange={onHtmlChange} className="h-full" />
+              ) : (
+                <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
+              )}
             </div>
 
-            {/* Code — desktop always, mobile only while generating (so user sees live code) */}
-            {rightTab === 'code' && (
-              <div className={cn(
-                'absolute inset-0',
-                isGenerating ? 'block' : 'hidden sm:block'
-              )}>
+            {/* ── Desktop layer ────────────────────────────────────────── */}
+            <div className="absolute inset-0 hidden sm:block">
+              {rightTab === 'preview' && (
+                <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
+              )}
+              {rightTab === 'code' && (
                 <CodeEditor value={html} onChange={onHtmlChange} className="h-full" />
-              </div>
-            )}
-
-            {/* Visual — desktop only */}
-            {rightTab === 'visual' && (
-              <div className="absolute inset-0 hidden sm:block">
+              )}
+              {rightTab === 'visual' && (
                 <VisualEditor onStyleChange={setVisualCss} className="h-full" />
-              </div>
-            )}
-
-            {/* Terminal — desktop only */}
-            {rightTab === 'terminal' && (
-              <div className="absolute inset-0 hidden sm:block">
+              )}
+              {rightTab === 'terminal' && (
                 <TerminalPanel html={html} />
-              </div>
-            )}
-
-            {/* History — desktop only */}
-            {rightTab === 'versions' && (
-              <div className="absolute inset-0 hidden sm:block">
+              )}
+              {rightTab === 'versions' && (
                 <VersionHistory
                   versions={versions}
                   currentHtml={html}
@@ -396,8 +389,8 @@ export function SplitView({
                   onSaveVersion={onSaveVersion}
                   className="h-full"
                 />
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -407,6 +400,7 @@ export function SplitView({
         <ConnectIntegrationModal
           service={integrationModal}
           projectId={project.id}
+          userPlan={userPlan}
           onClose={() => setIntegrationModal(null)}
         />
       )}

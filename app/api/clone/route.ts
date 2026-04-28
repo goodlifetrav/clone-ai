@@ -110,27 +110,53 @@ export async function POST(request: NextRequest) {
 
         // ── Everything below runs even if the client disconnects ──────────
 
-        // Scrape with live progress
+        // Scrape with live progress — check cache first (24h window)
         let scrapeResult
-        try {
-          scrapeResult = await scrapeWebsite(url, (step) => send({ step }))
-        } catch (err: unknown) {
-          const error = err as Error
-          console.error('Scrape error:', error)
-          await supabase
-            .from('projects')
-            .update({ status: 'error' })
-            .eq('id', project.id)
-          if (
-            error.message?.includes('playwright') ||
-            error.message?.includes('chromium') ||
-            error.message?.includes('Playwright')
-          ) {
-            send({ error: `Playwright not configured: ${error.message}` })
-          } else {
-            send({ error: `Failed to access website: ${error.message}` })
+        const cacheWindow = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        const { data: cachedScrape } = await supabase
+          .from('scrape_cache')
+          .select('html, screenshot_base64, title')
+          .eq('url', url)
+          .gte('scraped_at', cacheWindow)
+          .order('scraped_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (cachedScrape) {
+          send({ step: 'Using cached page data...' })
+          scrapeResult = {
+            html: cachedScrape.html,
+            screenshotBase64: cachedScrape.screenshot_base64,
+            title: cachedScrape.title ?? '',
           }
-          return
+        } else {
+          try {
+            scrapeResult = await scrapeWebsite(url, (step) => send({ step }))
+            // Store in cache (fire-and-forget — don't block on errors)
+            void supabase.from('scrape_cache').insert({
+              url,
+              html: scrapeResult.html,
+              screenshot_base64: scrapeResult.screenshotBase64,
+              title: scrapeResult.title,
+            })
+          } catch (err: unknown) {
+            const error = err as Error
+            console.error('Scrape error:', error)
+            await supabase
+              .from('projects')
+              .update({ status: 'error' })
+              .eq('id', project.id)
+            if (
+              error.message?.includes('playwright') ||
+              error.message?.includes('chromium') ||
+              error.message?.includes('Playwright')
+            ) {
+              send({ error: `Playwright not configured: ${error.message}` })
+            } else {
+              send({ error: `Failed to access website: ${error.message}` })
+            }
+            return
+          }
         }
 
         // Generate clone with Claude (streaming — saves partial HTML to DB live)

@@ -27,6 +27,7 @@ import {
   FolderInput,
   FolderOpen,
 } from 'lucide-react'
+import { DeleteConfirmDialog } from '@/components/ui/delete-confirm-dialog'
 
 interface ProjectCardProps {
   project: Project
@@ -49,13 +50,14 @@ export function ProjectCard({
 }: ProjectCardProps) {
   const [deleting, setDeleting] = useState(false)
   const [forking, setForking] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   const isProcessing = project.status === 'processing'
   const isError = project.status === 'error'
 
   const handleDelete = async () => {
-    if (!confirm('Delete this project? This cannot be undone.')) return
     setDeleting(true)
+    setShowDeleteDialog(false)
     try {
       const res = await fetch(`/api/projects/${project.id}`, { method: 'DELETE' })
       if (res.ok) onDelete?.(project.id)
@@ -240,7 +242,7 @@ export function ProjectCard({
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-red-600 dark:text-red-400"
-                onClick={handleDelete}
+                onClick={() => setShowDeleteDialog(true)}
                 disabled={deleting}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
@@ -250,6 +252,15 @@ export function ProjectCard({
           </DropdownMenu>
         </div>
       </div>
+
+      {showDeleteDialog && (
+        <DeleteConfirmDialog
+          title="Delete Project"
+          description={`"${project.name}" will be permanently deleted. This cannot be undone.`}
+          onConfirm={handleDelete}
+          onCancel={() => setShowDeleteDialog(false)}
+        />
+      )}
     </div>
   )
 }

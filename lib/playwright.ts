@@ -5,6 +5,58 @@ export interface ScrapeResult {
   error?: string
 }
 
+/**
+ * Convert all relative URLs in scraped HTML to absolute URLs so that
+ * images, stylesheets, and other assets load from the original domain
+ * when the clone is rendered.
+ */
+function absolutifyHtml(html: string, pageUrl: string): string {
+  const base = new URL(pageUrl)
+
+  const resolve = (url: string): string => {
+    if (!url) return url
+    const trimmed = url.trim()
+    // Already absolute or a special scheme — leave untouched
+    if (
+      trimmed.startsWith('http://') ||
+      trimmed.startsWith('https://') ||
+      trimmed.startsWith('//') ||
+      trimmed.startsWith('data:') ||
+      trimmed.startsWith('blob:') ||
+      trimmed.startsWith('mailto:') ||
+      trimmed.startsWith('tel:') ||
+      trimmed.startsWith('#')
+    ) {
+      return url
+    }
+    try {
+      return new URL(trimmed, base).href
+    } catch {
+      return url
+    }
+  }
+
+  return (
+    html
+      // src="..." — images, iframes, scripts, audio, video, etc.
+      .replace(/\bsrc=(['"])([^'"]*)\1/gi, (_, q, url) => `src=${q}${resolve(url)}${q}`)
+      // srcset="url 1x, url 2x" — responsive images
+      .replace(/\bsrcset=(['"])([^'"]*)\1/gi, (_, q, srcset) => {
+        const fixed = srcset.replace(/(^|,\s*)([^\s,][^\s,]*)/g, (m: string, sep: string, candidate: string) => {
+          // candidate may be "url descriptor" or just "url"
+          const parts = candidate.trim().split(/\s+/)
+          parts[0] = resolve(parts[0])
+          return sep + parts.join(' ')
+        })
+        return `srcset=${q}${fixed}${q}`
+      })
+      // href="..." on <link> tags (stylesheets, icons) — NOT <a> tags
+      .replace(/(<link\b[^>]*?\bhref=)(['"])([^'"]*)\2/gi, (_, pre, q, url) => `${pre}${q}${resolve(url)}${q}`)
+      // CSS url() inside <style> blocks and inline style=""
+      .replace(/\burl\((['"]?)([^'")]+)\1\)/gi, (_, q, url) => `url(${q}${resolve(url)}${q})`)
+  )
+}
+
 export async function scrapeWebsite(
   url: string,
   onProgress?: (step: string) => void
@@ -176,8 +228,11 @@ export async function scrapeWebsite(
       await context.close()
       await browser.close()
 
+      // Convert relative URLs → absolute so Claude preserves real image/asset URLs
+      const absoluteHtml = absolutifyHtml(html, url)
+
       onProgress?.('Generating clone...')
-      return { html, screenshotBase64, title }
+      return { html: absoluteHtml, screenshotBase64, title }
     } catch (err) {
       await browser.close()
       throw err

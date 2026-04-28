@@ -13,7 +13,7 @@ export async function generateClone(
 ): Promise<{ html: string; tokensUsed: number }> {
   const response = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: 8000,
     system: `You are an expert web developer specializing in HTML, CSS, and JavaScript.
 Your task is to recreate websites as clean, self-contained HTML files.
 - Output ONLY the complete HTML file, starting with <!DOCTYPE html>
@@ -96,7 +96,7 @@ export async function generateCloneStreaming(
 
   const stream = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: 8000,
     stream: true,
     system: `You are an expert web developer specializing in HTML, CSS, and JavaScript.
 Your task is to recreate websites as clean, self-contained HTML files.
@@ -199,6 +199,13 @@ export async function chatWithProjectStreaming(
   const lastUserMessage = messages[messages.length - 1]
   const CHUNK_INTERVAL = 800 // chars between onPartialHtml calls
   const HTML_MARKER = 'HTML:\n'
+  // Truncate HTML sent to Claude to reduce input token costs.
+  // 15 000 chars ≈ 3 000–4 000 tokens — enough for meaningful edits.
+  const MAX_HTML_CHARS = 15000
+  const htmlForClaude =
+    currentHtml.length > MAX_HTML_CHARS
+      ? currentHtml.slice(0, MAX_HTML_CHARS) + '\n<!-- [HTML truncated] -->'
+      : currentHtml
 
   const userContent: Anthropic.MessageParam['content'] = []
   if (imageBase64 && imageMimeType) {
@@ -213,12 +220,12 @@ export async function chatWithProjectStreaming(
   }
   userContent.push({
     type: 'text',
-    text: `Here is the current HTML of the website:\n\`\`\`html\n${currentHtml}\n\`\`\`\n\n${lastUserMessage.content}`,
+    text: `Here is the current HTML of the website:\n\`\`\`html\n${htmlForClaude}\n\`\`\`\n\n${lastUserMessage.content}`,
   })
 
   const stream = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 8192,
+    max_tokens: 4000,
     stream: true,
     system: `You are an expert web developer helping users modify their cloned website.
 The user will ask you to make changes to the HTML.
@@ -307,7 +314,7 @@ export async function chatWithProject(
 
   const response = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 8192,
+    max_tokens: 4000,
     system: `You are an expert web developer helping users modify their cloned website.
 The user will ask you to make changes to the HTML.
 
