@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { PreviewPane } from './preview-pane'
 import { CodeEditor } from './code-editor'
 import { ChatPanel } from './chat-panel'
@@ -8,11 +8,9 @@ import { VisualEditor } from './visual-editor'
 import { TerminalPanel } from './terminal-panel'
 import { VersionHistory } from './version-history'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Eye,
   Code2,
-  Columns2,
   Paintbrush,
   Terminal,
   History,
@@ -26,6 +24,8 @@ import {
   Plus,
   LayoutGrid,
   Zap,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { Project, ProjectVersion, ChatMessage } from '@/types'
@@ -36,9 +36,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 
-type ViewMode = 'preview' | 'code' | 'split'
-type PanelMode = 'chat' | 'visual' | 'terminal' | 'versions'
+type RightTab = 'preview' | 'code' | 'visual' | 'terminal' | 'versions'
 
 interface SplitViewProps {
   project: Project
@@ -59,10 +59,10 @@ export function SplitView({
   onSaveVersion,
   onRestoreVersion,
 }: SplitViewProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('preview')
-  const [panelMode, setPanelMode] = useState<PanelMode>('chat')
+  const [rightTab, setRightTab] = useState<RightTab>('preview')
   const [deploying, setDeploying] = useState(false)
   const [showUpgradeBadge, setShowUpgradeBadge] = useState(false)
+  const [chatVisible, setChatVisible] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
@@ -76,7 +76,6 @@ export function SplitView({
 
   const html = project.html_content
 
-  // Inject visual editor CSS
   const [visualCss, setVisualCss] = useState('')
   const displayHtml = visualCss
     ? html.replace('</head>', `${visualCss}</head>`)
@@ -123,93 +122,86 @@ export function SplitView({
     }
   }
 
+  const rightTabs: { id: RightTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'preview', label: 'Preview', icon: <Eye className="w-3.5 h-3.5" /> },
+    { id: 'code', label: 'Code', icon: <Code2 className="w-3.5 h-3.5" /> },
+    { id: 'visual', label: 'Visual', icon: <Paintbrush className="w-3.5 h-3.5" /> },
+    { id: 'versions', label: 'History', icon: <History className="w-3.5 h-3.5" /> },
+    { id: 'terminal', label: 'Terminal', icon: <Terminal className="w-3.5 h-3.5" /> },
+  ]
+
   return (
     <div className="relative flex flex-col h-screen bg-white dark:bg-neutral-950">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-shrink-0 overflow-x-auto">
+        {/* Chat toggle */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0 flex-shrink-0"
+          onClick={() => setChatVisible((v) => !v)}
+          title={chatVisible ? 'Hide chat' : 'Show chat'}
+        >
+          {chatVisible ? (
+            <PanelLeftClose className="w-4 h-4" />
+          ) : (
+            <PanelLeftOpen className="w-4 h-4" />
+          )}
+        </Button>
+
+        <div className="h-4 w-px bg-neutral-200 dark:bg-neutral-700 flex-shrink-0" />
+
         {/* Navigation */}
         <Link href="/">
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1">
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 flex-shrink-0">
             <Plus className="w-3 h-3" />
-            New Clone
+            <span className="hidden sm:inline">New Clone</span>
           </Button>
         </Link>
 
         <Link href="/dashboard">
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1">
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 flex-shrink-0">
             <LayoutGrid className="w-3 h-3" />
-            My Projects
+            <span className="hidden sm:inline">Projects</span>
           </Button>
         </Link>
 
-        <div className="h-4 w-px bg-neutral-200 dark:bg-neutral-700 mx-1" />
+        <div className="h-4 w-px bg-neutral-200 dark:bg-neutral-700 flex-shrink-0" />
 
         {/* Project name */}
-        <div className="font-medium text-sm truncate max-w-48 text-neutral-700 dark:text-neutral-300">
+        <div className="font-medium text-sm truncate max-w-40 text-neutral-700 dark:text-neutral-300 flex-shrink-0">
           {project.name}
-        </div>
-
-        <div className="h-4 w-px bg-neutral-200 dark:bg-neutral-700 mx-1" />
-
-        {/* View mode */}
-        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
-          <TabsList className="h-8">
-            <TabsTrigger value="preview" className="px-2 h-6 text-xs gap-1">
-              <Eye className="w-3 h-3" /> Preview
-            </TabsTrigger>
-            <TabsTrigger value="split" className="px-2 h-6 text-xs gap-1">
-              <Columns2 className="w-3 h-3" /> Split
-            </TabsTrigger>
-            <TabsTrigger value="code" className="px-2 h-6 text-xs gap-1">
-              <Code2 className="w-3 h-3" /> Code
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        <div className="h-4 w-px bg-neutral-200 dark:bg-neutral-700 mx-1" />
-
-        {/* Panel mode */}
-        <div className="flex gap-1">
-          {(
-            [
-              { mode: 'chat' as PanelMode, icon: null, label: 'Chat' },
-              { mode: 'visual' as PanelMode, icon: <Paintbrush className="w-3 h-3" />, label: 'Visual' },
-              { mode: 'terminal' as PanelMode, icon: <Terminal className="w-3 h-3" />, label: 'Terminal' },
-              { mode: 'versions' as PanelMode, icon: <History className="w-3 h-3" />, label: 'Versions' },
-            ] as { mode: PanelMode; icon: React.ReactNode; label: string }[]
-          ).map(({ mode, icon, label }) => (
-            <Button
-              key={mode}
-              variant={panelMode === mode ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-7 px-2 text-xs gap-1"
-              onClick={() => setPanelMode(mode)}
-            >
-              {icon}
-              {label}
-            </Button>
-          ))}
         </div>
 
         {/* Spacer */}
         <div className="flex-1" />
 
         {/* Actions */}
-        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={handleFork}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs gap-1 flex-shrink-0"
+          onClick={handleFork}
+        >
           <GitFork className="w-3 h-3" />
-          Fork
+          <span className="hidden sm:inline">Fork</span>
         </Button>
 
-        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={handleDownload}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs gap-1 flex-shrink-0"
+          onClick={handleDownload}
+        >
           <Download className="w-3 h-3" />
-          Download
+          <span className="hidden sm:inline">Download</span>
         </Button>
 
         {showUpgradeBadge && (
           <Link href="/pricing">
             <Button
               size="sm"
-              className="h-7 px-3 text-xs gap-1 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white border-0"
+              className="h-7 px-3 text-xs gap-1 flex-shrink-0 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white border-0"
             >
               <Zap className="w-3 h-3" />
               Upgrade
@@ -219,9 +211,13 @@ export function SplitView({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" className="h-7 px-3 text-xs gap-1" disabled={deploying}>
-              {deploying ? <Loader2 className="w-3 h-3 animate-spin" /> : <Rocket className="w-3 h-3" />}
-              Deploy
+            <Button size="sm" className="h-7 px-3 text-xs gap-1 flex-shrink-0" disabled={deploying}>
+              {deploying ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Rocket className="w-3 h-3" />
+              )}
+              <span className="hidden sm:inline">Deploy</span>
               <ChevronDown className="w-3 h-3" />
             </Button>
           </DropdownMenuTrigger>
@@ -230,11 +226,15 @@ export function SplitView({
               <Rocket className="w-4 h-4 mr-2" />
               Deploy to Vercel
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => alert('Connect GitHub in settings to push to a repo')}>
+            <DropdownMenuItem
+              onClick={() => alert('Connect GitHub in settings to push to a repo')}
+            >
               <GitBranch className="w-4 h-4 mr-2" />
               Push to GitHub
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => alert('Connect Shopify in settings to deploy')}>
+            <DropdownMenuItem
+              onClick={() => alert('Connect Shopify in settings to deploy')}
+            >
               <ShoppingBag className="w-4 h-4 mr-2" />
               Deploy to Shopify
             </DropdownMenuItem>
@@ -242,70 +242,60 @@ export function SplitView({
         </DropdownMenu>
       </div>
 
-      {/* Main area — flex-row so preview gets full height independent of chat panel */}
+      {/* Main area */}
       <div className="flex flex-1 overflow-hidden">
-
-        {/* Preview column — full height, no bottom panel competing for space */}
-        {(viewMode === 'preview' || viewMode === 'split') && (
-          <div className={`flex flex-col overflow-hidden h-full ${viewMode === 'split' ? 'w-1/2 border-r border-neutral-200 dark:border-neutral-800' : 'w-full'}`}>
-            <PreviewPane projectId={project.id} html={displayHtml} className="flex-1 min-h-0" />
+        {/* Left: Chat panel */}
+        {chatVisible && (
+          <div className="w-full sm:w-[380px] flex-shrink-0 border-r border-neutral-200 dark:border-neutral-800 flex flex-col overflow-hidden">
+            <ChatPanel
+              projectId={project.id}
+              currentHtml={html}
+              messages={messages}
+              onMessagesChange={onMessagesChange}
+              onHtmlChange={onHtmlChange}
+            />
           </div>
         )}
 
-        {/* Code + bottom panel column */}
-        {(viewMode === 'code' || viewMode === 'split') && (
-          <div className={`flex flex-col overflow-hidden h-full ${viewMode === 'split' ? 'w-1/2' : 'w-full'}`}>
-            {/* Code editor grows to fill remaining height above the panel */}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <CodeEditor value={html} onChange={onHtmlChange} className="h-full" />
-            </div>
-
-            {/* Bottom panel — lives inside the code column only */}
-            <div className="h-64 flex-shrink-0 border-t border-neutral-200 dark:border-neutral-800">
-              {panelMode === 'chat' && (
-                <ChatPanel
-                  projectId={project.id}
-                  currentHtml={html}
-                  messages={messages}
-                  onMessagesChange={onMessagesChange}
-                  onHtmlChange={onHtmlChange}
-                />
-              )}
-              {panelMode === 'visual' && (
-                <VisualEditor onStyleChange={setVisualCss} className="h-full" />
-              )}
-              {panelMode === 'terminal' && <TerminalPanel html={html} />}
-              {panelMode === 'versions' && (
-                <VersionHistory
-                  versions={versions}
-                  currentHtml={html}
-                  onRestore={onRestoreVersion}
-                  onSaveVersion={onSaveVersion}
-                  className="h-full"
-                />
-              )}
-            </div>
+        {/* Right: Preview/Code/etc */}
+        <div
+          className={cn(
+            'flex-1 flex flex-col overflow-hidden',
+            chatVisible ? 'hidden sm:flex' : 'flex'
+          )}
+        >
+          {/* Right tab bar */}
+          <div className="flex items-center gap-1 px-3 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex-shrink-0 overflow-x-auto">
+            {rightTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setRightTab(tab.id)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors flex-shrink-0',
+                  rightTab === tab.id
+                    ? 'border-neutral-900 dark:border-white text-neutral-900 dark:text-white'
+                    : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'
+                )}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
           </div>
-        )}
 
-        {/* In preview-only mode there's no code column, so show the bottom panel
-            as a floating overlay so chat/versions are still accessible */}
-        {viewMode === 'preview' && (
-          <div className="absolute bottom-0 left-0 right-0 h-64 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 z-20">
-            {panelMode === 'chat' && (
-              <ChatPanel
-                projectId={project.id}
-                currentHtml={html}
-                messages={messages}
-                onMessagesChange={onMessagesChange}
-                onHtmlChange={onHtmlChange}
-              />
+          {/* Right content */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {rightTab === 'preview' && (
+              <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
             )}
-            {panelMode === 'visual' && (
+            {rightTab === 'code' && (
+              <CodeEditor value={html} onChange={onHtmlChange} className="h-full" />
+            )}
+            {rightTab === 'visual' && (
               <VisualEditor onStyleChange={setVisualCss} className="h-full" />
             )}
-            {panelMode === 'terminal' && <TerminalPanel html={html} />}
-            {panelMode === 'versions' && (
+            {rightTab === 'terminal' && <TerminalPanel html={html} />}
+            {rightTab === 'versions' && (
               <VersionHistory
                 versions={versions}
                 currentHtml={html}
@@ -315,7 +305,7 @@ export function SplitView({
               />
             )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

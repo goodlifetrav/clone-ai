@@ -29,7 +29,22 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      localization={{
+        signIn: {
+          start: {
+            title: 'Sign in to IgualAI',
+            subtitle: 'Welcome back! Please sign in to continue',
+          },
+        },
+        signUp: {
+          start: {
+            title: 'Create your IgualAI account',
+            subtitle: 'Clone any website with AI in seconds',
+          },
+        },
+      }}
+    >
       <html lang="en" suppressHydrationWarning>
         <body>
           <ThemeProvider
