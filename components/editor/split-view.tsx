@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { PreviewPane } from './preview-pane'
 import { CodeEditor } from './code-editor'
 import { ChatPanel } from './chat-panel'
@@ -67,7 +67,40 @@ export function SplitView({
   const [desktopChatVisible, setDesktopChatVisible] = useState(true)
   const [isFreeUser, setIsFreeUser] = useState(false)
   const [integrationModal, setIntegrationModal] = useState<'github' | 'vercel' | 'shopify' | null>(null)
+  // True while the clone is generating OR the AI chat is streaming
+  const [isGenerating, setIsGenerating] = useState(project.status === 'processing')
+  const prevStatusRef = useRef(project.status)
   const router = useRouter()
+
+  // Auto-switch tabs when clone generation starts / finishes
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    const curr = project.status
+    if (curr === 'processing' && prev !== 'processing') {
+      setIsGenerating(true)
+      setRightTab('code')
+      setMobileTab('preview')
+    }
+    if (curr === 'complete' && prev === 'processing') {
+      setIsGenerating(false)
+      setRightTab('preview')
+    }
+    if (curr === 'error' && prev === 'processing') {
+      setIsGenerating(false)
+    }
+    prevStatusRef.current = curr
+  }, [project.status])
+
+  // Called by ChatPanel while it's streaming an AI response
+  const handleChatGenerating = useCallback((generating: boolean) => {
+    setIsGenerating(generating)
+    if (generating) {
+      setRightTab('code')
+      setMobileTab('preview')
+    } else {
+      setRightTab('preview')
+    }
+  }, [])
 
   useEffect(() => {
     fetch('/api/user')
@@ -162,11 +195,13 @@ export function SplitView({
           {project.name}
         </div>
 
-        {/* Generating indicator */}
-        {project.status === 'processing' && (
+        {/* Generating indicator — shown during initial clone AND AI chat streaming */}
+        {isGenerating && (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex-shrink-0">
             <Sparkles className="w-3 h-3 text-amber-500 dark:text-amber-400 animate-pulse" />
-            <span className="text-xs text-amber-600 dark:text-amber-400 hidden sm:inline">Generating…</span>
+            <span className="text-xs text-amber-600 dark:text-amber-400 hidden sm:inline">
+              {project.status === 'processing' ? 'Generating…' : 'Writing…'}
+            </span>
           </div>
         )}
 
@@ -281,6 +316,7 @@ export function SplitView({
             messages={messages}
             onMessagesChange={onMessagesChange}
             onHtmlChange={onHtmlChange}
+            onGenerating={handleChatGenerating}
           />
         </div>
 
@@ -313,31 +349,46 @@ export function SplitView({
             ))}
           </div>
 
-          {/* Right content */}
-          <div className="flex-1 min-h-0 overflow-hidden">
-            {(rightTab === 'preview' || mobileTab === 'preview') && (
-              // On mobile always show preview; on desktop only when rightTab === 'preview'
-              <div className={cn('h-full', rightTab !== 'preview' ? 'hidden sm:block sm:h-full' : '')}>
-                <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
-              </div>
-            )}
+          {/* Right content — all panels use absolute inset-0 so they never
+              stack on top of each other (which caused the tab-switching bug). */}
+          <div className="flex-1 min-h-0 relative overflow-hidden">
+
+            {/* Preview — mobile: show when mobileTab=preview, desktop: only when rightTab=preview */}
+            <div className={cn(
+              'absolute inset-0',
+              mobileTab === 'preview' ? '' : 'hidden',
+              rightTab === 'preview' ? 'sm:block' : 'sm:hidden'
+            )}>
+              <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
+            </div>
+
+            {/* Code — desktop always, mobile only while generating (so user sees live code) */}
             {rightTab === 'code' && (
-              <div className="hidden sm:block h-full">
+              <div className={cn(
+                'absolute inset-0',
+                isGenerating ? 'block' : 'hidden sm:block'
+              )}>
                 <CodeEditor value={html} onChange={onHtmlChange} className="h-full" />
               </div>
             )}
+
+            {/* Visual — desktop only */}
             {rightTab === 'visual' && (
-              <div className="hidden sm:block h-full">
+              <div className="absolute inset-0 hidden sm:block">
                 <VisualEditor onStyleChange={setVisualCss} className="h-full" />
               </div>
             )}
+
+            {/* Terminal — desktop only */}
             {rightTab === 'terminal' && (
-              <div className="hidden sm:block h-full">
+              <div className="absolute inset-0 hidden sm:block">
                 <TerminalPanel html={html} />
               </div>
             )}
+
+            {/* History — desktop only */}
             {rightTab === 'versions' && (
-              <div className="hidden sm:block h-full">
+              <div className="absolute inset-0 hidden sm:block">
                 <VersionHistory
                   versions={versions}
                   currentHtml={html}

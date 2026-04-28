@@ -15,6 +15,8 @@ interface ChatPanelProps {
   messages: ChatMessage[]
   onMessagesChange: (messages: ChatMessage[]) => void
   onHtmlChange: (html: string) => void
+  /** Called with true when a request starts streaming, false when it finishes */
+  onGenerating?: (generating: boolean) => void
 }
 
 export function ChatPanel({
@@ -23,6 +25,7 @@ export function ChatPanel({
   messages,
   onMessagesChange,
   onHtmlChange,
+  onGenerating,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -95,6 +98,7 @@ export function ChatPanel({
     const sentImage = image
     setImage(null)
     setLoading(true)
+    onGenerating?.(true)
 
     try {
       const res = await fetch('/api/chat', {
@@ -109,35 +113,78 @@ export function ChatPanel({
         }),
       })
 
-      const data = await res.json()
-
-      if (data.chatLimitReached) {
-        setShowUpgradeModal(true)
-        // Remove the optimistic user message we already added
-        onMessagesChange(messages)
-        return
+      // Pre-stream JSON errors (limit reached etc.) come back as non-SSE JSON
+      const contentType = res.headers.get('content-type') ?? ''
+      if (!contentType.includes('text/event-stream')) {
+        const data = await res.json()
+        if (data.chatLimitReached) {
+          setShowUpgradeModal(true)
+          onMessagesChange(messages)
+          return
+        }
+        throw new Error(data.error || 'Chat failed')
       }
 
-      if (!res.ok) throw new Error(data.error || 'Chat failed')
+      // Read the SSE stream
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let aiMessage = ''
+      let newMessagesUsed: number | null = null
+
+      outer: while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const text = line.slice(6).trim()
+          if (!text) continue
+
+          let event: Record<string, unknown>
+          try { event = JSON.parse(text) } catch { continue }
+
+          if (event.htmlChunk) {
+            // Stream partial HTML into the editor in real time
+            onHtmlChange(event.htmlChunk as string)
+          }
+
+          if (event.done) {
+            aiMessage = event.message as string
+            newMessagesUsed = event.messagesUsed as number
+            // Final HTML (fully parsed and cleaned) replaces the partial
+            if (event.html) onHtmlChange(event.html as string)
+            break outer
+          }
+
+          if (event.chatLimitReached) {
+            setShowUpgradeModal(true)
+            onMessagesChange(messages)
+            return
+          }
+
+          if (event.error) {
+            throw new Error(event.error as string)
+          }
+        }
+      }
 
       const assistantMessage: ChatMessage = {
         id: crypto.randomUUID(),
         project_id: projectId,
         user_id: '',
         role: 'assistant',
-        content: data.message,
+        content: aiMessage || 'Done.',
         created_at: new Date().toISOString(),
       }
-
       onMessagesChange([...newMessages, assistantMessage])
 
-      if (data.html) {
-        onHtmlChange(data.html)
-      }
-
-      // Update count from server response
-      if (typeof data.messagesUsed === 'number' && chatLimit !== null) {
-        setMessagesUsed(data.messagesUsed)
+      if (newMessagesUsed !== null && chatLimit !== null) {
+        setMessagesUsed(newMessagesUsed)
       }
     } catch (err) {
       const errorMessage: ChatMessage = {
@@ -151,6 +198,7 @@ export function ChatPanel({
       onMessagesChange([...newMessages, errorMessage])
     } finally {
       setLoading(false)
+      onGenerating?.(false)
     }
   }
 

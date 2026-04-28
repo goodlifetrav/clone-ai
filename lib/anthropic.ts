@@ -186,6 +186,99 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
   }
 }
 
+// Streaming version of chatWithProject.
+// Calls onPartialHtml with the HTML section as it is generated so the caller
+// can push chunks to the client in real time.
+export async function chatWithProjectStreaming(
+  currentHtml: string,
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  onPartialHtml: (partialHtml: string) => void,
+  imageBase64?: string,
+  imageMimeType?: string
+): Promise<{ html: string; message: string; tokensUsed: number }> {
+  const lastUserMessage = messages[messages.length - 1]
+  const CHUNK_INTERVAL = 800 // chars between onPartialHtml calls
+  const HTML_MARKER = 'HTML:\n'
+
+  const userContent: Anthropic.MessageParam['content'] = []
+  if (imageBase64 && imageMimeType) {
+    userContent.push({
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: imageMimeType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+        data: imageBase64,
+      },
+    })
+  }
+  userContent.push({
+    type: 'text',
+    text: `Here is the current HTML of the website:\n\`\`\`html\n${currentHtml}\n\`\`\`\n\n${lastUserMessage.content}`,
+  })
+
+  const stream = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 8192,
+    stream: true,
+    system: `You are an expert web developer helping users modify their cloned website.
+The user will ask you to make changes to the HTML.
+
+IMPORTANT: Always respond with:
+1. A brief explanation of what you changed (1-3 sentences)
+2. Then the complete updated HTML file
+
+Format your response EXACTLY like this:
+EXPLANATION: [your explanation here]
+HTML:
+[complete html file starting with <!DOCTYPE html>]
+
+Always output the complete HTML file, not just the changed parts.`,
+    messages: [{ role: 'user', content: userContent }],
+  })
+
+  let accumulated = ''
+  let lastChunkAt = 0
+  let inputTokens = 0
+  let outputTokens = 0
+
+  for await (const event of stream) {
+    if (event.type === 'message_start') {
+      inputTokens = event.message.usage.input_tokens
+    } else if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      accumulated += event.delta.text
+
+      // Once the HTML section starts, emit partial HTML on each interval
+      const markerIdx = accumulated.indexOf(HTML_MARKER)
+      if (markerIdx !== -1 && accumulated.length - lastChunkAt >= CHUNK_INTERVAL) {
+        lastChunkAt = accumulated.length
+        let partial = accumulated.slice(markerIdx + HTML_MARKER.length)
+        if (partial.startsWith('```')) {
+          partial = partial.replace(/^```(?:html)?\n?/, '')
+        }
+        if (partial.trim()) onPartialHtml(partial.trim())
+      }
+    } else if (event.type === 'message_delta') {
+      outputTokens = event.usage.output_tokens
+    }
+  }
+
+  // Parse final result
+  const explanationMatch = accumulated.match(/EXPLANATION:\s*([\s\S]*?)(?=\nHTML:|$)/)
+  const htmlMatch = accumulated.match(/HTML:\s*\n?([\s\S]*)$/)
+
+  let explanation = explanationMatch ? explanationMatch[1].trim() : 'Changes applied.'
+  let html = htmlMatch ? htmlMatch[1].trim() : currentHtml
+  if (html.startsWith('```')) {
+    html = html.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '').trim()
+  }
+
+  return {
+    html,
+    message: explanation,
+    tokensUsed: inputTokens + outputTokens,
+  }
+}
+
 export async function chatWithProject(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
