@@ -36,7 +36,7 @@ async function createGhlContact(email: string, firstName: string, lastName: stri
         email,
         firstName: firstName || undefined,
         lastName: lastName || undefined,
-        tags: ['IgualAI Signup'],
+        tags: ['IgualAI Lead', 'Website Cloner'],
       }),
     })
   } catch (err) {
