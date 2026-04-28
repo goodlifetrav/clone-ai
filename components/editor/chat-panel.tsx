@@ -187,7 +187,7 @@ export function ChatPanel({
         </div>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 p-4">
+        <ScrollArea className="flex-1 min-h-0 p-4">
           {messages.length === 0 ? (
             <div className="text-center text-sm text-neutral-400 dark:text-neutral-500 py-8">
               <Bot className="w-8 h-8 mx-auto mb-3 opacity-40" />

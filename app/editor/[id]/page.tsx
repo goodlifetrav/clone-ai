@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
 import { useProject } from '@/hooks/use-project'
 import { SplitView } from '@/components/editor/split-view'
-import { Loader2, AlertCircle, Sparkles, LayoutGrid } from 'lucide-react'
+import { Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
@@ -60,38 +60,6 @@ export default function EditorPage() {
         </div>
         <Button asChild variant="outline">
           <Link href="/dashboard">Back to Dashboard</Link>
-        </Button>
-      </div>
-    )
-  }
-
-  // Show a holding screen while the clone is being generated in the background
-  if (project.status === 'processing') {
-    return (
-      <div className="h-screen flex flex-col items-center justify-center bg-white dark:bg-neutral-950 px-4 text-center gap-6">
-        <div className="w-16 h-16 rounded-2xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
-          <Sparkles className="w-8 h-8 text-neutral-500 dark:text-neutral-300 animate-pulse" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-bold text-neutral-900 dark:text-white mb-2">
-            Generating Your Clone
-          </h2>
-          <p className="text-neutral-500 dark:text-neutral-400 max-w-sm">
-            We&apos;re scraping the page and rebuilding it with AI. This usually takes 30–90 seconds.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-neutral-400 dark:text-neutral-500">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Processing in background — checking for updates…
-        </div>
-        <p className="text-xs text-neutral-400 dark:text-neutral-500 max-w-xs">
-          You can close this tab and come back later. Your clone will appear in My Projects when it&apos;s ready.
-        </p>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/dashboard" className="gap-2">
-            <LayoutGrid className="w-4 h-4" />
-            View My Projects
-          </Link>
         </Button>
       </div>
     )

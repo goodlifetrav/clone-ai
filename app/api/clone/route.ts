@@ -3,7 +3,7 @@ import { auth, currentUser } from '@clerk/nextjs/server'
 import { Resend } from 'resend'
 import { createServiceClient, uploadThumbnail } from '@/lib/supabase'
 import { scrapeWebsite } from '@/lib/playwright'
-import { generateClone } from '@/lib/anthropic'
+import { generateCloneStreaming } from '@/lib/anthropic'
 import { extractDomain } from '@/lib/utils'
 
 export async function POST(request: NextRequest) {
@@ -131,15 +131,22 @@ export async function POST(request: NextRequest) {
           return
         }
 
-        // Generate clone with Claude
+        // Generate clone with Claude (streaming — saves partial HTML to DB live)
         send({ step: 'Sending to Claude AI...' })
         let html: string
         let tokensUsed: number
         try {
-          ;({ html, tokensUsed } = await generateClone(
+          ;({ html, tokensUsed } = await generateCloneStreaming(
             scrapeResult.html,
             scrapeResult.screenshotBase64,
-            url
+            url,
+            async (partialText) => {
+              // Save partial HTML so the editor can show live progress
+              await supabase
+                .from('projects')
+                .update({ html_content: partialText })
+                .eq('id', project.id)
+            }
           ))
         } catch (err: unknown) {
           const error = err as Error

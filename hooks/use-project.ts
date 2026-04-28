@@ -93,13 +93,14 @@ export function useProject(projectId: string) {
     fetchVersions()
   }, [fetchProject, fetchVersions])
 
-  // Poll every 3 seconds while the project is still being processed
+  // Poll every 1.5 seconds while the project is still being processed
+  // so the editor shows the HTML being built in near real-time.
   useEffect(() => {
     if (!project || project.status !== 'processing') return
 
     const interval = setInterval(() => {
       silentRefetch()
-    }, 3000)
+    }, 1500)
 
     return () => clearInterval(interval)
   }, [project?.status, silentRefetch])

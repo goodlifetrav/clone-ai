@@ -27,6 +27,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Bot,
+  Sparkles,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { Project, ProjectVersion, ChatMessage } from '@/types'
@@ -134,7 +135,7 @@ export function SplitView({
   ]
 
   return (
-    <div className="relative flex flex-col h-screen bg-white dark:bg-neutral-950">
+    <div className="relative flex flex-col h-[100dvh] bg-white dark:bg-neutral-950">
       {/* ── Toolbar ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-shrink-0 overflow-x-auto">
         {/* Desktop: chat panel toggle */}
@@ -175,6 +176,14 @@ export function SplitView({
         <div className="font-medium text-sm truncate max-w-32 sm:max-w-40 text-neutral-700 dark:text-neutral-300 flex-shrink-0">
           {project.name}
         </div>
+
+        {/* Generating indicator */}
+        {project.status === 'processing' && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex-shrink-0">
+            <Sparkles className="w-3 h-3 text-amber-500 dark:text-amber-400 animate-pulse" />
+            <span className="text-xs text-amber-600 dark:text-amber-400 hidden sm:inline">Generating…</span>
+          </div>
+        )}
 
         {/* Spacer */}
         <div className="flex-1" />

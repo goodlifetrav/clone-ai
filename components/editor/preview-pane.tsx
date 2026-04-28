@@ -9,7 +9,36 @@ interface PreviewPaneProps {
   className?: string
 }
 
+// Inject a <base target="_blank"> so all links open in new tabs,
+// and a click interceptor that prevents in-app navigation for any
+// links that don't already have a target set.
+function injectLinkInterceptor(html: string): string {
+  const baseTag = '<base target="_blank">'
+  const script = `<script>
+(function(){
+  document.addEventListener('click', function(e){
+    var a = e.target.closest('a');
+    if(a && a.href){
+      e.preventDefault();
+      e.stopPropagation();
+      window.open(a.href, '_blank', 'noopener,noreferrer');
+    }
+  }, true);
+})();
+</script>`
+
+  if (/<head[^>]*>/i.test(html)) {
+    return html
+      .replace(/(<head[^>]*>)/i, `$1${baseTag}`)
+      .replace(/<\/body>/i, `${script}</body>`)
+  }
+  // No <head> — prepend base tag and append script
+  return baseTag + html + script
+}
+
 export function PreviewPane({ projectId, html, className = '' }: PreviewPaneProps) {
+  const safeHtml = html ? injectLinkInterceptor(html) : html
+
   return (
     <div className={`relative flex flex-col h-full ${className}`}>
       {/* Toolbar */}
@@ -36,7 +65,7 @@ export function PreviewPane({ projectId, html, className = '' }: PreviewPaneProp
       {/* Preview iframe */}
       <div className="flex-1 min-h-0">
         <iframe
-          srcDoc={html}
+          srcDoc={safeHtml}
           className="w-full h-full border-0"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
           title="Preview"

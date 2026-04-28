@@ -84,6 +84,95 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
   }
 }
 
+// Same as generateClone but streams partial HTML via onPartialHtml callback
+// so the caller can save incremental progress to the database.
+export async function generateCloneStreaming(
+  htmlContent: string,
+  screenshotBase64: string,
+  url: string,
+  onPartialHtml: (partialText: string) => Promise<void>
+): Promise<{ html: string; tokensUsed: number }> {
+  const SAVE_INTERVAL = 2000 // chars between DB saves
+
+  const stream = anthropic.messages.stream({
+    model: MODEL,
+    max_tokens: 16000,
+    system: `You are an expert web developer specializing in HTML, CSS, and JavaScript.
+Your task is to recreate websites as clean, self-contained HTML files.
+- Output ONLY the complete HTML file, starting with <!DOCTYPE html>
+- Inline all CSS in a <style> tag
+- Use modern CSS (flexbox, grid, custom properties)
+- Preserve the visual design, layout, colors, typography, and structure
+- Make the clone responsive
+- Replace external fonts with system fonts or Google Fonts CDN links
+- Keep all text content from the original
+- Do not include any external JavaScript that may fail
+- Replace form submissions and external API calls with placeholder alerts
+- Output nothing except the HTML code itself`,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/jpeg',
+              data: screenshotBase64,
+            },
+          },
+          {
+            type: 'text',
+            text: `Please recreate this website (${url}) as a complete, self-contained HTML file.
+
+Here is the original HTML source for reference:
+\`\`\`html
+${htmlContent.slice(0, 50000)}
+\`\`\`
+
+Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`,
+          },
+        ],
+      },
+    ],
+  })
+
+  let accumulated = ''
+  let lastSaveLength = 0
+
+  for await (const text of stream.textStream) {
+    accumulated += text
+    if (accumulated.length - lastSaveLength >= SAVE_INTERVAL) {
+      lastSaveLength = accumulated.length
+      await onPartialHtml(accumulated)
+    }
+  }
+
+  const finalMessage = await stream.finalMessage()
+
+  const htmlMatch =
+    accumulated.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i) ??
+    accumulated.match(/<html[\s\S]*<\/html>/i)
+
+  let html: string
+  if (!htmlMatch) {
+    html = accumulated.trim()
+    if (html.startsWith('```')) {
+      html = html.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '').trim()
+    }
+    if (!html) {
+      throw new Error('Claude returned empty HTML — please try again')
+    }
+  } else {
+    html = htmlMatch[0]
+  }
+
+  return {
+    html,
+    tokensUsed: finalMessage.usage.input_tokens + finalMessage.usage.output_tokens,
+  }
+}
+
 export async function chatWithProject(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
