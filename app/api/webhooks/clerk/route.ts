@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Webhook } from 'svix'
 import { createServiceClient } from '@/lib/supabase'
+import { ghlCreateContact } from '@/lib/ghl'
 
 interface ClerkEmailAddress {
   email_address: string
@@ -14,53 +15,6 @@ interface ClerkUserCreatedEvent {
     email_addresses: ClerkEmailAddress[]
     first_name: string | null
     last_name: string | null
-  }
-}
-
-async function createGhlContact(email: string, firstName: string, lastName: string) {
-  const apiKey = process.env.GHL_API_KEY
-  const locationId = process.env.GHL_LOCATION_ID ?? '3rXkjhSCKHbyMoFFgvek'
-
-  if (!apiKey) {
-    console.log('[GHL] Skipping — GHL_API_KEY is not set')
-    return
-  }
-
-  const payload = {
-    locationId,
-    email,
-    firstName: firstName || undefined,
-    lastName: lastName || undefined,
-    tags: ['IgualAI Lead', 'Website Cloner'],
-  }
-
-  console.log('[GHL] Creating contact:', JSON.stringify(payload))
-
-  let response: Response
-  let responseText: string
-  try {
-    response = await fetch('https://services.leadconnectorhq.com/contacts/', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        Version: '2021-07-28',
-      },
-      body: JSON.stringify(payload),
-    })
-    responseText = await response.text()
-  } catch (err) {
-    console.error('[GHL] Fetch failed:', err)
-    return
-  }
-
-  console.log('[GHL] Response status:', response.status)
-  console.log('[GHL] Response body:', responseText)
-
-  if (!response.ok) {
-    console.error('[GHL] Contact creation failed — status:', response.status, 'body:', responseText)
-  } else {
-    console.log('[GHL] Contact created successfully')
   }
 }
 
@@ -136,8 +90,8 @@ export async function POST(request: NextRequest) {
 
   console.log('[Clerk Webhook] User saved to Supabase successfully')
 
-  // Create contact in GHL CRM
-  await createGhlContact(email, firstName, lastName)
+  // Create contact in GHL — handles duplicate by adding "IgualAI Lead" tag
+  await ghlCreateContact(email, firstName, lastName, ['IgualAI Lead', 'Website Cloner'])
 
   return NextResponse.json({ received: true })
 }

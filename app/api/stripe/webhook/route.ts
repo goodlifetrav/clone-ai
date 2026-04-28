@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { stripe, PRICE_IDS } from '@/lib/stripe'
 import { createServiceClient } from '@/lib/supabase'
+import { ghlFindContactByEmail, ghlAddTags, ghlRemoveTags, planToGhlTag } from '@/lib/ghl'
 import type Stripe from 'stripe'
 import type { Plan } from '@/types'
 
 // Reverse map: price ID → plan name, built at module load time
-function buildPriceToplan(): Record<string, Plan> {
+function buildPriceToPlan(): Record<string, Plan> {
   const map: Record<string, Plan> = {}
   for (const [plan, priceId] of Object.entries(PRICE_IDS)) {
     if (priceId && !priceId.includes('_id_here')) {
@@ -14,7 +15,15 @@ function buildPriceToplan(): Record<string, Plan> {
   }
   return map
 }
-const PRICE_TO_PLAN = buildPriceToplan()
+const PRICE_TO_PLAN = buildPriceToPlan()
+
+/** Resolve the plan from an invoice's first line item price ID. */
+function planFromInvoice(invoice: Stripe.Invoice): Plan | null {
+  const lineItem = invoice.lines?.data[0] as Stripe.InvoiceLineItem | undefined
+  const priceOrId = lineItem?.pricing?.price_details?.price
+  const priceId = typeof priceOrId === 'string' ? priceOrId : priceOrId?.id
+  return priceId ? (PRICE_TO_PLAN[priceId] ?? null) : null
+}
 
 export async function POST(request: NextRequest) {
   const body = await request.text()
@@ -78,11 +87,10 @@ export async function POST(request: NextRequest) {
 
         console.log('checkout.session.completed: plan updated', { clerkId, plan })
 
-        // Upsert billing record — onConflict: 'user_id' ensures we update
-        // rather than insert a duplicate row on re-subscribe
+        // Upsert billing record
         const { data: user } = await supabase
           .from('users')
-          .select('id')
+          .select('id, email')
           .eq('clerk_id', clerkId)
           .single()
 
@@ -101,6 +109,19 @@ export async function POST(request: NextRequest) {
 
           if (billingError) {
             console.error('checkout.session.completed: billing upsert failed', billingError)
+          }
+
+          // Tag the GHL contact with their new plan
+          if (user.email) {
+            const planTag = planToGhlTag(plan)
+            if (planTag) {
+              const contactId = await ghlFindContactByEmail(user.email)
+              if (contactId) {
+                await ghlAddTags(contactId, [planTag])
+              } else {
+                console.warn('[GHL] No contact found for email on upgrade:', user.email)
+              }
+            }
           }
         }
         break
@@ -121,19 +142,15 @@ export async function POST(request: NextRequest) {
           break
         }
 
-        // Map subscription status to a value we store.
-        // past_due still has access — keep the plan active, just flag the status.
         const stripeStatus = subscription.status
         const billingStatus =
           stripeStatus === 'active' || stripeStatus === 'trialing' || stripeStatus === 'past_due'
             ? stripeStatus
             : 'inactive'
 
-        // Derive the plan from the first subscription item's price ID
         const priceId = subscription.items.data[0]?.price?.id
         const newPlan: Plan | null = priceId ? (PRICE_TO_PLAN[priceId] ?? null) : null
 
-        // Always update billing status
         const { error: billingError } = await supabase
           .from('billing')
           .update({ status: billingStatus, ...(newPlan ? { plan: newPlan } : {}) })
@@ -143,7 +160,6 @@ export async function POST(request: NextRequest) {
           console.error('customer.subscription.updated: billing update failed', billingError)
         }
 
-        // Update users.plan if we can resolve the price ID to a known plan
         if (newPlan) {
           const { error: planError } = await supabase
             .from('users')
@@ -184,7 +200,6 @@ export async function POST(request: NextRequest) {
           break
         }
 
-        // Downgrade to free
         const { error: planError } = await supabase
           .from('users')
           .update({ plan: 'free' })
@@ -203,6 +218,67 @@ export async function POST(request: NextRequest) {
           console.error('customer.subscription.deleted: billing update failed', billingError)
         } else {
           console.log('customer.subscription.deleted: user downgraded to free', { customerId })
+        }
+        break
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice
+        const email = invoice.customer_email
+
+        if (!email) {
+          console.warn('invoice.payment_failed: no customer_email on invoice', {
+            invoiceId: invoice.id,
+          })
+          break
+        }
+
+        console.log('invoice.payment_failed: finding GHL contact for', email)
+
+        const contactId = await ghlFindContactByEmail(email)
+        if (contactId) {
+          await ghlAddTags(contactId, ['Payment Failed'])
+          console.log('invoice.payment_failed: Payment Failed tag added to', email)
+        } else {
+          console.warn('invoice.payment_failed: no GHL contact found for', email)
+        }
+        break
+      }
+
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object as Stripe.Invoice
+        const email = invoice.customer_email
+
+        if (!email) {
+          console.warn('invoice.payment_succeeded: no customer_email on invoice', {
+            invoiceId: invoice.id,
+          })
+          break
+        }
+
+        console.log('invoice.payment_succeeded: finding GHL contact for', email)
+
+        const contactId = await ghlFindContactByEmail(email)
+        if (!contactId) {
+          console.warn('invoice.payment_succeeded: no GHL contact found for', email)
+          break
+        }
+
+        // Remove the "Payment Failed" tag (no-op if it doesn't exist)
+        await ghlRemoveTags(contactId, ['Payment Failed'])
+
+        // Re-apply their current plan tag
+        const plan = planFromInvoice(invoice)
+        if (plan) {
+          const planTag = planToGhlTag(plan)
+          if (planTag) {
+            await ghlAddTags(contactId, [planTag])
+            console.log('invoice.payment_succeeded: plan tag re-applied', { email, planTag })
+          }
+        } else {
+          console.warn('invoice.payment_succeeded: could not resolve plan from invoice', {
+            invoiceId: invoice.id,
+          })
         }
         break
       }
