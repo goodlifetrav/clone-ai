@@ -94,9 +94,10 @@ export async function generateCloneStreaming(
 ): Promise<{ html: string; tokensUsed: number }> {
   const SAVE_INTERVAL = 2000 // chars between DB saves
 
-  const stream = anthropic.messages.stream({
+  const stream = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 16000,
+    stream: true,
     system: `You are an expert web developer specializing in HTML, CSS, and JavaScript.
 Your task is to recreate websites as clean, self-contained HTML files.
 - Output ONLY the complete HTML file, starting with <!DOCTYPE html>
@@ -139,16 +140,28 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
 
   let accumulated = ''
   let lastSaveLength = 0
+  let inputTokens = 0
+  let outputTokens = 0
 
-  for await (const text of stream.textStream) {
-    accumulated += text
-    if (accumulated.length - lastSaveLength >= SAVE_INTERVAL) {
-      lastSaveLength = accumulated.length
-      await onPartialHtml(accumulated)
+  for await (const event of stream) {
+    if (event.type === 'message_start') {
+      inputTokens = event.message.usage.input_tokens
+    } else if (
+      event.type === 'content_block_delta' &&
+      event.delta.type === 'text_delta'
+    ) {
+      accumulated += event.delta.text
+      if (accumulated.length - lastSaveLength >= SAVE_INTERVAL) {
+        lastSaveLength = accumulated.length
+        await onPartialHtml(accumulated)
+      }
+    } else if (event.type === 'message_delta') {
+      outputTokens = event.usage.output_tokens
     }
   }
 
-  const finalMessage = await stream.finalMessage()
+  // Synthesise a usage object matching what generateClone returns
+  const finalMessage = { usage: { input_tokens: inputTokens, output_tokens: outputTokens } }
 
   const htmlMatch =
     accumulated.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i) ??
