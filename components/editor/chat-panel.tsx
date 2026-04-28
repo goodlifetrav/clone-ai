@@ -276,8 +276,8 @@ export function ChatPanel({
           </div>
         )}
 
-        {/* Input */}
-        <div className="px-4 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex gap-2">
+        {/* Input — sticky on mobile so it's always visible above the keyboard */}
+        <div className="px-4 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex gap-2 sticky bottom-0">
           <input
             ref={fileInputRef}
             type="file"

@@ -57,6 +57,22 @@ export default function PricingPage() {
               </div>
             ))}
           </div>
+
+          <div className="mt-12 text-center p-6 rounded-2xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40">
+            <p className="text-sm text-neutral-600 dark:text-neutral-300 font-medium mb-1">
+              Have billing or subscription questions?
+            </p>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              Email us directly at{' '}
+              <a
+                href="mailto:support@igualai.com"
+                className="text-neutral-900 dark:text-white underline underline-offset-2 hover:no-underline"
+              >
+                support@igualai.com
+              </a>
+              {' '}and we&apos;ll get back to you within 24 hours.
+            </p>
+          </div>
         </div>
       </main>
     </div>

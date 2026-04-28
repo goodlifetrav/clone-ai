@@ -16,6 +16,7 @@ import {
   BarChart3,
   ArrowUpRight,
   CheckCircle2,
+  Mail,
 } from 'lucide-react'
 import type { User as DbUser } from '@/types'
 import { PLAN_LIMITS } from '@/types'
@@ -237,6 +238,29 @@ export default function SettingsPage() {
                   {plan === 'free' ? ' / 1' : ''}
                 </span>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Contact Support */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-neutral-500" />
+                <CardTitle className="text-base">Contact Support</CardTitle>
+              </div>
+              <CardDescription>For billing and subscription questions, email us directly.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <a
+                href="mailto:support@igualai.com"
+                className="inline-flex items-center gap-2 text-sm font-medium text-neutral-900 dark:text-white underline underline-offset-2 hover:no-underline"
+              >
+                <Mail className="w-4 h-4" />
+                support@igualai.com
+              </a>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
+                We typically respond within 24 hours on business days.
+              </p>
             </CardContent>
           </Card>
 

@@ -26,6 +26,7 @@ import {
   Zap,
   PanelLeftClose,
   PanelLeftOpen,
+  Bot,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { Project, ProjectVersion, ChatMessage } from '@/types'
@@ -39,6 +40,7 @@ import {
 import { cn } from '@/lib/utils'
 
 type RightTab = 'preview' | 'code' | 'visual' | 'terminal' | 'versions'
+type MobileTab = 'preview' | 'chat'
 
 interface SplitViewProps {
   project: Project
@@ -60,16 +62,17 @@ export function SplitView({
   onRestoreVersion,
 }: SplitViewProps) {
   const [rightTab, setRightTab] = useState<RightTab>('preview')
+  const [mobileTab, setMobileTab] = useState<MobileTab>('preview')
+  const [desktopChatVisible, setDesktopChatVisible] = useState(true)
   const [deploying, setDeploying] = useState(false)
-  const [showUpgradeBadge, setShowUpgradeBadge] = useState(false)
-  const [chatVisible, setChatVisible] = useState(true)
+  const [isFreeUser, setIsFreeUser] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
     fetch('/api/user')
       .then((r) => r.json())
       .then((data) => {
-        if (data.plan === 'free' && !data.is_admin) setShowUpgradeBadge(true)
+        if (data.plan === 'free' && !data.is_admin) setIsFreeUser(true)
       })
       .catch(() => {})
   }, [])
@@ -132,24 +135,24 @@ export function SplitView({
 
   return (
     <div className="relative flex flex-col h-screen bg-white dark:bg-neutral-950">
-      {/* Toolbar */}
+      {/* ── Toolbar ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-shrink-0 overflow-x-auto">
-        {/* Chat toggle */}
+        {/* Desktop: chat panel toggle */}
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0 flex-shrink-0"
-          onClick={() => setChatVisible((v) => !v)}
-          title={chatVisible ? 'Hide chat' : 'Show chat'}
+          className="hidden sm:flex h-7 w-7 p-0 flex-shrink-0"
+          onClick={() => setDesktopChatVisible((v) => !v)}
+          title={desktopChatVisible ? 'Hide chat' : 'Show chat'}
         >
-          {chatVisible ? (
+          {desktopChatVisible ? (
             <PanelLeftClose className="w-4 h-4" />
           ) : (
             <PanelLeftOpen className="w-4 h-4" />
           )}
         </Button>
 
-        <div className="h-4 w-px bg-neutral-200 dark:bg-neutral-700 flex-shrink-0" />
+        <div className="hidden sm:block h-4 w-px bg-neutral-200 dark:bg-neutral-700 flex-shrink-0" />
 
         {/* Navigation */}
         <Link href="/">
@@ -169,14 +172,27 @@ export function SplitView({
         <div className="h-4 w-px bg-neutral-200 dark:bg-neutral-700 flex-shrink-0" />
 
         {/* Project name */}
-        <div className="font-medium text-sm truncate max-w-40 text-neutral-700 dark:text-neutral-300 flex-shrink-0">
+        <div className="font-medium text-sm truncate max-w-32 sm:max-w-40 text-neutral-700 dark:text-neutral-300 flex-shrink-0">
           {project.name}
         </div>
 
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Actions */}
+        {/* Upgrade to Pro — free users only */}
+        {isFreeUser && (
+          <Link href="/pricing">
+            <Button
+              size="sm"
+              className="h-7 px-3 text-xs gap-1 flex-shrink-0 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white border-0"
+            >
+              <Zap className="w-3 h-3" />
+              <span className="hidden sm:inline">Upgrade to Pro</span>
+              <span className="sm:hidden">Pro</span>
+            </Button>
+          </Link>
+        )}
+
         <Button
           variant="ghost"
           size="sm"
@@ -196,18 +212,6 @@ export function SplitView({
           <Download className="w-3 h-3" />
           <span className="hidden sm:inline">Download</span>
         </Button>
-
-        {showUpgradeBadge && (
-          <Link href="/pricing">
-            <Button
-              size="sm"
-              className="h-7 px-3 text-xs gap-1 flex-shrink-0 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white border-0"
-            >
-              <Zap className="w-3 h-3" />
-              Upgrade
-            </Button>
-          </Link>
-        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -242,30 +246,70 @@ export function SplitView({
         </DropdownMenu>
       </div>
 
-      {/* Main area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left: Chat panel */}
-        {chatVisible && (
-          <div className="w-full sm:w-[380px] flex-shrink-0 border-r border-neutral-200 dark:border-neutral-800 flex flex-col overflow-hidden">
-            <ChatPanel
-              projectId={project.id}
-              currentHtml={html}
-              messages={messages}
-              onMessagesChange={onMessagesChange}
-              onHtmlChange={onHtmlChange}
-            />
-          </div>
-        )}
-
-        {/* Right: Preview/Code/etc */}
-        <div
+      {/* ── Mobile tab bar (Preview / Chat) ─────────────────────── */}
+      <div className="flex sm:hidden flex-shrink-0 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+        <button
+          onClick={() => setMobileTab('preview')}
           className={cn(
-            'flex-1 flex flex-col overflow-hidden',
-            chatVisible ? 'hidden sm:flex' : 'flex'
+            'flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 border-b-2 transition-colors',
+            mobileTab === 'preview'
+              ? 'border-neutral-900 dark:border-white text-neutral-900 dark:text-white'
+              : 'border-transparent text-neutral-500 dark:text-neutral-400'
           )}
         >
-          {/* Right tab bar */}
-          <div className="flex items-center gap-1 px-3 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex-shrink-0 overflow-x-auto">
+          <Eye className="w-4 h-4" />
+          Preview
+        </button>
+        <button
+          onClick={() => setMobileTab('chat')}
+          className={cn(
+            'flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 border-b-2 transition-colors',
+            mobileTab === 'chat'
+              ? 'border-neutral-900 dark:border-white text-neutral-900 dark:text-white'
+              : 'border-transparent text-neutral-500 dark:text-neutral-400'
+          )}
+        >
+          <Bot className="w-4 h-4" />
+          Ask AI
+        </button>
+      </div>
+
+      {/* ── Main area ────────────────────────────────────────────── */}
+      <div className="flex flex-1 overflow-hidden">
+
+        {/* Left: Chat panel
+            Mobile:   visible only when mobileTab === 'chat'
+            Desktop:  always shown (unless desktopChatVisible toggled off) */}
+        <div
+          className={cn(
+            'flex-shrink-0 border-r border-neutral-200 dark:border-neutral-800 flex-col overflow-hidden',
+            // Mobile visibility
+            mobileTab === 'chat' ? 'flex w-full' : 'hidden',
+            // Desktop visibility (overrides mobile classes at sm+)
+            desktopChatVisible ? 'sm:flex sm:w-[380px]' : 'sm:hidden'
+          )}
+        >
+          <ChatPanel
+            projectId={project.id}
+            currentHtml={html}
+            messages={messages}
+            onMessagesChange={onMessagesChange}
+            onHtmlChange={onHtmlChange}
+          />
+        </div>
+
+        {/* Right: Preview / Code / etc.
+            Mobile:   visible only when mobileTab === 'preview'
+            Desktop:  always shown */}
+        <div
+          className={cn(
+            'flex-1 flex-col overflow-hidden',
+            mobileTab === 'preview' ? 'flex' : 'hidden',
+            'sm:flex'
+          )}
+        >
+          {/* Right tab bar (desktop only — on mobile you see the full preview) */}
+          <div className="hidden sm:flex items-center gap-1 px-3 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex-shrink-0 overflow-x-auto">
             {rightTabs.map((tab) => (
               <button
                 key={tab.id}
@@ -285,24 +329,37 @@ export function SplitView({
 
           {/* Right content */}
           <div className="flex-1 min-h-0 overflow-hidden">
-            {rightTab === 'preview' && (
-              <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
+            {(rightTab === 'preview' || mobileTab === 'preview') && (
+              // On mobile always show preview; on desktop only when rightTab === 'preview'
+              <div className={cn('h-full', rightTab !== 'preview' ? 'hidden sm:block sm:h-full' : '')}>
+                <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
+              </div>
             )}
             {rightTab === 'code' && (
-              <CodeEditor value={html} onChange={onHtmlChange} className="h-full" />
+              <div className="hidden sm:block h-full">
+                <CodeEditor value={html} onChange={onHtmlChange} className="h-full" />
+              </div>
             )}
             {rightTab === 'visual' && (
-              <VisualEditor onStyleChange={setVisualCss} className="h-full" />
+              <div className="hidden sm:block h-full">
+                <VisualEditor onStyleChange={setVisualCss} className="h-full" />
+              </div>
             )}
-            {rightTab === 'terminal' && <TerminalPanel html={html} />}
+            {rightTab === 'terminal' && (
+              <div className="hidden sm:block h-full">
+                <TerminalPanel html={html} />
+              </div>
+            )}
             {rightTab === 'versions' && (
-              <VersionHistory
-                versions={versions}
-                currentHtml={html}
-                onRestore={onRestoreVersion}
-                onSaveVersion={onSaveVersion}
-                className="h-full"
-              />
+              <div className="hidden sm:block h-full">
+                <VersionHistory
+                  versions={versions}
+                  currentHtml={html}
+                  onRestore={onRestoreVersion}
+                  onSaveVersion={onSaveVersion}
+                  className="h-full"
+                />
+              </div>
             )}
           </div>
         </div>

@@ -219,6 +219,12 @@ export default function Home() {
             >
               Dashboard
             </Link>
+            <a
+              href="mailto:support@igualai.com"
+              className="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            >
+              Contact Us
+            </a>
             <Link
               href="/terms"
               className="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
