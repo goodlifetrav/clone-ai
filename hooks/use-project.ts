@@ -9,7 +9,6 @@ export function useProject(projectId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  // Exposed so split-view can drive the CodeEditor scroll-to-bottom behaviour
   const [isStreaming, setIsStreaming] = useState(false)
 
   const fetchProject = useCallback(async () => {
@@ -39,9 +38,7 @@ export function useProject(projectId: string) {
 
   const updateHtml = useCallback(
     async (html: string) => {
-      if (!project) return
       setProject((prev) => (prev ? { ...prev, html_content: html } : prev))
-
       try {
         await fetch(`/api/projects/${projectId}`, {
           method: 'PUT',
@@ -49,10 +46,10 @@ export function useProject(projectId: string) {
           body: JSON.stringify({ html_content: html }),
         })
       } catch {
-        // silently fail — local state is updated
+        // silently fail
       }
     },
-    [project, projectId]
+    [projectId]
   )
 
   const saveVersion = useCallback(async () => {
@@ -63,9 +60,7 @@ export function useProject(projectId: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ html_content: project.html_content }),
       })
-      if (res.ok) {
-        await fetchVersions()
-      }
+      if (res.ok) await fetchVersions()
     } catch {
       // silently fail
     }
@@ -83,37 +78,45 @@ export function useProject(projectId: string) {
     fetchVersions()
   }, [fetchProject, fetchVersions])
 
-  // ── Real-time stream subscription while project is processing ─────────────
-  // Subscribes to GET /api/projects/[id]/stream (SSE backed by an in-process
-  // EventEmitter in the clone route) so HTML appears character-by-character
-  // without any polling delay.
-  const streamingRef = useRef(false)
+  // ── Streaming / polling while project is generating ────────────────────────
+  const streamStartedRef = useRef(false)
 
   useEffect(() => {
-    if (!project || project.status !== 'processing') {
-      if (streamingRef.current) {
+    if (!project) return
+
+    const status = project.status
+
+    // Nothing to do for completed/errored projects
+    if (status !== 'pending' && status !== 'processing') {
+      if (streamStartedRef.current) {
         setIsStreaming(false)
-        streamingRef.current = false
+        streamStartedRef.current = false
       }
       return
     }
 
-    // Avoid opening a second stream if one is already running
-    if (streamingRef.current) return
-    streamingRef.current = true
+    // Avoid starting a second stream
+    if (streamStartedRef.current) return
+    streamStartedRef.current = true
     setIsStreaming(true)
 
     const abortController = new AbortController()
 
-    async function subscribe() {
+    if (status === 'pending') {
+      // ── PENDING: subscribe directly to the SSE generate stream ──────────
+      subscribeThroughSSE(abortController.signal)
+    } else {
+      // ── PROCESSING: another request already started it — fast-poll DB ───
+      // (e.g. page refresh mid-generation)
+      startFastPoll(abortController.signal)
+    }
+
+    async function subscribeThroughSSE(signal: AbortSignal) {
       try {
-        const res = await fetch(`/api/projects/${projectId}/stream`, {
-          signal: abortController.signal,
-        })
+        const res = await fetch(`/api/projects/${projectId}/generate`, { signal })
 
         if (!res.ok || !res.body) {
-          // Server not available — fall back to 1.5s polling
-          fallbackPoll(abortController.signal)
+          startFastPoll(signal)
           return
         }
 
@@ -143,6 +146,12 @@ export function useProject(projectId: string) {
               )
             }
 
+            if (event.usePolling) {
+              // Server told us to switch to polling (already processing in another context)
+              startFastPoll(signal)
+              return
+            }
+
             if (event.done) {
               setProject((prev) =>
                 prev
@@ -150,7 +159,7 @@ export function useProject(projectId: string) {
                   : prev
               )
               setIsStreaming(false)
-              streamingRef.current = false
+              streamStartedRef.current = false
               await fetchVersions()
               return
             }
@@ -158,19 +167,18 @@ export function useProject(projectId: string) {
             if (event.error) {
               setProject((prev) => (prev ? { ...prev, status: 'error' } : prev))
               setIsStreaming(false)
-              streamingRef.current = false
+              streamStartedRef.current = false
               return
             }
           }
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') return
-        // Stream error — fall back to polling
-        fallbackPoll(abortController.signal)
+        startFastPoll(abortController.signal)
       }
     }
 
-    function fallbackPoll(signal: AbortSignal) {
+    function startFastPoll(signal: AbortSignal) {
       const interval = setInterval(async () => {
         if (signal.aborted) { clearInterval(interval); return }
         try {
@@ -179,22 +187,19 @@ export function useProject(projectId: string) {
           const data = await res.json()
           const p: Project = data.project
           setProject(p)
-          if (p.status !== 'processing') {
+          if (p.status !== 'pending' && p.status !== 'processing') {
             clearInterval(interval)
             setIsStreaming(false)
-            streamingRef.current = false
+            streamStartedRef.current = false
             if (p.status === 'complete') fetchVersions()
           }
         } catch { /* silently fail */ }
-      }, 1500)
+      }, 500)
     }
-
-    subscribe()
 
     return () => {
       abortController.abort()
     }
-  // Re-subscribe if project ID changes or status leaves/enters 'processing'
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.status, projectId])
 

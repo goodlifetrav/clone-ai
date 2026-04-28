@@ -20,7 +20,7 @@ export interface Project {
   url: string
   thumbnail_url: string | null
   html_content: string
-  status?: 'processing' | 'complete' | 'error'
+  status?: 'pending' | 'processing' | 'complete' | 'error'
   folder_id?: string | null
   created_at: string
   updated_at: string

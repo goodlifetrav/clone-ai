@@ -71,22 +71,26 @@ export async function scrapeWebsite(
     })
 
     try {
+      const USER_AGENTS = [
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+      ]
+
       const context = await browser.newContext({
-        viewport: { width: 1440, height: 900 },
-        userAgent:
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport: { width: 1920, height: 1080 },
+        userAgent: USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
       })
 
       const page = await context.newPage()
 
       onProgress?.(`Visiting ${url}...`)
       await page.goto(url, {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
+        waitUntil: 'networkidle',
+        timeout: 30000,
       })
-
-      // Wait for the network to settle after initial load
-      await page.waitForLoadState('load', { timeout: 8000 }).catch(() => {})
 
       // Dismiss cookie consent banners, modals, and overlays before scrolling
       try {
@@ -149,6 +153,8 @@ export async function scrapeWebsite(
       } catch {
         // Never fail scraping because of a banner/popup dismissal error
       }
+
+      await page.waitForTimeout(2000)
 
       onProgress?.('Extracting HTML and CSS...')
 
@@ -214,7 +220,7 @@ export async function scrapeWebsite(
         fullPage: false,
         clip:
           pageHeight > 4000
-            ? { x: 0, y: 0, width: 1440, height: 4000 }
+            ? { x: 0, y: 0, width: 1920, height: 4000 }
             : undefined,
         type: 'jpeg',
         quality: 80,
@@ -223,7 +229,7 @@ export async function scrapeWebsite(
 
       // Extract the full HTML after all content has loaded and rendered
       const title = await page.title()
-      const html = await page.evaluate(() => document.documentElement.outerHTML)
+      const html = await page.content()
 
       await context.close()
       await browser.close()

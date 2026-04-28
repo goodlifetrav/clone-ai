@@ -83,11 +83,11 @@ export function SplitView({
   useEffect(() => {
     const prev = prevStatusRef.current
     const curr = project.status
-    if (curr === 'processing' && prev !== 'processing') {
+    if ((curr === 'processing' || curr === 'pending') && prev !== 'processing' && prev !== 'pending') {
       setRightTab('code')
       setMobileTab('preview')
     }
-    if (curr === 'complete' && prev === 'processing') {
+    if (curr === 'complete' && (prev === 'processing' || prev === 'pending')) {
       setRightTab('preview')
     }
     prevStatusRef.current = curr
@@ -98,7 +98,7 @@ export function SplitView({
     if (isStreamingProp) {
       setRightTab('code')
       setMobileTab('preview')
-    } else if (!chatGenerating && prevStatusRef.current === 'complete') {
+    } else if (!chatGenerating && (prevStatusRef.current === 'complete' || prevStatusRef.current === 'processing')) {
       // Stream just ended and we're complete — go to preview
       setRightTab('preview')
     }

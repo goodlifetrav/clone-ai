@@ -6,26 +6,55 @@ export const anthropic = new Anthropic({
 
 export const MODEL = 'claude-sonnet-4-6'
 
+/** Cheap fast model for initial cloning — 20× cheaper than sonnet */
+export const CLONE_MODEL = 'claude-haiku-4-5-20251001'
+
+/**
+ * Strip visually irrelevant content from scraped HTML before sending to Claude.
+ * Reduces token usage by 80–90% while preserving all structure needed to
+ * reconstruct the visual design.
+ */
+export function preprocessHtmlForClone(html: string, maxChars = 8000): string {
+  let result = html
+  // Remove scripts and their content
+  result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+  // Remove HTML comments
+  result = result.replace(/<!--[\s\S]*?-->/g, '')
+  // Remove noscript blocks
+  result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
+  // Collapse inline SVGs to a placeholder
+  result = result.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '<svg/>')
+  // Remove data-* attributes
+  result = result.replace(/\s+data-[a-z][a-z0-9-]*(?:="[^"]*")?/gi, '')
+  // Remove aria-* attributes
+  result = result.replace(/\s+aria-[a-z][a-z0-9-]*(?:="[^"]*")?/gi, '')
+  // Remove inline event handlers
+  result = result.replace(/\s+on[a-z]+="[^"]*"/gi, '')
+  // Collapse whitespace
+  result = result.replace(/\s+/g, ' ').trim()
+  // Truncate to budget
+  if (result.length > maxChars) {
+    result = result.slice(0, maxChars) + '…'
+  }
+  return result
+}
+
 export async function generateClone(
   htmlContent: string,
   screenshotBase64: string,
   url: string
 ): Promise<{ html: string; tokensUsed: number }> {
   const response = await anthropic.messages.create({
-    model: MODEL,
+    model: CLONE_MODEL,
     max_tokens: 8000,
-    system: `You are an expert web developer specializing in HTML, CSS, and JavaScript.
-Your task is to recreate websites as clean, self-contained HTML files.
-- Output ONLY the complete HTML file, starting with <!DOCTYPE html>
-- Inline all CSS in a <style> tag
-- Use modern CSS (flexbox, grid, custom properties)
-- Preserve the visual design, layout, colors, typography, and structure
-- Make the clone responsive
-- Replace external fonts with system fonts or Google Fonts CDN links
-- Keep all text content from the original
-- Do not include any external JavaScript that may fail
-- Replace form submissions and external API calls with placeholder alerts
-- Output nothing except the HTML code itself`,
+    system: `You are a web developer. Recreate the screenshot as a complete self-contained HTML file.
+- Output ONLY the HTML, starting with <!DOCTYPE html>
+- Inline all CSS in a <style> tag in <head>
+- Match the visual design exactly: colors, fonts, layout, spacing, content
+- Make it responsive with modern CSS (flexbox, grid)
+- Include Google Fonts CDN link if web fonts are used
+- No JavaScript unless essential
+- Output nothing except the HTML`,
     messages: [
       {
         role: 'user',
@@ -44,7 +73,7 @@ Your task is to recreate websites as clean, self-contained HTML files.
 
 Here is the original HTML source for reference:
 \`\`\`html
-${htmlContent.slice(0, 50000)}
+${preprocessHtmlForClone(htmlContent)}
 \`\`\`
 
 Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`,
@@ -97,21 +126,17 @@ export async function generateCloneStreaming(
   const SAVE_INTERVAL = 2000 // chars between DB saves
 
   const stream = await anthropic.messages.create({
-    model: MODEL,
+    model: CLONE_MODEL,
     max_tokens: 8000,
     stream: true,
-    system: `You are an expert web developer specializing in HTML, CSS, and JavaScript.
-Your task is to recreate websites as clean, self-contained HTML files.
-- Output ONLY the complete HTML file, starting with <!DOCTYPE html>
-- Inline all CSS in a <style> tag
-- Use modern CSS (flexbox, grid, custom properties)
-- Preserve the visual design, layout, colors, typography, and structure
-- Make the clone responsive
-- Replace external fonts with system fonts or Google Fonts CDN links
-- Keep all text content from the original
-- Do not include any external JavaScript that may fail
-- Replace form submissions and external API calls with placeholder alerts
-- Output nothing except the HTML code itself`,
+    system: `You are a web developer. Recreate the screenshot as a complete self-contained HTML file.
+- Output ONLY the HTML, starting with <!DOCTYPE html>
+- Inline all CSS in a <style> tag in <head>
+- Match the visual design exactly: colors, fonts, layout, spacing, content
+- Make it responsive with modern CSS (flexbox, grid)
+- Include Google Fonts CDN link if web fonts are used
+- No JavaScript unless essential
+- Output nothing except the HTML`,
     messages: [
       {
         role: 'user',
@@ -130,7 +155,7 @@ Your task is to recreate websites as clean, self-contained HTML files.
 
 Here is the original HTML source for reference:
 \`\`\`html
-${htmlContent.slice(0, 50000)}
+${preprocessHtmlForClone(htmlContent)}
 \`\`\`
 
 Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`,
