@@ -14,7 +14,7 @@ export const CLONE_MODEL = 'claude-haiku-4-5-20251001'
  * Reduces token usage by 80–90% while preserving all structure needed to
  * reconstruct the visual design.
  */
-export function preprocessHtmlForClone(html: string, maxChars = 8000): string {
+export function preprocessHtmlForClone(html: string, maxChars = 6000): string {
   let result = html
   // Remove scripts and their content
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -22,14 +22,18 @@ export function preprocessHtmlForClone(html: string, maxChars = 8000): string {
   result = result.replace(/<!--[\s\S]*?-->/g, '')
   // Remove noscript blocks
   result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
-  // Collapse inline SVGs to a placeholder
-  result = result.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '<svg/>')
-  // Remove data-* attributes
-  result = result.replace(/\s+data-[a-z][a-z0-9-]*(?:="[^"]*")?/gi, '')
-  // Remove aria-* attributes
-  result = result.replace(/\s+aria-[a-z][a-z0-9-]*(?:="[^"]*")?/gi, '')
-  // Remove inline event handlers
-  result = result.replace(/\s+on[a-z]+="[^"]*"/gi, '')
+  // Remove decorative SVGs (those without a title or aria-label attribute)
+  result = result.replace(/<svg\b(?![^>]*\b(?:title|aria-label)\b)[^>]*>[\s\S]*?<\/svg>/gi, '')
+  // Self-closing decorative SVGs
+  result = result.replace(/<svg\b(?![^>]*\b(?:title|aria-label)\b)[^>]*\/>/gi, '')
+  // Strip all attributes from tags except the allowlist
+  const ALLOWED_ATTRS = new Set(['src', 'href', 'srcset', 'class', 'id', 'style', 'rel', 'type'])
+  result = result.replace(/<([a-z][a-z0-9-]*)(\s[^>]*)?(\/?)>/gi, (_m, tag: string, attrStr: string | undefined, selfClose: string) => {
+    if (!attrStr) return `<${tag}${selfClose}>`
+    const attrs = attrStr.match(/\b([a-z][a-z0-9:-]*)=(?:"[^"]*"|'[^']*'|[^\s>/]+)/gi) ?? []
+    const kept = attrs.filter((a) => ALLOWED_ATTRS.has(a.split('=')[0].toLowerCase().trim()))
+    return `<${tag}${kept.length ? ' ' + kept.join(' ') : ''}${selfClose}>`
+  })
   // Collapse whitespace
   result = result.replace(/\s+/g, ' ').trim()
   // Truncate to budget
@@ -39,6 +43,13 @@ export function preprocessHtmlForClone(html: string, maxChars = 8000): string {
   return result
 }
 
+/** Strip markdown code fences that Claude sometimes wraps around HTML output */
+function stripMarkdownFences(text: string): string {
+  return text
+    .replace(/^```(?:html|HTML)?\n?/, '')
+    .replace(/\n?```\s*$/, '')
+}
+
 export async function generateClone(
   htmlContent: string,
   screenshotBase64: string,
@@ -46,15 +57,16 @@ export async function generateClone(
 ): Promise<{ html: string; tokensUsed: number }> {
   const response = await anthropic.messages.create({
     model: CLONE_MODEL,
-    max_tokens: 8000,
+    max_tokens: 3000,
     system: `You are a web developer. Recreate the screenshot as a complete self-contained HTML file.
-- Output ONLY the HTML, starting with <!DOCTYPE html>
+- Output ONLY raw HTML — no markdown, no code fences, no explanation
+- Start your response with <!DOCTYPE html> and end with </html>
 - Inline all CSS in a <style> tag in <head>
 - Match the visual design exactly: colors, fonts, layout, spacing, content
 - Make it responsive with modern CSS (flexbox, grid)
 - Include Google Fonts CDN link if web fonts are used
-- No JavaScript unless essential
-- Output nothing except the HTML`,
+- IMPORTANT: Use the exact image src URLs from the original HTML — never replace with placeholders
+- No JavaScript unless essential`,
     messages: [
       {
         role: 'user',
@@ -88,27 +100,18 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
     throw new Error('Unexpected response type from Claude')
   }
 
-  const raw = content.text
+  const raw = stripMarkdownFences(content.text.trim())
 
-  // Extract the HTML document regardless of surrounding prose or code fences.
-  // Look for content from <!DOCTYPE or <html through to the closing </html>.
-  const htmlMatch = raw.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i)
-    ?? raw.match(/<html[\s\S]*<\/html>/i)
+  // Extract the HTML document from <!DOCTYPE or <html to </html>
+  const htmlMatch =
+    raw.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i) ??
+    raw.match(/<html[\s\S]*<\/html>/i)
 
-  if (!htmlMatch) {
-    // Fall back to stripping markdown fences if no document tags found
-    let html = raw.trim()
-    if (html.startsWith('```')) {
-      html = html.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '').trim()
-    }
-    if (!html) {
-      throw new Error('Claude returned empty HTML — please try again')
-    }
-    return { html, tokensUsed: response.usage.input_tokens + response.usage.output_tokens }
-  }
+  const html = htmlMatch ? htmlMatch[0] : raw
+  if (!html) throw new Error('Claude returned empty HTML — please try again')
 
   return {
-    html: htmlMatch[0],
+    html,
     tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
   }
 }
@@ -127,16 +130,17 @@ export async function generateCloneStreaming(
 
   const stream = await anthropic.messages.create({
     model: CLONE_MODEL,
-    max_tokens: 8000,
+    max_tokens: 3000,
     stream: true,
     system: `You are a web developer. Recreate the screenshot as a complete self-contained HTML file.
-- Output ONLY the HTML, starting with <!DOCTYPE html>
+- Output ONLY raw HTML — no markdown, no code fences, no explanation
+- Start your response with <!DOCTYPE html> and end with </html>
 - Inline all CSS in a <style> tag in <head>
 - Match the visual design exactly: colors, fonts, layout, spacing, content
 - Make it responsive with modern CSS (flexbox, grid)
 - Include Google Fonts CDN link if web fonts are used
-- No JavaScript unless essential
-- Output nothing except the HTML`,
+- IMPORTANT: Use the exact image src URLs from the original HTML — never replace with placeholders
+- No JavaScript unless essential`,
     messages: [
       {
         role: 'user',
@@ -179,7 +183,8 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
     ) {
       accumulated += event.delta.text
       // Fire on every delta for real-time UI streaming (no throttle)
-      onDelta?.(accumulated)
+      // Strip markdown fences so the code editor always shows clean HTML
+      onDelta?.(stripMarkdownFences(accumulated))
       // Throttled DB save
       if (accumulated.length - lastSaveLength >= SAVE_INTERVAL) {
         lastSaveLength = accumulated.length
@@ -190,29 +195,18 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
     }
   }
 
-  // Synthesise a usage object matching what generateClone returns
-  const finalMessage = { usage: { input_tokens: inputTokens, output_tokens: outputTokens } }
+  const clean = stripMarkdownFences(accumulated.trim())
 
   const htmlMatch =
-    accumulated.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i) ??
-    accumulated.match(/<html[\s\S]*<\/html>/i)
+    clean.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i) ??
+    clean.match(/<html[\s\S]*<\/html>/i)
 
-  let html: string
-  if (!htmlMatch) {
-    html = accumulated.trim()
-    if (html.startsWith('```')) {
-      html = html.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '').trim()
-    }
-    if (!html) {
-      throw new Error('Claude returned empty HTML — please try again')
-    }
-  } else {
-    html = htmlMatch[0]
-  }
+  const html = htmlMatch ? htmlMatch[0] : clean
+  if (!html) throw new Error('Claude returned empty HTML — please try again')
 
   return {
     html,
-    tokensUsed: finalMessage.usage.input_tokens + finalMessage.usage.output_tokens,
+    tokensUsed: inputTokens + outputTokens,
   }
 }
 
