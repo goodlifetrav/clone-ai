@@ -36,6 +36,68 @@ export async function scrapeWebsite(
       // Wait for the network to settle after initial load
       await page.waitForLoadState('load', { timeout: 8000 }).catch(() => {})
 
+      // Dismiss cookie consent banners, modals, and overlays before scrolling
+      try {
+        // Press Escape to close any modal that responds to it
+        await page.keyboard.press('Escape')
+
+        // Click the first matching dismiss/accept button found on the page
+        const dismissLabels = [
+          'Accept All',
+          'Accept Cookies',
+          'Accept all cookies',
+          'Accept all',
+          'Accept',
+          'I agree',
+          'I Accept',
+          'Agree',
+          'Got it',
+          'OK',
+          'Okay',
+          'Close',
+          'No thanks',
+          'No, thanks',
+          'Dismiss',
+          'Continue',
+          'Allow',
+          'Allow all',
+          'Allow All Cookies',
+          'Consent',
+        ]
+
+        for (const label of dismissLabels) {
+          const btn = page.getByRole('button', { name: label, exact: false })
+          if (await btn.first().isVisible({ timeout: 500 }).catch(() => false)) {
+            await btn.first().click({ timeout: 1000 }).catch(() => {})
+            break
+          }
+        }
+
+        // Also try common cookie banner selectors as a fallback
+        const bannerSelectors = [
+          '[id*="cookie"] button',
+          '[class*="cookie"] button',
+          '[id*="consent"] button',
+          '[class*="consent"] button',
+          '[id*="banner"] button',
+          '[class*="banner"] button',
+          '[aria-label*="cookie" i]',
+          '[aria-label*="consent" i]',
+        ]
+        for (const sel of bannerSelectors) {
+          const el = page.locator(sel).first()
+          if (await el.isVisible({ timeout: 300 }).catch(() => false)) {
+            await el.click({ timeout: 1000 }).catch(() => {})
+            break
+          }
+        }
+
+        // Short pause for any dismiss animations to complete
+        await page.waitForTimeout(500)
+      } catch {
+        // Never fail scraping because of a banner/popup dismissal error
+      }
+
       onProgress?.('Extracting HTML and CSS...')
 
       // Scroll down the full page in steps to trigger lazy-loaded images,
