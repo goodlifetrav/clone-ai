@@ -84,13 +84,15 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
   }
 }
 
-// Same as generateClone but streams partial HTML via onPartialHtml callback
-// so the caller can save incremental progress to the database.
+// Same as generateClone but streams partial HTML via callbacks:
+//   onPartialHtml – throttled DB save (every SAVE_INTERVAL chars)
+//   onDelta       – fired on every single Claude delta for real-time UI streaming
 export async function generateCloneStreaming(
   htmlContent: string,
   screenshotBase64: string,
   url: string,
-  onPartialHtml: (partialText: string) => Promise<void>
+  onPartialHtml: (partialText: string) => Promise<void>,
+  onDelta?: (accumulated: string) => void
 ): Promise<{ html: string; tokensUsed: number }> {
   const SAVE_INTERVAL = 2000 // chars between DB saves
 
@@ -151,6 +153,9 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
       event.delta.type === 'text_delta'
     ) {
       accumulated += event.delta.text
+      // Fire on every delta for real-time UI streaming (no throttle)
+      onDelta?.(accumulated)
+      // Throttled DB save
       if (accumulated.length - lastSaveLength >= SAVE_INTERVAL) {
         lastSaveLength = accumulated.length
         await onPartialHtml(accumulated)

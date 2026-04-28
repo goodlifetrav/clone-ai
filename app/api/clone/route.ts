@@ -6,6 +6,7 @@ import { scrapeWebsite } from '@/lib/playwright'
 import { generateCloneStreaming } from '@/lib/anthropic'
 import { extractDomain } from '@/lib/utils'
 import { isAdminEmail } from '@/lib/admin'
+import { createEntry, removeEntry } from '@/lib/stream-registry'
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder()
@@ -108,6 +109,10 @@ export async function POST(request: NextRequest) {
         // which shows a processing state, and can safely close the tab.
         send({ processing: true, projectId: project.id })
 
+        // Register a stream entry so the editor can subscribe to live chunks
+        // via GET /api/projects/[id]/stream (in-process EventEmitter).
+        const streamEntry = createEntry(project.id)
+
         // ── Everything below runs even if the client disconnects ──────────
 
         // Scrape with live progress — check cache first (24h window)
@@ -146,6 +151,8 @@ export async function POST(request: NextRequest) {
               .from('projects')
               .update({ status: 'error' })
               .eq('id', project.id)
+            streamEntry.emitter.emit('streamError', error.message)
+            removeEntry(project.id)
             if (
               error.message?.includes('playwright') ||
               error.message?.includes('chromium') ||
@@ -159,7 +166,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Generate clone with Claude (streaming — saves partial HTML to DB live)
+        // Generate clone with Claude (streaming)
         send({ step: 'Sending to Claude AI...' })
         let html: string
         let tokensUsed: number
@@ -168,12 +175,17 @@ export async function POST(request: NextRequest) {
             scrapeResult.html,
             scrapeResult.screenshotBase64,
             url,
+            // onPartialHtml — throttled DB save (every ~2 000 chars)
             async (partialText) => {
-              // Save partial HTML so the editor can show live progress
               await supabase
                 .from('projects')
                 .update({ html_content: partialText })
                 .eq('id', project.id)
+            },
+            // onDelta — fires on EVERY Claude delta for real-time editor streaming
+            (accumulated) => {
+              streamEntry.latestHtml = accumulated
+              streamEntry.emitter.emit('html', accumulated)
             }
           ))
         } catch (err: unknown) {
@@ -183,6 +195,8 @@ export async function POST(request: NextRequest) {
             .from('projects')
             .update({ status: 'error' })
             .eq('id', project.id)
+          streamEntry.emitter.emit('streamError', error.message)
+          removeEntry(project.id)
           send({ error: `AI generation failed: ${error.message}` })
           return
         }
@@ -201,6 +215,10 @@ export async function POST(request: NextRequest) {
             status: 'complete',
           })
           .eq('id', project.id)
+
+        // Signal the editor stream that generation is complete, then clean up
+        streamEntry.emitter.emit('done', { html })
+        removeEntry(project.id)
 
         // Upload thumbnail
         const pngBuffer = Buffer.from(scrapeResult.screenshotBase64, 'base64')

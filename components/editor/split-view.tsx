@@ -47,6 +47,8 @@ interface SplitViewProps {
   project: Project
   versions: ProjectVersion[]
   messages: ChatMessage[]
+  /** True while the clone SSE stream is actively pushing HTML chunks */
+  isStreaming?: boolean
   onHtmlChange: (html: string) => void
   onMessagesChange: (messages: ChatMessage[]) => void
   onSaveVersion: () => void
@@ -57,6 +59,7 @@ export function SplitView({
   project,
   versions,
   messages,
+  isStreaming: isStreamingProp = false,
   onHtmlChange,
   onMessagesChange,
   onSaveVersion,
@@ -68,33 +71,42 @@ export function SplitView({
   const [isFreeUser, setIsFreeUser] = useState(false)
   const [userPlan, setUserPlan] = useState<string>('free')
   const [integrationModal, setIntegrationModal] = useState<'github' | 'vercel' | 'shopify' | null>(null)
-  // True while the clone is generating OR the AI chat is streaming
-  const [isGenerating, setIsGenerating] = useState(project.status === 'processing')
+  // True while the clone SSE stream is active OR the AI chat is streaming
+  // isStreamingProp comes from use-project's real-time stream subscription;
+  // isGenerating covers the chat streaming case managed locally.
+  const [chatGenerating, setChatGenerating] = useState(false)
+  const isGenerating = isStreamingProp || chatGenerating
   const prevStatusRef = useRef(project.status)
   const router = useRouter()
 
-  // Auto-switch tabs when clone generation starts / finishes
+  // Auto-switch tabs based on project.status transitions (clone streaming)
   useEffect(() => {
     const prev = prevStatusRef.current
     const curr = project.status
     if (curr === 'processing' && prev !== 'processing') {
-      setIsGenerating(true)
       setRightTab('code')
       setMobileTab('preview')
     }
     if (curr === 'complete' && prev === 'processing') {
-      setIsGenerating(false)
       setRightTab('preview')
-    }
-    if (curr === 'error' && prev === 'processing') {
-      setIsGenerating(false)
     }
     prevStatusRef.current = curr
   }, [project.status])
 
+  // Also switch tabs immediately when the stream activates/deactivates
+  useEffect(() => {
+    if (isStreamingProp) {
+      setRightTab('code')
+      setMobileTab('preview')
+    } else if (!chatGenerating && prevStatusRef.current === 'complete') {
+      // Stream just ended and we're complete — go to preview
+      setRightTab('preview')
+    }
+  }, [isStreamingProp, chatGenerating])
+
   // Called by ChatPanel while it's streaming an AI response
   const handleChatGenerating = useCallback((generating: boolean) => {
-    setIsGenerating(generating)
+    setChatGenerating(generating)
     if (generating) {
       setRightTab('code')
       setMobileTab('preview')
@@ -361,7 +373,7 @@ export function SplitView({
             {/* ── Mobile layer ─────────────────────────────────────────── */}
             <div className="absolute inset-0 sm:hidden">
               {isGenerating ? (
-                <CodeEditor value={html} onChange={onHtmlChange} className="h-full" />
+                <CodeEditor value={html} onChange={onHtmlChange} className="h-full" isStreaming={isGenerating} />
               ) : (
                 <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
               )}
@@ -373,7 +385,7 @@ export function SplitView({
                 <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
               )}
               {rightTab === 'code' && (
-                <CodeEditor value={html} onChange={onHtmlChange} className="h-full" />
+                <CodeEditor value={html} onChange={onHtmlChange} className="h-full" isStreaming={isGenerating} />
               )}
               {rightTab === 'visual' && (
                 <VisualEditor onStyleChange={setVisualCss} className="h-full" />

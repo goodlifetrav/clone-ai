@@ -22,6 +22,7 @@ export default function EditorPage() {
     setMessages,
     loading,
     error,
+    isStreaming,
     updateHtml,
     saveVersion,
     restoreVersion,
@@ -93,6 +94,7 @@ export default function EditorPage() {
       project={project}
       versions={versions}
       messages={messages}
+      isStreaming={isStreaming}
       onHtmlChange={updateHtml}
       onMessagesChange={setMessages}
       onSaveVersion={saveVersion}
