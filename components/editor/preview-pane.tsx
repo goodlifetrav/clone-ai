@@ -67,7 +67,7 @@ export function PreviewPane({ projectId, html, className = '' }: PreviewPaneProp
         <iframe
           srcDoc={safeHtml}
           className="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          sandbox="allow-scripts allow-same-origin"
           title="Preview"
         />
       </div>
