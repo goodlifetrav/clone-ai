@@ -28,6 +28,8 @@ import {
   PanelLeftOpen,
   Bot,
   Sparkles,
+  ImagePlus,
+  Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { Project, ProjectVersion, ChatMessage } from '@/types'
@@ -78,6 +80,12 @@ export function SplitView({
   const isGenerating = isStreamingProp || chatGenerating
   const prevStatusRef = useRef(project.status)
   const router = useRouter()
+
+  // Image upload state
+  const [uploadedImages, setUploadedImages] = useState<string[]>([])
+  const [chatInputAppend, setChatInputAppend] = useState<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const imageUploadRef = useRef<HTMLInputElement>(null)
 
   // Auto-switch tabs based on project.status transitions (clone streaming)
   useEffect(() => {
@@ -158,6 +166,28 @@ export function SplitView({
     setIntegrationModal('vercel')
   }
 
+  const handleImageFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingImage(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(`/api/projects/${project.id}/upload-image`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (res.ok) {
+        const data = await res.json() as { url: string }
+        setUploadedImages((prev) => [...prev, data.url])
+        setChatInputAppend(data.url)
+      }
+    } catch { /* silent — upload errors are non-fatal */ } finally {
+      setUploadingImage(false)
+      e.target.value = ''
+    }
+  }
+
   const rightTabs: { id: RightTab; label: string; icon: React.ReactNode }[] = [
     { id: 'preview', label: 'Preview', icon: <Eye className="w-3.5 h-3.5" /> },
     { id: 'code', label: 'Code', icon: <Code2 className="w-3.5 h-3.5" /> },
@@ -168,6 +198,15 @@ export function SplitView({
 
   return (
     <div className="relative flex flex-col h-[100dvh] bg-white dark:bg-neutral-950">
+      {/* Hidden file input for image uploads */}
+      <input
+        ref={imageUploadRef}
+        type="file"
+        accept=".jpg,.jpeg,.png,.gif,.webp,.svg,image/*"
+        className="hidden"
+        onChange={handleImageFileSelect}
+      />
+
       {/* ── Toolbar ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-shrink-0 overflow-x-auto">
         {/* Desktop: chat panel toggle */}
@@ -256,6 +295,22 @@ export function SplitView({
           <span className="hidden sm:inline">Download</span>
         </Button>
 
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs gap-1 flex-shrink-0"
+          onClick={() => imageUploadRef.current?.click()}
+          disabled={uploadingImage}
+          title="Upload an image to R2 and insert its URL into the AI chat"
+        >
+          {uploadingImage ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <ImagePlus className="w-3 h-3" />
+          )}
+          <span className="hidden sm:inline">{uploadingImage ? 'Uploading…' : 'Upload'}</span>
+        </Button>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="sm" className="h-7 px-3 text-xs gap-1 flex-shrink-0">
@@ -331,6 +386,10 @@ export function SplitView({
             onMessagesChange={onMessagesChange}
             onHtmlChange={onHtmlChange}
             onGenerating={handleChatGenerating}
+            appendToInput={chatInputAppend}
+            onAppendConsumed={() => setChatInputAppend(null)}
+            uploadedImages={uploadedImages}
+            onImageLibraryInsert={(url) => setChatInputAppend(url)}
           />
         </div>
 

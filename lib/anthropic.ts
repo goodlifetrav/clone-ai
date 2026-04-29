@@ -165,6 +165,24 @@ export function injectImageUrls(claudeHtml: string, srcs: string[]): string {
   return result
 }
 
+/**
+ * Extract h1–h3 headings from scraped HTML as a structured section list to
+ * give Claude a "table of contents" so it doesn't skip any page sections.
+ */
+function extractPageSections(html: string): string {
+  const texts: string[] = []
+  const re = /<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html)) !== null) {
+    const text = m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+    if (text.length > 1 && text.length < 120 && !texts.includes(text)) texts.push(text)
+    if (texts.length >= 25) break
+  }
+  return texts.length > 0
+    ? `Page sections (headings found in HTML):\n${texts.map((t) => `• ${t}`).join('\n')}`
+    : ''
+}
+
 function buildCloneSystemPrompt(hasImages: boolean): string {
   const imageRules = hasImages
     ? `IMAGES — this is critical, read carefully:
@@ -188,19 +206,21 @@ function buildCloneSystemPrompt(hasImages: boolean): string {
 - Start your response with <!DOCTYPE html> and end with </html>
 - Inline all CSS in a <style> tag in <head>
 - Match the visual design exactly: colors, fonts, layout, spacing, content text
-- Reconstruct ALL sections visible in the screenshot — hero, navigation, product grids, footers, etc.
+- Reconstruct EVERY section visible in the screenshot — hero, navigation, product grids, feature lists, testimonials, footers, etc. Do not skip or abbreviate any section.
 - Make it responsive with modern CSS (flexbox, grid)
 - Include Google Fonts CDN link if web fonts are used
 - No JavaScript unless essential
 ${imageRules}`
 }
 
-function buildCloneUserPrompt(url: string, imageCount: number): string {
+function buildCloneUserPrompt(url: string, imageCount: number, pageSections: string): string {
   return `Recreate this website (${url}) as a complete, self-contained HTML file.
 
 ${imageCount > 0 ? `The page has ${imageCount} image${imageCount > 1 ? 's' : ''} — use IMAGE_1${imageCount > 1 ? ` through IMAGE_${imageCount}` : ''} as src values for <img> tags in the order they appear.` : 'No real image URLs are available — use styled placeholder divs instead of <img> tags as instructed.'}
 
-Reconstruct the full page layout from the screenshot. Include all visible text, sections, navigation, product cards, and structure.`
+${pageSections ? `${pageSections}\n\nYou MUST include ALL of the above sections in your output. Do not skip any.` : ''}
+
+Reconstruct the COMPLETE page layout from the screenshot. Include every visible section, all text content, navigation, product cards, and footer. Do not truncate or omit any part of the page.`
 }
 
 export async function generateClone(
@@ -208,9 +228,10 @@ export async function generateClone(
   screenshotBase64: string,
   url: string
 ): Promise<{ html: string; tokensUsed: number }> {
-  // Extract real image URLs from the scraped HTML for post-processing injection.
-  // We do NOT send the HTML to Claude — only the full-page screenshot.
+  // Extract real image URLs and page sections from the scraped HTML.
+  // We do NOT send the HTML to Claude — only the screenshot + section list.
   const { srcs } = extractAndNumberImages(htmlContent)
+  const pageSections = extractPageSections(htmlContent)
 
   const response = await anthropic.messages.create({
     model: CLONE_MODEL,
@@ -226,7 +247,7 @@ export async function generateClone(
           },
           {
             type: 'text',
-            text: buildCloneUserPrompt(url, srcs.length),
+            text: buildCloneUserPrompt(url, srcs.length, pageSections),
           },
         ],
       },
@@ -261,9 +282,10 @@ export async function generateCloneStreaming(
 ): Promise<{ html: string; tokensUsed: number }> {
   const SAVE_INTERVAL = 2000 // chars between DB saves
 
-  // Extract real image URLs from the scraped HTML for post-processing injection.
-  // We do NOT send the HTML to Claude — only the full-page screenshot.
+  // Extract real image URLs and page sections from the scraped HTML.
+  // We do NOT send the HTML to Claude — only the screenshot + section list.
   const { srcs } = extractAndNumberImages(htmlContent)
+  const pageSections = extractPageSections(htmlContent)
 
   const stream = await anthropic.messages.create({
     model: CLONE_MODEL,
@@ -280,7 +302,7 @@ export async function generateCloneStreaming(
           },
           {
             type: 'text',
-            text: buildCloneUserPrompt(url, srcs.length),
+            text: buildCloneUserPrompt(url, srcs.length, pageSections),
           },
         ],
       },

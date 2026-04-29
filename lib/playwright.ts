@@ -126,7 +126,7 @@ async function mirrorImagesToR2(
       return false
     }
     return img.width >= 10 && img.height >= 10
-  }).slice(0, 20)
+  }).slice(0, 50)
 
   console.log(`[R2] Candidates after dedup + size filter (≥10×10): ${candidates.length}`)
   if (candidates.length > 0) {

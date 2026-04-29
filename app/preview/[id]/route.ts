@@ -25,6 +25,36 @@ const CSS_RESET = `
 </style>
 `
 
+// Proxy script: retry blocked images through corsproxy.io when they fail to load.
+// Uses no regex — only string methods — to stay template-literal safe.
+const PROXY_SCRIPT = `<script>
+(function(){
+  var PROXY = 'https://corsproxy.io/?url=';
+  function retry(img) {
+    if (img.getAttribute('data-proxy')) return;
+    img.setAttribute('data-proxy', '1');
+    var orig = img.src || '';
+    if (orig.indexOf('http') === 0 && orig.indexOf('corsproxy.io') === -1) {
+      img.src = PROXY + encodeURIComponent(orig);
+    }
+  }
+  function attach(img) {
+    img.addEventListener('error', function(){ retry(img); });
+    if (img.complete && img.naturalWidth === 0 && img.src) retry(img);
+  }
+  document.querySelectorAll('img').forEach(attach);
+  new MutationObserver(function(muts){
+    muts.forEach(function(m){
+      m.addedNodes.forEach(function(n){
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'IMG') attach(n);
+        if (n.querySelectorAll) n.querySelectorAll('img').forEach(attach);
+      });
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true });
+})();
+</script>`
+
 function prepareHtml(raw: string): string {
   let html = raw.replace(
     /<html([^>]*)>/i,
@@ -36,6 +66,12 @@ function prepareHtml(raw: string): string {
     html = html.replace(/<head([^>]*)>/i, `<head$1>${CSS_RESET}`)
   } else {
     html = CSS_RESET + html
+  }
+  // Inject CORS proxy script before </body> so broken images retry via proxy
+  if (/<\/body>/i.test(html)) {
+    html = html.replace(/<\/body>/i, `${PROXY_SCRIPT}</body>`)
+  } else {
+    html += PROXY_SCRIPT
   }
   return html
 }
@@ -85,7 +121,8 @@ export async function GET(
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
-        'X-Frame-Options': 'SAMEORIGIN',
+        // Allow all external images (R2, CDNs, original sites) to load
+        'Content-Security-Policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
       },
     })
   } catch (err) {

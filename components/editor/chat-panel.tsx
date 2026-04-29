@@ -17,6 +17,12 @@ interface ChatPanelProps {
   onHtmlChange: (html: string) => void
   /** Called with true when a request starts streaming, false when it finishes */
   onGenerating?: (generating: boolean) => void
+  /** URL to append to the chat input (e.g. after an image upload from the toolbar) */
+  appendToInput?: string | null
+  onAppendConsumed?: () => void
+  /** R2 URLs of images uploaded this session, shown as a clickable library */
+  uploadedImages?: string[]
+  onImageLibraryInsert?: (url: string) => void
 }
 
 export function ChatPanel({
@@ -26,6 +32,10 @@ export function ChatPanel({
   onMessagesChange,
   onHtmlChange,
   onGenerating,
+  appendToInput,
+  onAppendConsumed,
+  uploadedImages,
+  onImageLibraryInsert,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -53,6 +63,14 @@ export function ChatPanel({
     }
     fetchChatStatus()
   }, [projectId])
+
+  // When the toolbar uploads an image, append its URL to the chat input
+  useEffect(() => {
+    if (appendToInput) {
+      setInput((prev) => (prev ? `${prev} ${appendToInput}` : appendToInput))
+      onAppendConsumed?.()
+    }
+  }, [appendToInput, onAppendConsumed])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -233,6 +251,25 @@ export function ChatPanel({
             <span className="text-xs text-neutral-400 ml-auto">Press Enter to send</span>
           )}
         </div>
+
+        {/* Uploaded image library */}
+        {uploadedImages && uploadedImages.length > 0 && (
+          <div className="px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/60">
+            <p className="text-xs text-neutral-400 mb-1.5">Uploaded images — click to insert URL:</p>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {uploadedImages.map((url, i) => (
+                <button
+                  key={i}
+                  onClick={() => onImageLibraryInsert?.(url)}
+                  className="flex-shrink-0 w-14 h-14 rounded border border-neutral-200 dark:border-neutral-700 overflow-hidden hover:border-neutral-500 dark:hover:border-neutral-400 transition-colors"
+                  title={`Click to insert: ${url}`}
+                >
+                  <img src={url} alt={`Upload ${i + 1}`} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Messages */}
         <ScrollArea className="flex-1 min-h-0 p-4">
