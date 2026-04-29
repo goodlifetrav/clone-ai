@@ -510,6 +510,13 @@ export async function scrapeWebsite(
             expanded.set('//' + orig.slice('http://'.length), r2)
           }
         }
+        // Also add HTML-entity encoded variants: HTML attributes often encode
+        // '&' as '&amp;' (e.g. ?v=1&amp;width=100) so we need both forms.
+        for (const [orig, r2] of [...expanded]) {
+          if (orig.includes('&')) {
+            expanded.set(orig.replace(/&/g, '&amp;'), r2)
+          }
+        }
 
         let replacements = 0
         for (const [orig, r2] of expanded) {

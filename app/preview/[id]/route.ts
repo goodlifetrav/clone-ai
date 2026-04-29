@@ -67,9 +67,13 @@ function prepareHtml(raw: string): string {
   } else {
     html = CSS_RESET + html
   }
-  // Inject CORS proxy script before </body> so broken images retry via proxy
+  // Inject CORS proxy script before </body> so broken images retry via proxy.
+  // Use function-form replace to prevent $ in the script string being
+  // interpreted as regex back-references.
   if (/<\/body>/i.test(html)) {
-    html = html.replace(/<\/body>/i, `${PROXY_SCRIPT}</body>`)
+    html = html.replace(/<\/body>/i, () => PROXY_SCRIPT + '</body>')
+  } else if (/<\/html>/i.test(html)) {
+    html = html.replace(/<\/html>/i, () => PROXY_SCRIPT + '</html>')
   } else {
     html += PROXY_SCRIPT
   }
