@@ -167,6 +167,7 @@ export async function scrapeWebsite(
   onProgress?: (step: string) => void,
   projectId?: string
 ): Promise<ScrapeResult> {
+  console.log(`[SCRAPE] Starting scrape: url=${url} projectId=${projectId ?? '(none)'}`)
   try {
     const { chromium } = await import('playwright')
 
