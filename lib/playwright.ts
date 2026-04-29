@@ -224,19 +224,8 @@ export async function scrapeWebsite(
         Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] })
       })
 
-      // For apple.com root, force the English locale path so IP-based geo
-      // detection doesn't redirect to a localised storefront (e.g. /fr/).
-      let navigateUrl = url
-      try {
-        const parsed = new URL(url)
-        if (parsed.hostname.endsWith('apple.com') && (parsed.pathname === '/' || parsed.pathname === '')) {
-          navigateUrl = 'https://www.apple.com/en/'
-          console.log(`[SCRAPE] Rewriting apple.com URL to force English: ${navigateUrl}`)
-        }
-      } catch { /* ignore parse errors */ }
-
       onProgress?.(`Visiting ${url}...`)
-      await page.goto(navigateUrl, {
+      await page.goto(url, {
         waitUntil: 'networkidle',
         timeout: 30000,
       })
