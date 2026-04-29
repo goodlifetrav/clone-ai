@@ -208,9 +208,24 @@ export async function scrapeWebsite(
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
       ]
 
+      // Always use a realistic Chrome on Mac user-agent for best compatibility
+      const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
       const context = await browser.newContext({
         viewport: { width: 1920, height: 1080 },
-        userAgent: USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
+        userAgent: CHROME_UA,
+        extraHTTPHeaders: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"macOS"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Upgrade-Insecure-Requests': '1',
+        },
       })
 
       const page = await context.newPage()
@@ -221,69 +236,129 @@ export async function scrapeWebsite(
         timeout: 30000,
       })
 
-      // Dismiss cookie consent banners, modals, and overlays before scrolling
-      try {
-        // Press Escape to close any modal that responds to it
-        await page.keyboard.press('Escape')
+      // ── Pre-scrape cleanup ────────────────────────────────────────────────
+      // Dismiss popups, age gates, and overlays; add human-like mouse movement.
+      // Runs twice — once after initial load, once after the first scroll pass.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async function dismissPopups(pg: typeof page) {
+        try {
+          await pg.keyboard.press('Escape')
 
-        // Click the first matching dismiss/accept button found on the page
-        const dismissLabels = [
-          'Accept All',
-          'Accept Cookies',
-          'Accept all cookies',
-          'Accept all',
-          'Accept',
-          'I agree',
-          'I Accept',
-          'Agree',
-          'Got it',
-          'OK',
-          'Okay',
-          'Close',
-          'No thanks',
-          'No, thanks',
-          'Dismiss',
-          'Continue',
-          'Allow',
-          'Allow all',
-          'Allow All Cookies',
-          'Consent',
-        ]
-
-        for (const label of dismissLabels) {
-          const btn = page.getByRole('button', { name: label, exact: false })
-          if (await btn.first().isVisible({ timeout: 500 }).catch(() => false)) {
-            await btn.first().click({ timeout: 1000 }).catch(() => {})
-            break
+          // ID/class-based cookie buttons
+          const idSelectors = [
+            '#onetrust-accept-btn-handler',
+            '.cc-accept', '.cc-allow',
+            '.cookie-accept', '#cookie-accept',
+            '[data-cookiebanner="accept_button"]',
+            '[aria-label="Close"]',
+          ]
+          for (const sel of idSelectors) {
+            const el = pg.locator(sel).first()
+            if (await el.isVisible({ timeout: 300 }).catch(() => false)) {
+              await el.click({ timeout: 1000 }).catch(() => {})
+              console.log(`[SCRAPE] Dismissed via selector: ${sel}`)
+              await pg.waitForTimeout(400)
+              break
+            }
           }
-        }
 
-        // Also try common cookie banner selectors as a fallback
-        const bannerSelectors = [
-          '[id*="cookie"] button',
-          '[class*="cookie"] button',
-          '[id*="consent"] button',
-          '[class*="consent"] button',
-          '[id*="banner"] button',
-          '[class*="banner"] button',
-          '[aria-label*="cookie" i]',
-          '[aria-label*="consent" i]',
-        ]
-        for (const sel of bannerSelectors) {
-          const el = page.locator(sel).first()
-          if (await el.isVisible({ timeout: 300 }).catch(() => false)) {
-            await el.click({ timeout: 1000 }).catch(() => {})
-            break
+          // Text-based consent / age-gate buttons (cookie + age gate labels combined)
+          const dismissLabels = [
+            'Accept all cookies', 'Accept all', 'Accept cookies', 'Accept',
+            'Allow all cookies', 'Allow all', 'Allow',
+            'I agree', 'I Accept', 'Agree',
+            'Got it', 'OK', 'Okay',
+            'Close', 'Dismiss', 'No thanks', 'No, thanks',
+            'Continue', 'Consent',
+            // Age gates
+            'I am 18', 'I\'m of legal age', 'Yes I am', 'Enter',
+          ]
+          for (const label of dismissLabels) {
+            const btn = pg.getByRole('button', { name: label, exact: false })
+            if (await btn.first().isVisible({ timeout: 300 }).catch(() => false)) {
+              await btn.first().click({ timeout: 1000 }).catch(() => {})
+              console.log(`[SCRAPE] Dismissed via label: "${label}"`)
+              await pg.waitForTimeout(400)
+              break
+            }
           }
-        }
 
-        // Short pause for any dismiss animations to complete
-        await page.waitForTimeout(500)
-      } catch {
-        // Never fail scraping because of a banner/popup dismissal error
+          // Generic banner container selectors
+          const bannerSelectors = [
+            '[id*="cookie"] button', '[class*="cookie"] button',
+            '[id*="consent"] button', '[class*="consent"] button',
+            '[id*="banner"] button', '[class*="banner"] button',
+            '[id*="gdpr"] button', '[class*="gdpr"] button',
+            '[aria-label*="cookie" i]', '[aria-label*="consent" i]',
+            '[id*="age"] button', '[class*="age-gate"] button',
+          ]
+          for (const sel of bannerSelectors) {
+            const el = pg.locator(sel).first()
+            if (await el.isVisible({ timeout: 200 }).catch(() => false)) {
+              await el.click({ timeout: 1000 }).catch(() => {})
+              console.log(`[SCRAPE] Dismissed via banner selector: ${sel}`)
+              await pg.waitForTimeout(400)
+              break
+            }
+          }
+
+          // Remove high-z-index fixed/sticky overlays that block content
+          await pg.evaluate(() => {
+            const toRemove: Element[] = []
+            document.querySelectorAll('*').forEach((el) => {
+              const style = window.getComputedStyle(el)
+              const zIndex = parseInt(style.zIndex, 10)
+              const pos = style.position
+              if (
+                (pos === 'fixed' || pos === 'sticky') &&
+                zIndex > 100 &&
+                (el as HTMLElement).offsetHeight > 50
+              ) {
+                // Keep elements that are part of the main nav/header (top of page)
+                const rect = el.getBoundingClientRect()
+                const isTopNav = rect.top < 80 && rect.height < 100
+                if (!isTopNav) {
+                  toRemove.push(el)
+                }
+              }
+            })
+            toRemove.forEach((el) => el.remove())
+            if (toRemove.length > 0) {
+              console.log(`[SCRAPE] Removed ${toRemove.length} overlay element(s)`)
+            }
+          }).catch(() => {})
+        } catch {
+          // Never fail scraping because of cleanup errors
+        }
       }
 
-      await page.waitForTimeout(2000)
+      // Random mouse movements to pass basic bot-detection checks
+      async function humaniseMouseMovement(pg: typeof page) {
+        try {
+          const moves = [
+            { x: 300, y: 200 }, { x: 600, y: 350 }, { x: 450, y: 500 },
+            { x: 800, y: 300 }, { x: 200, y: 450 },
+          ]
+          for (const { x, y } of moves) {
+            await pg.mouse.move(x + Math.random() * 40, y + Math.random() * 40)
+            await pg.waitForTimeout(80 + Math.random() * 120)
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      // Run first cleanup pass + mouse movement immediately after load
+      await dismissPopups(page)
+      await humaniseMouseMovement(page)
+      await page.waitForTimeout(800)
+
+      // If the page has very little visible text, wait an extra 5 s for JS to render
+      const visibleTextLength = await page.evaluate(() =>
+        (document.body?.innerText ?? '').replace(/\s+/g, ' ').trim().length
+      ).catch(() => 0)
+      if (visibleTextLength < 500) {
+        console.log(`[SCRAPE] Short visible text (${visibleTextLength} chars) — waiting extra 5s for JS render`)
+        await page.waitForTimeout(5000)
+      }
 
       onProgress?.('Extracting HTML and CSS...')
 
@@ -316,6 +391,9 @@ export async function scrapeWebsite(
           }, delay)
         })
       })
+
+      // Second dismissal pass — catches popups that appear after scrolling
+      await dismissPopups(page)
 
       // Give lazy-loaded images and animations a moment to settle
       await page.waitForTimeout(1000)
