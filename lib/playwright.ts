@@ -77,8 +77,24 @@ async function mirrorImagesToR2(
   projectId: string,
   onProgress?: (step: string) => void
 ): Promise<Map<string, string>> {
+  console.log(`[R2] Starting image mirror for project: ${projectId}`)
+  console.log(`[R2] Total images found on page: ${images.length}`)
+
   const { isR2Configured, uploadToR2 } = await import('./r2')
-  if (!isR2Configured()) return new Map()
+
+  const configured = isR2Configured()
+  if (!configured) {
+    const missing = [
+      'CLOUDFLARE_R2_ENDPOINT',
+      'CLOUDFLARE_R2_ACCESS_KEY_ID',
+      'CLOUDFLARE_R2_SECRET_ACCESS_KEY',
+      'CLOUDFLARE_R2_BUCKET',
+      'CLOUDFLARE_R2_PUBLIC_URL',
+    ].filter((k) => !process.env[k])
+    console.log(`[R2] isR2Configured() = false — missing env vars: ${missing.join(', ')}`)
+    return new Map()
+  }
+  console.log('[R2] isR2Configured() = true')
 
   const { createHash } = await import('crypto')
 
@@ -90,6 +106,7 @@ async function mirrorImagesToR2(
     return img.width >= 50 && img.height >= 50
   }).slice(0, 20)
 
+  console.log(`[R2] Candidates after dedup + size filter (≥50×50): ${candidates.length}`)
   if (candidates.length === 0) return new Map()
   onProgress?.(`Uploading ${candidates.length} images to storage…`)
 
@@ -97,12 +114,19 @@ async function mirrorImagesToR2(
 
   const entries = await Promise.allSettled(
     candidates.map(async (img): Promise<[string, string] | null> => {
+      console.log(`[R2] Attempting upload: ${img.src} (${img.width}×${img.height})`)
       try {
         const res = await browserContext.request.get(img.src, { timeout: 15000 })
-        if (!res.ok()) return null
+        if (!res.ok()) {
+          console.log(`[R2] Skipped (HTTP ${res.status()}): ${img.src}`)
+          return null
+        }
 
         const buffer = Buffer.from(await res.body())
-        if (buffer.length > MAX_BYTES) return null
+        if (buffer.length > MAX_BYTES) {
+          console.log(`[R2] Skipped (too large ${buffer.length} bytes): ${img.src}`)
+          return null
+        }
 
         const contentType: string =
           (res.headers()['content-type'] || 'image/jpeg').split(';')[0].trim()
@@ -111,8 +135,10 @@ async function mirrorImagesToR2(
         const key = `projects/${projectId}/${hash}.${ext}`
 
         const r2Url = await uploadToR2(buffer, key, contentType)
+        console.log(`[R2] Uploaded: ${img.src} → ${r2Url}`)
         return [img.src, r2Url]
-      } catch {
+      } catch (err) {
+        console.log(`[R2] Error uploading ${img.src}:`, err)
         return null
       }
     })
@@ -124,6 +150,7 @@ async function mirrorImagesToR2(
       urlMap.set(result.value[0], result.value[1])
     }
   }
+  console.log(`[R2] Mirror complete. Uploaded ${urlMap.size}/${candidates.length} images.`)
   return urlMap
 }
 
@@ -316,6 +343,7 @@ export async function scrapeWebsite(
         : []
 
       // Mirror images to R2 while context is still open (uses browser session for downloads)
+      console.log(`[R2] projectId=${projectId ?? '(none)'}, imageInfos.length=${imageInfos.length}`)
       const r2UrlMap =
         projectId && imageInfos.length > 0
           ? await mirrorImagesToR2(imageInfos, context, projectId, onProgress)
