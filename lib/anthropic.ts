@@ -84,7 +84,8 @@ export function injectImageUrls(claudeHtml: string, srcs: string[]): string {
   if (srcs.length === 0) return claudeHtml
   let result = claudeHtml
 
-  // 1 — replace IMAGE_N placeholders
+  // ── Pass 1: IMAGE_N token replacement ─────────────────────────────────
+  // Works when Claude cooperates and copies IMAGE_N tokens into its output.
   const used = new Set<number>()
   result = result.replace(/IMAGE_(\d+)/g, (match, n) => {
     const idx = parseInt(n, 10) - 1
@@ -95,37 +96,64 @@ export function injectImageUrls(claudeHtml: string, srcs: string[]): string {
     return match
   })
 
-  // 2 — replace decorative SVGs with unused image URLs (SVG-placeholder fallback)
-  let unusedSrcs = srcs.filter((_, i) => !used.has(i))
+  // Remaining URLs not yet placed
+  let pool = srcs.filter((_, i) => !used.has(i))
 
-  if (unusedSrcs.length > 0) {
-    let unusedIdx = 0
+  // ── Pass 2: SVG placeholder replacement ───────────────────────────────
+  // Replace decorative SVGs (rect/circle/polygon, no title/aria-label) with <img>
+  if (pool.length > 0) {
+    let i = 0
     result = result.replace(/<svg\b(?![^>]*\b(?:title|aria-label)\b)[^>]*>[\s\S]*?<\/svg>/gi, (svgTag) => {
-      if (unusedIdx >= unusedSrcs.length) return svgTag
-      // Only swap out SVGs that contain basic placeholder shapes, not icon paths
+      if (i >= pool.length) return svgTag
       if (/<(?:rect|circle|polygon)\b/i.test(svgTag)) {
-        return `<img src="${unusedSrcs[unusedIdx++]}" style="width:100%;height:100%;object-fit:cover;">`
+        return `<img src="${pool[i++]}" style="width:100%;height:100%;object-fit:cover;">`
       }
       return svgTag
     })
-    // Recompute unused after SVG pass
-    const svgUsed = unusedIdx
-    unusedSrcs = unusedSrcs.slice(svgUsed)
+    pool = pool.slice(i)
   }
 
-  // 3 — fill empty image-container divs with unused image URLs
-  // Matches divs whose class contains image/photo/thumb/picture/img and have no <img> child.
-  if (unusedSrcs.length > 0) {
-    let unusedIdx = 0
-    // IMAGE_CONTAINER_KEYWORDS covers common class naming patterns for product/media images
-    const containerPattern = /<div\b([^>]*\bclass=(?:"[^"]*\b(?:image|photo|thumb|picture|img)\b[^"]*"|'[^']*\b(?:image|photo|thumb|picture|img)\b[^']*')[^>]*)>([\s\S]*?)<\/div>/gi
-    result = result.replace(containerPattern, (match, attrs, inner) => {
-      // Skip if it already contains an <img> tag
-      if (/<img\b/i.test(inner)) return match
-      if (unusedIdx >= unusedSrcs.length) return match
-      const src = unusedSrcs[unusedIdx++]
-      return `<div${attrs}><img src="${src}" style="width:100%;height:100%;object-fit:cover;">${inner}</div>`
-    })
+  // ── Pass 3: Empty image-class div injection ────────────────────────────
+  // Fill <div class="*image*|*photo*|*thumb*|*picture*"> with no <img> child.
+  if (pool.length > 0) {
+    let i = 0
+    result = result.replace(/<div\b([^>]*\bclass=["'][^"']*\b(?:image|photo|thumb|picture|img)\b[^"']*["'][^>]*)>([\s\S]*?)<\/div>/gi,
+      (match, attrs, inner) => {
+        if (/<img\b/i.test(inner) || i >= pool.length) return match
+        return `<div${attrs}><img src="${pool[i++]}" style="width:100%;height:100%;object-fit:cover;">${inner}</div>`
+      }
+    )
+    pool = pool.slice(i)
+  }
+
+  // ── Pass 4: Product-card injection (broadest fallback) ─────────────────
+  // For every remaining URL: scan Claude's HTML for block elements whose class
+  // looks like a product card (contains product/card/item/tile but NOT
+  // grid/list/container/wrapper) and whose next 2500 chars contain no <img>.
+  // Inject <img> right after the opening tag — bypasses Claude entirely for images.
+  if (pool.length > 0) {
+    let i = 0
+    result = result.replace(
+      /<(div|article|li)\b([^>]*)>/gi,
+      (match, _tag, attrs, offset: number, str: string) => {
+        if (i >= pool.length) return match
+
+        const classMatch = attrs.match(/\bclass=["']([^"']*)["']/)
+        if (!classMatch) return match
+        const cls = classMatch[1].toLowerCase()
+
+        // Must look like a product / media card
+        if (!/\b(?:product|card|item|tile|thumb|result|entry)\b/.test(cls)) return match
+        // Skip layout wrappers
+        if (/\b(?:grid|list|container|wrapper|wrap|row|header|footer|nav|menu|sidebar)\b/.test(cls)) return match
+
+        // Look ahead — if an <img> already exists within the card's content, skip
+        const lookahead = str.slice(offset + match.length, offset + match.length + 2500)
+        if (/<img\b/i.test(lookahead)) return match
+
+        return `${match}<img src="${pool[i++]}" style="width:100%;aspect-ratio:1;object-fit:cover;">`
+      }
+    )
   }
 
   return result
