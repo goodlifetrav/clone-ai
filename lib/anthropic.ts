@@ -395,7 +395,7 @@ export async function generateCloneStreaming(
   url: string,
   onPartialHtml: (partialText: string) => Promise<void>,
   onDelta?: (accumulated: string) => void
-): Promise<{ html: string; tokensUsed: number }> {
+): Promise<{ html: string; tokensUsed: number; tokenToUrl: Map<string, string> }> {
   const SAVE_INTERVAL = 2000 // chars between DB saves
 
   const { tokenToUrl, promptBlock } = buildImageMap(htmlContent)
@@ -460,8 +460,12 @@ export async function generateCloneStreaming(
   if (!claudeHtml) throw new Error('Claude returned empty HTML — please try again')
 
   return {
+    // html has tokens replaced; tokenToUrl is returned so the caller can
+    // independently call injectImageUrls() before any DB save, ensuring
+    // the persisted HTML always contains real URLs — not token names.
     html: injectImageUrls(claudeHtml, tokenToUrl),
     tokensUsed: inputTokens + outputTokens,
+    tokenToUrl,
   }
 }
 

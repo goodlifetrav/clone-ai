@@ -3,7 +3,7 @@ import { auth } from '@clerk/nextjs/server'
 import { Resend } from 'resend'
 import { createServiceClient, uploadThumbnail } from '@/lib/supabase'
 import { scrapeWebsite } from '@/lib/playwright'
-import { generateCloneStreaming } from '@/lib/anthropic'
+import { generateCloneStreaming, injectImageUrls } from '@/lib/anthropic'
 import { extractDomain } from '@/lib/utils'
 
 
@@ -112,12 +112,15 @@ export async function GET(
         send({ step: 'Generating clone with AI...' })
         let html: string
         let tokensUsed: number
+        let tokenToUrl: Map<string, string>
 
-        ;({ html, tokensUsed } = await generateCloneStreaming(
+        ;({ html, tokensUsed, tokenToUrl } = await generateCloneStreaming(
           scrapeResult.html,
           scrapeResult.screenshotBase64,
           url,
-          // Throttled DB save (every ~2 000 chars)
+          // Throttled DB save — partial text is raw Claude output (tokens not yet
+          // replaced). That is acceptable for mid-stream saves; the final save
+          // below always writes fully-resolved HTML.
           async (partialText) => {
             await supabase
               .from('projects')
@@ -131,11 +134,21 @@ export async function GET(
         ))
 
         // ── Persist final result ─────────────────────────────────────────
+        // injectImageUrls was already called inside generateCloneStreaming, but
+        // we call it again here as a guarantee — ensuring the DB save always
+        // receives fully-resolved URLs regardless of any internal code path.
+        const finalHtml = injectImageUrls(html, tokenToUrl)
+
+        // Confirm R2 URLs are present before writing to DB
+        const r2Urls = [...tokenToUrl.values()]
+        const hasR2Urls = r2Urls.length === 0 || r2Urls.some((u) => finalHtml.includes(u))
+        console.log(`[DB SAVE] HTML contains R2 URLs: ${hasR2Urls}`)
+
         const projectName = scrapeResult.title || extractDomain(url) || new URL(url).hostname
 
         await supabase
           .from('projects')
-          .update({ name: projectName, html_content: html, status: 'complete' })
+          .update({ name: projectName, html_content: finalHtml, status: 'complete' })
           .eq('id', id)
 
         const pngBuffer = Buffer.from(scrapeResult.screenshotBase64, 'base64')
@@ -158,11 +171,11 @@ export async function GET(
 
         await supabase.from('project_versions').insert({
           project_id: id,
-          html_content: html,
+          html_content: finalHtml,
           version_number: 1,
         })
 
-        send({ done: true, html })
+        send({ done: true, html: finalHtml })
 
         // Completion email (non-fatal)
         const resendKey = process.env.RESEND_API_KEY
