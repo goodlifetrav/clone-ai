@@ -10,12 +10,13 @@ interface PreviewPaneProps {
 }
 
 // Inject a <base target="_blank"> so all links open in new tabs,
-// and a click interceptor that prevents in-app navigation for any
-// links that don't already have a target set.
+// a click interceptor that prevents in-app navigation,
+// and an image proxy that retries blocked images through corsproxy.io.
 function injectLinkInterceptor(html: string): string {
   const baseTag = '<base target="_blank">'
   const script = `<script>
 (function(){
+  // ── Link interceptor ──────────────────────────────────────────────────
   document.addEventListener('click', function(e){
     var a = e.target.closest('a');
     if(a && a.href){
@@ -24,6 +25,106 @@ function injectLinkInterceptor(html: string): string {
       window.open(a.href, '_blank', 'noopener,noreferrer');
     }
   }, true);
+
+  // ── Image proxy: retry hotlink-blocked images via corsproxy.io ────────
+  var PROXY = 'https://corsproxy.io/?url=';
+
+  function proxyUrl(url) {
+    return PROXY + encodeURIComponent(url);
+  }
+
+  function isProxiable(url) {
+    return url &&
+      (url.startsWith('http://') || url.startsWith('https://')) &&
+      url.indexOf('corsproxy.io') === -1;
+  }
+
+  // Fix a single <img> element — add onerror and handle already-broken images
+  function fixImg(img) {
+    if (img.getAttribute('data-proxy')) return;
+    function retry() {
+      if (img.getAttribute('data-proxy')) return;
+      img.setAttribute('data-proxy', '1');
+      var orig = img.getAttribute('data-orig-src') || img.src;
+      img.setAttribute('data-orig-src', orig);
+      if (isProxiable(orig)) img.src = proxyUrl(orig);
+    }
+    img.addEventListener('error', retry);
+    // Already broken (loaded but empty, or error before listener attached)
+    if (img.complete && img.naturalWidth === 0 && isProxiable(img.src)) retry();
+  }
+
+  // Fix a single element's inline background-image style
+  function fixInlineBg(el) {
+    var bg = el.style && el.style.backgroundImage;
+    if (!bg) return;
+    var match = bg.match(/url\\(['"]?(https?:\\/\\/[^'"\\)\\s]+)['"]?\\)/);
+    if (!match || !isProxiable(match[1])) return;
+    var url = match[1];
+    var tester = new Image();
+    tester.onerror = function() {
+      if (el.style.backgroundImage.indexOf('corsproxy.io') === -1) {
+        el.style.backgroundImage = el.style.backgroundImage.replace(url, proxyUrl(url));
+      }
+    };
+    tester.src = url;
+  }
+
+  // Fix all url() references inside <style> tags
+  function fixStyleTags() {
+    var urlRe = /url\\(['"]?(https?:\\/\\/[^'"\\)\\s]+)['"]?\\)/g;
+    document.querySelectorAll('style').forEach(function(styleEl) {
+      var css = styleEl.textContent || '';
+      var seen = {};
+      var m;
+      urlRe.lastIndex = 0;
+      while ((m = urlRe.exec(css)) !== null) {
+        var url = m[1];
+        if (!isProxiable(url) || seen[url]) continue;
+        seen[url] = true;
+        (function(u) {
+          var tester = new Image();
+          tester.onerror = function() {
+            if ((styleEl.textContent || '').indexOf('corsproxy.io') !== -1) return;
+            var escaped = u.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+            styleEl.textContent = (styleEl.textContent || '').replace(
+              new RegExp(escaped, 'g'),
+              proxyUrl(u)
+            );
+          };
+          tester.src = u;
+        })(url);
+      }
+    });
+  }
+
+  function applyAll() {
+    document.querySelectorAll('img').forEach(fixImg);
+    document.querySelectorAll('[style]').forEach(fixInlineBg);
+    fixStyleTags();
+  }
+
+  // Watch for dynamically added nodes
+  var observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+      mutation.addedNodes.forEach(function(node) {
+        if (node.nodeType !== 1) return;
+        if (node.tagName === 'IMG') fixImg(node);
+        if (node.style && node.style.backgroundImage) fixInlineBg(node);
+        if (node.querySelectorAll) {
+          node.querySelectorAll('img').forEach(fixImg);
+          node.querySelectorAll('[style]').forEach(fixInlineBg);
+        }
+      });
+    });
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyAll);
+  } else {
+    applyAll();
+  }
 })();
 </script>`
 
