@@ -35,7 +35,8 @@ async function mirrorCachedHtmlToR2(
     if (!urls.includes(u)) urls.push(u)
   }
 
-  const candidates = urls.slice(0, 20)
+  const SKIP_PATTERNS = /\.pdf($|\?)|energy|label|document|fiche|datasheet/i
+  const candidates = urls.filter((u) => !SKIP_PATTERNS.test(u)).slice(0, 20)
   console.log(`[R2] Cached HTML mirror: ${candidates.length} candidate URLs`)
   if (candidates.length === 0) return html
 

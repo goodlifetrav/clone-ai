@@ -101,12 +101,19 @@ async function mirrorImagesToR2(
 
   const { createHash } = await import('crypto')
 
+  // Skip PDFs and non-photo document URLs
+  const SKIP_PATTERNS = /\.pdf($|\?)|energy|label|document|fiche|datasheet/i
+
   // Deduplicate by attrSrc (the HTML-matching key), filter by minimum dimensions, take top 20
   const seen = new Set<string>()
   const candidates = images.filter((img) => {
     const key = img.attrSrc || img.src
     if (!key || seen.has(key)) return false
     seen.add(key)
+    if (SKIP_PATTERNS.test(key)) {
+      console.log(`[R2] Skipped (document/PDF): ${key}`)
+      return false
+    }
     return img.width >= 50 && img.height >= 50
   }).slice(0, 20)
 
@@ -189,6 +196,12 @@ export async function scrapeWebsite(
       const context = await browser.newContext({
         viewport: { width: 1920, height: 1080 },
         userAgent: USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
+        locale: 'en-US',
+        extraHTTPHeaders: {
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        geolocation: { latitude: 37.7749, longitude: -122.4194 },
+        permissions: ['geolocation'],
       })
 
       const page = await context.newPage()
@@ -320,17 +333,18 @@ export async function scrapeWebsite(
 
       onProgress?.('Taking screenshot...')
 
-      // Cap the screenshot height at 4000px to stay within Claude API limits.
-      // If the page is taller, clip to 4000px from the top.
+      // Full page screenshot up to 8000px so Claude gets the complete layout.
+      // Pages taller than 8000px are clipped to avoid exceeding Claude's image size limits.
+      const SCREENSHOT_MAX_HEIGHT = 8000
       const pageHeight = await page.evaluate(() => document.documentElement.scrollHeight)
       const screenshotBuffer = await page.screenshot({
-        fullPage: false,
+        fullPage: pageHeight <= SCREENSHOT_MAX_HEIGHT,
         clip:
-          pageHeight > 4000
-            ? { x: 0, y: 0, width: 1920, height: 4000 }
+          pageHeight > SCREENSHOT_MAX_HEIGHT
+            ? { x: 0, y: 0, width: 1920, height: SCREENSHOT_MAX_HEIGHT }
             : undefined,
         type: 'jpeg',
-        quality: 80,
+        quality: 70,
       })
       const screenshotBase64 = screenshotBuffer.toString('base64')
 

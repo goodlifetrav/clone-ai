@@ -164,28 +164,25 @@ function buildCloneSystemPrompt(): string {
 - Output ONLY raw HTML — no markdown, no code fences, no explanation
 - Start your response with <!DOCTYPE html> and end with </html>
 - Inline all CSS in a <style> tag in <head>
-- Match the visual design exactly: colors, fonts, layout, spacing, content
+- Match the visual design exactly: colors, fonts, layout, spacing, content text
+- Reconstruct ALL sections visible in the screenshot — hero, navigation, product grids, footers, etc.
 - Make it responsive with modern CSS (flexbox, grid)
 - Include Google Fonts CDN link if web fonts are used
 - No JavaScript unless essential
 IMAGES — this is critical, read carefully:
-- The source HTML uses IMAGE_1, IMAGE_2, IMAGE_3 … as placeholders for real images
-- You MUST output <img src="IMAGE_1">, <img src="IMAGE_2">, etc. — copy these tokens exactly
-- For every product image, you MUST output an actual <img src="IMAGE_N"> HTML tag inside the container div. Never use empty divs or CSS backgrounds for product images.
-- You MUST NOT generate <svg> shapes, rectangles, circles, or paths to represent images
-- You MUST NOT leave image container divs empty — every div with class containing "image", "photo", "thumb", "picture" MUST contain an <img> tag
-- You MUST NOT use data: URIs for images
-- You MUST NOT invent URLs or use placeholder image services (picsum, placehold.it, etc.)
-- Every image visible in the screenshot MUST appear as an <img src="IMAGE_N"> tag`
+- For every product/content image visible in the screenshot, output an <img> tag
+- Use IMAGE_1, IMAGE_2, IMAGE_3… as src values in the order images appear top-to-bottom
+- You MUST output actual <img src="IMAGE_N"> tags — never use <svg> shapes, empty divs, or CSS backgrounds for images
+- Never use data: URIs, picsum, placehold.it, or any placeholder image service
+- Every image visible in the screenshot MUST have a corresponding <img src="IMAGE_N"> tag`
 }
 
-function buildCloneUserPrompt(url: string, processedHtml: string, imageCount: number): string {
+function buildCloneUserPrompt(url: string, imageCount: number): string {
   return `Recreate this website (${url}) as a complete, self-contained HTML file.
 
-${imageCount > 0 ? `This page has ${imageCount} image${imageCount > 1 ? 's' : ''} (IMAGE_1${imageCount > 1 ? ` through IMAGE_${imageCount}` : ''}). Each one MUST appear as an <img src="IMAGE_N"> tag — no SVGs, no placeholders.` : ''}
+${imageCount > 0 ? `The page has ${imageCount} image${imageCount > 1 ? 's' : ''} — use IMAGE_1${imageCount > 1 ? ` through IMAGE_${imageCount}` : ''} as src values for <img> tags in the order they appear.` : ''}
 
-Original HTML structure for reference (images replaced with IMAGE_N tokens):
-${processedHtml}`
+Reconstruct the full page layout from the screenshot. Include all visible text, sections, navigation, product cards, and structure.`
 }
 
 export async function generateClone(
@@ -193,13 +190,13 @@ export async function generateClone(
   screenshotBase64: string,
   url: string
 ): Promise<{ html: string; tokensUsed: number }> {
-  // Number images before preprocessing so Claude only sees IMAGE_N tokens
-  const { html: numberedHtml, srcs } = extractAndNumberImages(htmlContent)
-  const processedHtml = preprocessHtmlForClone(numberedHtml)
+  // Extract real image URLs from the scraped HTML for post-processing injection.
+  // We do NOT send the HTML to Claude — only the full-page screenshot.
+  const { srcs } = extractAndNumberImages(htmlContent)
 
   const response = await anthropic.messages.create({
     model: CLONE_MODEL,
-    max_tokens: 3000,
+    max_tokens: 4000,
     system: buildCloneSystemPrompt(),
     messages: [
       {
@@ -211,7 +208,7 @@ export async function generateClone(
           },
           {
             type: 'text',
-            text: buildCloneUserPrompt(url, processedHtml, srcs.length),
+            text: buildCloneUserPrompt(url, srcs.length),
           },
         ],
       },
@@ -246,13 +243,13 @@ export async function generateCloneStreaming(
 ): Promise<{ html: string; tokensUsed: number }> {
   const SAVE_INTERVAL = 2000 // chars between DB saves
 
-  // Number images before preprocessing so Claude only sees IMAGE_N tokens
-  const { html: numberedHtml, srcs } = extractAndNumberImages(htmlContent)
-  const processedHtml = preprocessHtmlForClone(numberedHtml)
+  // Extract real image URLs from the scraped HTML for post-processing injection.
+  // We do NOT send the HTML to Claude — only the full-page screenshot.
+  const { srcs } = extractAndNumberImages(htmlContent)
 
   const stream = await anthropic.messages.create({
     model: CLONE_MODEL,
-    max_tokens: 3000,
+    max_tokens: 4000,
     stream: true,
     system: buildCloneSystemPrompt(),
     messages: [
@@ -265,7 +262,7 @@ export async function generateCloneStreaming(
           },
           {
             type: 'text',
-            text: buildCloneUserPrompt(url, processedHtml, srcs.length),
+            text: buildCloneUserPrompt(url, srcs.length),
           },
         ],
       },
