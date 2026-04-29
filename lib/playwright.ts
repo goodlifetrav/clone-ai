@@ -6,7 +6,10 @@ export interface ScrapeResult {
 }
 
 interface ImageInfo {
+  /** currentSrc || img.src — the URL that was actually loaded; used for downloading */
   src: string
+  /** img.src — browser-absolutified src attribute; matches what absolutifyHtml produces */
+  attrSrc: string
   width: number
   height: number
 }
@@ -98,11 +101,12 @@ async function mirrorImagesToR2(
 
   const { createHash } = await import('crypto')
 
-  // Deduplicate by src, filter by minimum dimensions, take top 20
+  // Deduplicate by attrSrc (the HTML-matching key), filter by minimum dimensions, take top 20
   const seen = new Set<string>()
   const candidates = images.filter((img) => {
-    if (!img.src || seen.has(img.src)) return false
-    seen.add(img.src)
+    const key = img.attrSrc || img.src
+    if (!key || seen.has(key)) return false
+    seen.add(key)
     return img.width >= 50 && img.height >= 50
   }).slice(0, 20)
 
@@ -114,31 +118,35 @@ async function mirrorImagesToR2(
 
   const entries = await Promise.allSettled(
     candidates.map(async (img): Promise<[string, string] | null> => {
-      console.log(`[R2] Attempting upload: ${img.src} (${img.width}×${img.height})`)
+      // Download from the actually-loaded URL (currentSrc); match in HTML by attrSrc (img.src attr)
+      const downloadUrl = img.src
+      const htmlKey = img.attrSrc || img.src
+      console.log(`[R2] Attempting upload: ${downloadUrl} (htmlKey: ${htmlKey}, ${img.width}×${img.height})`)
       try {
-        const res = await browserContext.request.get(img.src, { timeout: 15000 })
+        const res = await browserContext.request.get(downloadUrl, { timeout: 15000 })
         if (!res.ok()) {
-          console.log(`[R2] Skipped (HTTP ${res.status()}): ${img.src}`)
+          console.log(`[R2] Skipped (HTTP ${res.status()}): ${downloadUrl}`)
           return null
         }
 
         const buffer = Buffer.from(await res.body())
         if (buffer.length > MAX_BYTES) {
-          console.log(`[R2] Skipped (too large ${buffer.length} bytes): ${img.src}`)
+          console.log(`[R2] Skipped (too large ${buffer.length} bytes): ${downloadUrl}`)
           return null
         }
 
         const contentType: string =
           (res.headers()['content-type'] || 'image/jpeg').split(';')[0].trim()
         const ext = contentType.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg'
-        const hash = createHash('md5').update(img.src).digest('hex').slice(0, 16)
+        const hash = createHash('md5').update(htmlKey).digest('hex').slice(0, 16)
         const key = `projects/${projectId}/${hash}.${ext}`
 
         const r2Url = await uploadToR2(buffer, key, contentType)
-        console.log(`[R2] Uploaded: ${img.src} → ${r2Url}`)
-        return [img.src, r2Url]
+        console.log(`[R2] Uploaded: ${htmlKey} → ${r2Url}`)
+        // Key is the attrSrc so it matches the absolutified HTML
+        return [htmlKey, r2Url]
       } catch (err) {
-        console.log(`[R2] Error uploading ${img.src}:`, err)
+        console.log(`[R2] Error uploading ${downloadUrl}:`, err)
         return null
       }
     })
@@ -329,16 +337,23 @@ export async function scrapeWebsite(
       const title = await page.title()
       const rawHtml = await page.content()
 
-      // Collect image metadata (src, rendered dimensions) before closing context
+      // Collect image metadata (src, rendered dimensions) before closing context.
+      // attrSrc = img.src property (browser-absolutified src attribute) — this is what
+      // absolutifyHtml will produce in the HTML string, so it's our map key for replacement.
+      // src = currentSrc || img.src — the actually-loaded URL (may differ via srcset).
       const imageInfos: ImageInfo[] = projectId
         ? await page.evaluate((): ImageInfo[] =>
             Array.from(document.querySelectorAll('img'))
-              .map((img) => ({
-                src: (img as HTMLImageElement).currentSrc || (img as HTMLImageElement).src,
-                width: (img as HTMLImageElement).naturalWidth,
-                height: (img as HTMLImageElement).naturalHeight,
-              }))
-              .filter((i) => i.src.startsWith('http'))
+              .map((img) => {
+                const el = img as HTMLImageElement
+                return {
+                  src: el.currentSrc || el.src,
+                  attrSrc: el.src,
+                  width: el.naturalWidth,
+                  height: el.naturalHeight,
+                }
+              })
+              .filter((i) => i.attrSrc.startsWith('http'))
           )
         : []
 
@@ -357,10 +372,50 @@ export async function scrapeWebsite(
 
       // Replace original image URLs with R2-hosted copies
       if (r2UrlMap.size > 0) {
+        let replacements = 0
         for (const [orig, r2] of r2UrlMap) {
-          // Simple global string replace — safe since URLs are unique
+          const before = absoluteHtml
           absoluteHtml = absoluteHtml.split(orig).join(r2)
+          if (absoluteHtml !== before) {
+            replacements++
+            console.log(`[R2] Replaced in HTML: ${orig}`)
+          } else {
+            // Exact match failed — try URL-decoded variant (handles %20 etc.)
+            const decoded = decodeURIComponent(orig)
+            if (decoded !== orig) {
+              const before2 = absoluteHtml
+              absoluteHtml = absoluteHtml.split(decoded).join(r2)
+              if (absoluteHtml !== before2) {
+                replacements++
+                console.log(`[R2] Replaced in HTML (decoded): ${decoded}`)
+              } else {
+                console.log(`[R2] NO MATCH in HTML for: ${orig}`)
+                // Log a snippet of the HTML near where we'd expect the URL to appear
+                const stem = orig.split('/').pop()?.split('?')[0] ?? ''
+                if (stem) {
+                  const idx = absoluteHtml.indexOf(stem)
+                  if (idx !== -1) {
+                    console.log(`[R2]   Nearby HTML: ...${absoluteHtml.slice(Math.max(0, idx - 40), idx + stem.length + 40)}...`)
+                  } else {
+                    console.log(`[R2]   filename stem "${stem}" not found in HTML either`)
+                  }
+                }
+              }
+            } else {
+              console.log(`[R2] NO MATCH in HTML for: ${orig}`)
+              const stem = orig.split('/').pop()?.split('?')[0] ?? ''
+              if (stem) {
+                const idx = absoluteHtml.indexOf(stem)
+                if (idx !== -1) {
+                  console.log(`[R2]   Nearby HTML: ...${absoluteHtml.slice(Math.max(0, idx - 40), idx + stem.length + 40)}...`)
+                } else {
+                  console.log(`[R2]   filename stem "${stem}" not found in HTML either`)
+                }
+              }
+            }
+          }
         }
+        console.log(`[R2] HTML replacement done: ${replacements}/${r2UrlMap.size} URLs replaced`)
       }
 
       onProgress?.('Generating clone...')
