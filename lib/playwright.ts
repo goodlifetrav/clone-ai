@@ -125,10 +125,14 @@ async function mirrorImagesToR2(
       console.log(`[R2] Skipped (document/PDF): ${key}`)
       return false
     }
-    return img.width >= 50 && img.height >= 50
+    return img.width >= 10 && img.height >= 10
   }).slice(0, 20)
 
-  console.log(`[R2] Candidates after dedup + size filter (≥50×50): ${candidates.length}`)
+  console.log(`[R2] Candidates after dedup + size filter (≥10×10): ${candidates.length}`)
+  if (candidates.length > 0) {
+    console.log(`[R2] First ${Math.min(5, candidates.length)} image URLs:`)
+    candidates.slice(0, 5).forEach((img, i) => console.log(`[R2]   [${i + 1}] ${img.attrSrc || img.src} (${img.width}×${img.height})`))
+  }
   if (candidates.length === 0) return new Map()
   onProgress?.(`Uploading ${candidates.length} images to storage…`)
 
@@ -316,23 +320,6 @@ export async function scrapeWebsite(
       // Give lazy-loaded images and animations a moment to settle
       await page.waitForTimeout(1000)
 
-      // Wait for all images in the viewport to finish loading
-      await page.evaluate(async () => {
-        const imgs = Array.from(document.querySelectorAll('img'))
-        await Promise.all(
-          imgs
-            .filter((img) => !img.complete)
-            .map(
-              (img) =>
-                new Promise<void>((res) => {
-                  img.onload = () => res()
-                  img.onerror = () => res()   // don't block on broken images
-                  setTimeout(res, 3000)        // max 3s per image
-                })
-            )
-        )
-      })
-
       // Second pass: scroll to each lazy img individually to ensure
       // IntersectionObserver fires for every image element.
       await page.evaluate(async () => {
@@ -344,7 +331,13 @@ export async function scrapeWebsite(
         window.scrollTo(0, 0)
       })
 
-      // Wait 5 seconds for all lazy images to finish loading across any site
+      // Wait for every document.images entry to report complete (JS-loaded images included)
+      await page.waitForFunction(
+        () => Array.from(document.images).every((img) => img.complete),
+        { timeout: 10000 }
+      ).catch(() => {}) // non-fatal — some images may legitimately never complete
+
+      // Wait 5 seconds for any remaining lazy images to finish loading
       await page.waitForTimeout(5000)
 
       // Wait for any lazy-loaded network requests to finish

@@ -207,6 +207,8 @@ export async function GET(
         }
 
         // ── Generate with Claude ─────────────────────────────────────────
+        const screenshotBytes = Math.round(scrapeResult.screenshotBase64.length * 0.75)
+        console.log(`[GENERATE] Using screenshot approach - screenshot size: ${screenshotBytes} bytes`)
         send({ step: 'Generating clone with AI...' })
         let html: string
         let tokensUsed: number
