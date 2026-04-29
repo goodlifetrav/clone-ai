@@ -49,6 +49,17 @@ function absolutifyHtml(html: string, pageUrl: string): string {
     html
       // src="..." — images, iframes, scripts, audio, video, etc.
       .replace(/\bsrc=(['"])([^'"]*)\1/gi, (_, q, url) => `src=${q}${resolve(url)}${q}`)
+      // data-src="..." — lazy-loaded images (Apple, etc.)
+      .replace(/\bdata-src=(['"])([^'"]*)\1/gi, (_, q, url) => `data-src=${q}${resolve(url)}${q}`)
+      // data-srcset="..." — lazy-loaded responsive images
+      .replace(/\bdata-srcset=(['"])([^'"]*)\1/gi, (_, q, srcset) => {
+        const fixed = srcset.replace(/(^|,\s*)([^\s,][^\s,]*)/g, (m: string, sep: string, candidate: string) => {
+          const parts = candidate.trim().split(/\s+/)
+          parts[0] = resolve(parts[0])
+          return sep + parts.join(' ')
+        })
+        return `data-srcset=${q}${fixed}${q}`
+      })
       // srcset="url 1x, url 2x" — responsive images
       .replace(/\bsrcset=(['"])([^'"]*)\1/gi, (_, q, srcset) => {
         const fixed = srcset.replace(/(^|,\s*)([^\s,][^\s,]*)/g, (m: string, sep: string, candidate: string) => {
@@ -206,8 +217,26 @@ export async function scrapeWebsite(
 
       const page = await context.newPage()
 
+      // Override navigator.language at the JS level so sites that read it
+      // directly (instead of relying on HTTP headers) also get en-US.
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'language', { get: () => 'en-US' })
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] })
+      })
+
+      // For apple.com root, force the English locale path so IP-based geo
+      // detection doesn't redirect to a localised storefront (e.g. /fr/).
+      let navigateUrl = url
+      try {
+        const parsed = new URL(url)
+        if (parsed.hostname.endsWith('apple.com') && (parsed.pathname === '/' || parsed.pathname === '')) {
+          navigateUrl = 'https://www.apple.com/en/'
+          console.log(`[SCRAPE] Rewriting apple.com URL to force English: ${navigateUrl}`)
+        }
+      } catch { /* ignore parse errors */ }
+
       onProgress?.(`Visiting ${url}...`)
-      await page.goto(url, {
+      await page.goto(navigateUrl, {
         waitUntil: 'networkidle',
         timeout: 30000,
       })
@@ -328,6 +357,18 @@ export async function scrapeWebsite(
         )
       })
 
+      // Second pass: scroll to each lazy img individually to ensure
+      // IntersectionObserver fires and Apple-style lazy images fully load.
+      await page.evaluate(async () => {
+        const imgs = Array.from(document.querySelectorAll('img'))
+        for (const img of imgs) {
+          img.scrollIntoView({ block: 'center' })
+          await new Promise((r) => setTimeout(r, 80))
+        }
+        window.scrollTo(0, 0)
+      })
+      await page.waitForTimeout(1500)
+
       // Wait for any lazy-loaded network requests to finish
       await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {})
 
@@ -356,17 +397,21 @@ export async function scrapeWebsite(
       // attrSrc = img.src property (browser-absolutified src attribute) — this is what
       // absolutifyHtml will produce in the HTML string, so it's our map key for replacement.
       // src = currentSrc || img.src — the actually-loaded URL (may differ via srcset).
+      // Also check data-src / data-srcset for Apple-style lazy images that haven't
+      // swapped their src attribute yet.
       const imageInfos: ImageInfo[] = projectId
         ? await page.evaluate((): ImageInfo[] =>
             Array.from(document.querySelectorAll('img'))
               .map((img) => {
                 const el = img as HTMLImageElement
-                return {
-                  src: el.currentSrc || el.src,
-                  attrSrc: el.src,
-                  width: el.naturalWidth,
-                  height: el.naturalHeight,
-                }
+                // Prefer the actually-loaded currentSrc, then src, then data-src fallback
+                const dataSrc = el.getAttribute('data-src') || el.getAttribute('data-lazy-src') || ''
+                const src = el.currentSrc || el.src || dataSrc
+                const attrSrc = el.src || dataSrc
+                // For unloaded lazy images, try to get dimensions from attributes
+                const w = el.naturalWidth || parseInt(el.getAttribute('width') || '0', 10)
+                const h = el.naturalHeight || parseInt(el.getAttribute('height') || '0', 10)
+                return { src, attrSrc, width: w, height: h }
               })
               .filter((i) => i.attrSrc.startsWith('http'))
           )
