@@ -96,18 +96,37 @@ export function injectImageUrls(claudeHtml: string, srcs: string[]): string {
   })
 
   // 2 — replace decorative SVGs with unused image URLs (SVG-placeholder fallback)
-  const unusedSrcs = srcs.filter((_, i) => !used.has(i))
-  if (unusedSrcs.length === 0) return result
+  let unusedSrcs = srcs.filter((_, i) => !used.has(i))
 
-  let unusedIdx = 0
-  result = result.replace(/<svg\b(?![^>]*\b(?:title|aria-label)\b)[^>]*>[\s\S]*?<\/svg>/gi, (svgTag) => {
-    if (unusedIdx >= unusedSrcs.length) return svgTag
-    // Only swap out SVGs that contain basic placeholder shapes, not icon paths
-    if (/<(?:rect|circle|polygon)\b/i.test(svgTag)) {
-      return `<img src="${unusedSrcs[unusedIdx++]}" style="width:100%;height:100%;object-fit:cover;">`
-    }
-    return svgTag
-  })
+  if (unusedSrcs.length > 0) {
+    let unusedIdx = 0
+    result = result.replace(/<svg\b(?![^>]*\b(?:title|aria-label)\b)[^>]*>[\s\S]*?<\/svg>/gi, (svgTag) => {
+      if (unusedIdx >= unusedSrcs.length) return svgTag
+      // Only swap out SVGs that contain basic placeholder shapes, not icon paths
+      if (/<(?:rect|circle|polygon)\b/i.test(svgTag)) {
+        return `<img src="${unusedSrcs[unusedIdx++]}" style="width:100%;height:100%;object-fit:cover;">`
+      }
+      return svgTag
+    })
+    // Recompute unused after SVG pass
+    const svgUsed = unusedIdx
+    unusedSrcs = unusedSrcs.slice(svgUsed)
+  }
+
+  // 3 — fill empty image-container divs with unused image URLs
+  // Matches divs whose class contains image/photo/thumb/picture/img and have no <img> child.
+  if (unusedSrcs.length > 0) {
+    let unusedIdx = 0
+    // IMAGE_CONTAINER_KEYWORDS covers common class naming patterns for product/media images
+    const containerPattern = /<div\b([^>]*\bclass=(?:"[^"]*\b(?:image|photo|thumb|picture|img)\b[^"]*"|'[^']*\b(?:image|photo|thumb|picture|img)\b[^']*')[^>]*)>([\s\S]*?)<\/div>/gi
+    result = result.replace(containerPattern, (match, attrs, inner) => {
+      // Skip if it already contains an <img> tag
+      if (/<img\b/i.test(inner)) return match
+      if (unusedIdx >= unusedSrcs.length) return match
+      const src = unusedSrcs[unusedIdx++]
+      return `<div${attrs}><img src="${src}" style="width:100%;height:100%;object-fit:cover;">${inner}</div>`
+    })
+  }
 
   return result
 }
@@ -121,10 +140,12 @@ function buildCloneSystemPrompt(): string {
 - Make it responsive with modern CSS (flexbox, grid)
 - Include Google Fonts CDN link if web fonts are used
 - No JavaScript unless essential
-IMAGES — this is critical:
+IMAGES — this is critical, read carefully:
 - The source HTML uses IMAGE_1, IMAGE_2, IMAGE_3 … as placeholders for real images
 - You MUST output <img src="IMAGE_1">, <img src="IMAGE_2">, etc. — copy these tokens exactly
+- For every product image, you MUST output an actual <img src="IMAGE_N"> HTML tag inside the container div. Never use empty divs or CSS backgrounds for product images.
 - You MUST NOT generate <svg> shapes, rectangles, circles, or paths to represent images
+- You MUST NOT leave image container divs empty — every div with class containing "image", "photo", "thumb", "picture" MUST contain an <img> tag
 - You MUST NOT use data: URIs for images
 - You MUST NOT invent URLs or use placeholder image services (picsum, placehold.it, etc.)
 - Every image visible in the screenshot MUST appear as an <img src="IMAGE_N"> tag`
