@@ -6,77 +6,6 @@ import { scrapeWebsite } from '@/lib/playwright'
 import { generateCloneStreaming } from '@/lib/anthropic'
 import { extractDomain } from '@/lib/utils'
 
-/**
- * When the scrape cache is hit, scrapeWebsite (and its built-in R2 mirroring)
- * never runs. This helper extracts img src URLs from the cached HTML, downloads
- * them with a plain fetch (they're already absolute), uploads to R2, and returns
- * the HTML with replaced URLs — matching exactly what scrapeWebsite does.
- */
-async function mirrorCachedHtmlToR2(
-  html: string,
-  projectId: string,
-  onProgress: (step: string) => void
-): Promise<string> {
-  const { isR2Configured, uploadToR2 } = await import('@/lib/r2')
-  if (!isR2Configured()) {
-    console.log('[R2] Skipping cached-HTML mirror — R2 not configured')
-    return html
-  }
-
-  const { createHash } = await import('crypto')
-  const MAX_BYTES = 2 * 1024 * 1024
-
-  // Extract all unique http(s) src= values from the HTML
-  const srcRe = /\bsrc=["']?(https?:\/\/[^"'\s>]+)["']?/gi
-  const urls: string[] = []
-  let m: RegExpExecArray | null
-  while ((m = srcRe.exec(html)) !== null) {
-    const u = m[1]
-    if (!urls.includes(u)) urls.push(u)
-  }
-
-  const SKIP_PATTERNS = /\.pdf($|\?)|energy|label|document|fiche|datasheet/i
-  const candidates = urls.filter((u) => !SKIP_PATTERNS.test(u)).slice(0, 20)
-  console.log(`[R2] Cached HTML mirror: ${candidates.length} candidate URLs`)
-  if (candidates.length === 0) return html
-
-  onProgress(`Uploading ${candidates.length} images to storage…`)
-
-  let updatedHtml = html
-  let replaced = 0
-
-  await Promise.allSettled(
-    candidates.map(async (origUrl) => {
-      console.log(`[R2] Cached fetch attempt: ${origUrl}`)
-      try {
-        const res = await fetch(origUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CloneBot/1.0)' },
-          signal: AbortSignal.timeout(10000),
-        })
-        if (!res.ok) { console.log(`[R2] Cached fetch failed (${res.status}): ${origUrl}`); return }
-
-        const arrayBuffer = await res.arrayBuffer()
-        const buffer = Buffer.from(arrayBuffer)
-        if (buffer.length > MAX_BYTES) { console.log(`[R2] Cached skip (too large): ${origUrl}`); return }
-
-        const contentType = (res.headers.get('content-type') || 'image/jpeg').split(';')[0].trim()
-        const ext = contentType.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg'
-        const hash = createHash('md5').update(origUrl).digest('hex').slice(0, 16)
-        const key = `projects/${projectId}/${hash}.${ext}`
-
-        const r2Url = await uploadToR2(buffer, key, contentType)
-        console.log(`[R2] Cached uploaded: ${origUrl} → ${r2Url}`)
-        updatedHtml = updatedHtml.split(origUrl).join(r2Url)
-        replaced++
-      } catch (err) {
-        console.log(`[R2] Cached fetch error for ${origUrl}:`, err)
-      }
-    })
-  )
-
-  console.log(`[R2] Cached HTML mirror done: ${replaced}/${candidates.length} replaced`)
-  return updatedHtml
-}
 
 const SSE_HEADERS = {
   'Content-Type': 'text/event-stream',
@@ -173,38 +102,9 @@ export async function GET(
           .eq('id', project.user_id)
           .single()
 
-        // ── Scrape (with 24h cache) ─────────────────────────────────────
-        let scrapeResult: { html: string; screenshotBase64: string; title: string }
-
-        const cacheWindow = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-        const { data: cachedScrape } = await supabase
-          .from('scrape_cache')
-          .select('html, screenshot_base64, title')
-          .eq('url', url)
-          .gte('scraped_at', cacheWindow)
-          .order('scraped_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        if (cachedScrape) {
-          console.log(`[SCRAPE] Cache hit for ${url} — scrapeWebsite will NOT run, running R2 mirroring separately`)
-          send({ step: 'Using cached page data...' })
-          const cachedHtml = await mirrorCachedHtmlToR2(cachedScrape.html, id, (step) => send({ step }))
-          scrapeResult = {
-            html: cachedHtml,
-            screenshotBase64: cachedScrape.screenshot_base64,
-            title: cachedScrape.title ?? '',
-          }
-        } else {
-          console.log(`[SCRAPE] No cache hit for ${url} — calling scrapeWebsite (R2 mirroring runs inside)`)
-          scrapeResult = await scrapeWebsite(url, (step) => send({ step }), id)
-          void supabase.from('scrape_cache').insert({
-            url,
-            html: scrapeResult.html,
-            screenshot_base64: scrapeResult.screenshotBase64,
-            title: scrapeResult.title,
-          })
-        }
+        // ── Scrape (always fresh — no cache) ────────────────────────────
+        console.log(`[SCRAPE] Fresh scrape for ${url}`)
+        const scrapeResult = await scrapeWebsite(url, (step) => send({ step }), id)
 
         // ── Generate with Claude ─────────────────────────────────────────
         const screenshotBytes = Math.round(scrapeResult.screenshotBase64.length * 0.75)
