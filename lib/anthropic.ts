@@ -51,56 +51,154 @@ function stripMarkdownFences(text: string): string {
 }
 
 /**
- * Replace every <img src="..."> in the HTML with <img src="IMAGE_N"> placeholders
- * (1-indexed, in DOM order).  Returns the modified HTML and the original src list so
- * we can inject real URLs back after Claude generates the clone.
- *
- * This prevents Claude from ignoring or mangling image URLs — it only ever sees
- * simple tokens like IMAGE_1, IMAGE_2, which it faithfully copies through.
+ * Classify an image URL + alt text into a semantic uppercase token base.
+ * The caller appends a numeric suffix for duplicates within the same category.
  */
-export function extractAndNumberImages(html: string): { html: string; srcs: string[] } {
-  const srcs: string[] = []
-  const result = html.replace(/<img\b([^>]*)>/gi, (_m, attrs: string) => {
-    const srcMatch = attrs.match(/\bsrc=(?:"([^"]*)"|'([^']*)'|([^\s>/]+))/)
-    const src = (srcMatch ? (srcMatch[1] ?? srcMatch[2] ?? srcMatch[3] ?? '') : '').trim()
-    if (!src) return '<img>'
-    if (!srcs.includes(src)) srcs.push(src)
-    const n = srcs.indexOf(src) + 1
-    const altMatch = attrs.match(/\balt=(?:"([^"]*)"|'([^']*)'|([^\s>/]+))/)
-    const altVal = altMatch ? (altMatch[1] ?? altMatch[2] ?? altMatch[3] ?? '') : ''
-    return `<img src="IMAGE_${n}"${altVal ? ` alt="${altVal}"` : ''}>`
-  })
-  return { html: result, srcs }
+function categorizeImageUrl(src: string, alt: string): string {
+  const filename = (src.split('/').pop()?.split('?')[0] ?? '').toLowerCase()
+  const combined = filename + ' ' + alt.toLowerCase()
+
+  // Press / media brand logos — named so Claude places them in the press section
+  const PRESS_BRANDS = [
+    'forbes', 'billboard', 'cosmopolitan', 'vogue', 'allure', 'glamour',
+    'nylon', 'refinery29', 'buzzfeed', 'elle', 'harpersbazaar', 'marieclaire',
+    'people', 'instyle', 'popsugar', 'byrdie', 'wwd', 'beautyindependent',
+    'whowhowhat', 'sheknows', 'into_the_gloss', 'teenvogue',
+  ]
+  for (const brand of PRESS_BRANDS) {
+    if (combined.includes(brand)) {
+      return `PRESS_LOGO_${brand.replace(/[^a-z0-9]/g, '').toUpperCase()}`
+    }
+  }
+  if (/press[-_]logo|media[-_]logo|publication|magazine|editorial/.test(combined)) {
+    return 'PRESS_LOGO'
+  }
+
+  // Site / brand logo
+  if (/\blogo\b/.test(combined)) return 'LOGO_IMAGE'
+
+  // Hero / banner
+  if (/\bhero\b|banner|main[-_](?:image|photo|banner)|homepage[-_]banner/.test(combined)) {
+    return 'HERO_IMAGE'
+  }
+
+  // Named product-section patterns (common e-commerce / beauty brands)
+  if (/sensitiv/.test(combined)) return 'SENSITIVE_SECTION_IMAGE'
+  if (/ritual|routine|regimen/.test(combined)) return 'RITUAL_IMAGE'
+  if (/purple|lavender|violet/.test(combined)) return 'PURPLE_COLLECTION_IMAGE'
+  if (/teeth|tooth|whitening|dental/.test(combined)) return 'TEETH_IMAGE'
+  if (/before[-_]after|result/.test(combined)) return 'BEFORE_AFTER_IMAGE'
+
+  // Person / model / portrait → lifestyle / hero area
+  if (/portrait|lifestyle|model|person|woman|face/.test(combined)) return 'LIFESTYLE_IMAGE'
+
+  // Generic product images
+  if (/product|item|sku|variant|pdp|shop/.test(combined)) return 'PRODUCT_IMAGE'
+
+  // Icons / badges
+  if (/\bicon\b|badge|seal|award|cert/.test(combined)) return 'ICON'
+
+  // Catch-all
+  return 'IMAGE'
 }
 
 /**
- * After Claude generates HTML:
- *  1. Replace IMAGE_N tokens with the real src URLs.
- *  2. Replace any decorative SVG placeholder shapes (rect/circle/path with no
- *     title/aria-label) with <img> tags using the still-unused image URLs.
- *     This is the fallback for when Claude generates SVGs instead of <img> tags.
+ * Build a semantic image map from scraped HTML.
+ *
+ * Each <img> is assigned a descriptive token (e.g. HERO_IMAGE, PRODUCT_IMAGE_1,
+ * PRESS_LOGO_FORBES) so Claude knows which section each image belongs to,
+ * rather than a blind IMAGE_1 / IMAGE_2 ordering.
+ *
+ * Returns:
+ *   tokenToUrl  – Map<token, realUrl> for post-generation substitution
+ *   promptBlock – formatted string to embed in the Claude user prompt
  */
-export function injectImageUrls(claudeHtml: string, srcs: string[]): string {
-  if (srcs.length === 0) return claudeHtml
+export function buildImageMap(html: string): {
+  tokenToUrl: Map<string, string>
+  promptBlock: string
+} {
+  const categoryCount = new Map<string, number>()
+  const tokenToUrl = new Map<string, string>()
+  const orderedTokens: string[] = []
+  const seenUrls = new Set<string>()
+
+  const imgRe = /<img\b([^>]*)>/gi
+  let m: RegExpExecArray | null
+  while ((m = imgRe.exec(html)) !== null) {
+    const attrs = m[1]
+    const srcMatch = attrs.match(/\bsrc=(?:"([^"]*)"|'([^']*)'|([^\s>/]+))/)
+    const src = (srcMatch ? (srcMatch[1] ?? srcMatch[2] ?? srcMatch[3] ?? '') : '').trim()
+    if (!src || src.startsWith('data:')) continue
+    if (seenUrls.has(src)) continue
+    seenUrls.add(src)
+
+    const altMatch = attrs.match(/\balt=(?:"([^"]*)"|'([^']*)'|([^\s>/]+))/)
+    const alt = (altMatch ? (altMatch[1] ?? altMatch[2] ?? altMatch[3] ?? '') : '').trim()
+
+    const base = categorizeImageUrl(src, alt)
+
+    // Press logos with embedded brand name are unique by definition
+    let token: string
+    if (base.startsWith('PRESS_LOGO_') && base.length > 'PRESS_LOGO_'.length) {
+      token = base
+      if (tokenToUrl.has(token)) continue // skip duplicate brand variant
+    } else {
+      const count = (categoryCount.get(base) ?? 0) + 1
+      categoryCount.set(base, count)
+      token = count === 1 ? base : `${base}_${count}`
+    }
+
+    tokenToUrl.set(token, src)
+    orderedTokens.push(token)
+  }
+
+  if (tokenToUrl.size === 0) return { tokenToUrl, promptBlock: '' }
+
+  const lines = orderedTokens.map((token) => `  ${token}: ${tokenToUrl.get(token)}`)
+  const promptBlock = `Image Map — use these EXACT token names as <img src="..."> values:\n${lines.join('\n')}`
+
+  return { tokenToUrl, promptBlock }
+}
+
+/**
+ * After Claude generates HTML, replace semantic image tokens with real URLs.
+ * Falls through to SVG / div / card injection for any images Claude didn't place.
+ */
+export function injectImageUrls(claudeHtml: string, tokenToUrl: Map<string, string>): string {
+  if (tokenToUrl.size === 0) return claudeHtml
   let result = claudeHtml
 
-  // ── Pass 1: IMAGE_N token replacement ─────────────────────────────────
-  // Works when Claude cooperates and copies IMAGE_N tokens into its output.
-  const used = new Set<number>()
-  result = result.replace(/IMAGE_(\d+)/g, (match, n) => {
-    const idx = parseInt(n, 10) - 1
-    if (idx >= 0 && idx < srcs.length) {
-      used.add(idx)
-      return srcs[idx]
-    }
-    return match
-  })
+  // ── Pass 1: Named token replacement ──────────────────────────────────────
+  // Replace every known token (and legacy IMAGE_N if Claude fell back to numbers).
+  const used = new Set<string>()
+  const allTokens = [...tokenToUrl.keys()]
+  const srcsInOrder = [...tokenToUrl.values()]
+
+  if (allTokens.length > 0) {
+    const escaped = allTokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    const pattern = new RegExp(`\\b(${escaped.join('|')}|IMAGE_\\d+)\\b`, 'g')
+
+    result = result.replace(pattern, (match) => {
+      if (tokenToUrl.has(match)) {
+        used.add(match)
+        return tokenToUrl.get(match)!
+      }
+      // Legacy IMAGE_N fallback
+      const nMatch = match.match(/^IMAGE_(\d+)$/)
+      if (nMatch) {
+        const idx = parseInt(nMatch[1], 10) - 1
+        if (idx >= 0 && idx < srcsInOrder.length) return srcsInOrder[idx]
+      }
+      return match
+    })
+  }
 
   // Remaining URLs not yet placed
-  let pool = srcs.filter((_, i) => !used.has(i))
+  let pool = [...tokenToUrl.entries()]
+    .filter(([token]) => !used.has(token))
+    .map(([, src]) => src)
 
-  // ── Pass 2: SVG placeholder replacement ───────────────────────────────
-  // Replace decorative SVGs (rect/circle/polygon, no title/aria-label) with <img>
+  // ── Pass 2: SVG placeholder replacement ───────────────────────────────────
   if (pool.length > 0) {
     let i = 0
     result = result.replace(/<svg\b(?![^>]*\b(?:title|aria-label)\b)[^>]*>[\s\S]*?<\/svg>/gi, (svgTag) => {
@@ -113,11 +211,11 @@ export function injectImageUrls(claudeHtml: string, srcs: string[]): string {
     pool = pool.slice(i)
   }
 
-  // ── Pass 3: Empty image-class div injection ────────────────────────────
-  // Fill <div class="*image*|*photo*|*thumb*|*picture*"> with no <img> child.
+  // ── Pass 3: Empty image-class div injection ────────────────────────────────
   if (pool.length > 0) {
     let i = 0
-    result = result.replace(/<div\b([^>]*\bclass=["'][^"']*\b(?:image|photo|thumb|picture|img)\b[^"']*["'][^>]*)>([\s\S]*?)<\/div>/gi,
+    result = result.replace(
+      /<div\b([^>]*\bclass=["'][^"']*\b(?:image|photo|thumb|picture|img)\b[^"']*["'][^>]*)>([\s\S]*?)<\/div>/gi,
       (match, attrs, inner) => {
         if (/<img\b/i.test(inner) || i >= pool.length) return match
         return `<div${attrs}><img src="${pool[i++]}" style="width:100%;height:100%;object-fit:cover;">${inner}</div>`
@@ -126,41 +224,35 @@ export function injectImageUrls(claudeHtml: string, srcs: string[]): string {
     pool = pool.slice(i)
   }
 
-  // ── Pass 4: Product-card injection (broadest fallback) ─────────────────
-  // For every remaining URL: scan Claude's HTML for block elements whose class
-  // looks like a product card (contains product/card/item/tile but NOT
-  // grid/list/container/wrapper) and whose next 2500 chars contain no <img>.
-  // Inject <img> right after the opening tag — bypasses Claude entirely for images.
+  // ── Pass 4: Product-card injection (broadest fallback) ────────────────────
   if (pool.length > 0) {
     let i = 0
     result = result.replace(
       /<(div|article|li)\b([^>]*)>/gi,
       (match, _tag, attrs, offset: number, str: string) => {
         if (i >= pool.length) return match
-
         const classMatch = attrs.match(/\bclass=["']([^"']*)["']/)
         if (!classMatch) return match
         const cls = classMatch[1].toLowerCase()
-
-        // Must look like a product / media card
         if (!/\b(?:product|card|item|tile|thumb|result|entry)\b/.test(cls)) return match
-        // Skip layout wrappers
         if (/\b(?:grid|list|container|wrapper|wrap|row|header|footer|nav|menu|sidebar)\b/.test(cls)) return match
-
-        // Look ahead — if an <img> already exists within the card's content, skip
         const lookahead = str.slice(offset + match.length, offset + match.length + 2500)
         if (/<img\b/i.test(lookahead)) return match
-
         return `${match}<img src="${pool[i++]}" style="width:100%;aspect-ratio:1;object-fit:cover;">`
       }
     )
   }
 
-  // ── Final cleanup: remove any leftover IMAGE_N tokens ─────────────────
-  // If Claude emitted IMAGE_N tokens for images we don't have URLs for,
-  // strip them entirely rather than leaving broken <img src="IMAGE_N"> tags.
+  // ── Final cleanup ──────────────────────────────────────────────────────────
+  // Strip any leftover numeric IMAGE_N tokens
   result = result.replace(/<img\b[^>]*\bsrc=["']IMAGE_\d+["'][^>]*>/gi, '')
   result = result.replace(/\bIMAGE_\d+\b/g, '')
+  // Strip any named tokens Claude didn't use (prevents token text leaking into page)
+  if (allTokens.length > 0) {
+    const escaped = allTokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    const cleanPattern = new RegExp(`\\b(${escaped.join('|')})\\b`, 'g')
+    result = result.replace(cleanPattern, '')
+  }
 
   return result
 }
@@ -185,21 +277,34 @@ function extractPageSections(html: string): string {
 
 function buildCloneSystemPrompt(hasImages: boolean): string {
   const imageRules = hasImages
-    ? `IMAGES — this is critical, read carefully:
-- For every product/content image visible in the screenshot, output an <img> tag
-- Use IMAGE_1, IMAGE_2, IMAGE_3… as src values in the order images appear top-to-bottom
-- You MUST output actual <img src="IMAGE_N"> tags — never use <svg> shapes, empty divs, or CSS backgrounds for images
-- Never use data: URIs, picsum, placehold.it, or any placeholder image service
-- Every image visible in the screenshot MUST have a corresponding <img src="IMAGE_N"> tag`
+    ? `IMAGES — read carefully, this is critical:
+- An Image Map is included in the user message. It lists token names and their exact URLs.
+- For every image visible in the screenshot, find the matching token in the Image Map and output <img src="TOKEN_NAME">
+- Place each token in the section that matches its name:
+  • HERO_IMAGE → hero / header section
+  • LOGO_IMAGE → site logo in navigation or header
+  • PRODUCT_IMAGE, PRODUCT_IMAGE_N → product grid / product card sections
+  • PRESS_LOGO_N, PRESS_LOGO_BRANDNAME → press / media / "as seen in" section only
+  • SENSITIVE_SECTION_IMAGE → sensitive-formula / sensitive-skin product section
+  • RITUAL_IMAGE → beauty ritual / daily routine section
+  • PURPLE_COLLECTION_IMAGE → purple collection / purple product section
+  • TEETH_IMAGE → teeth whitening / dental product section
+  • BEFORE_AFTER_IMAGE → before & after / results section
+  • LIFESTYLE_IMAGE → lifestyle photography / model imagery areas
+  • ICON, ICON_N → icon, badge, or award areas
+  • IMAGE, IMAGE_N → general content image — place contextually based on surrounding content
+- Use the EXACT token string as the src value: <img src="HERO_IMAGE">, <img src="PRODUCT_IMAGE_1">, etc.
+- Every token in the Image Map MUST appear exactly once in your HTML output
+- Never use data: URIs, picsum.photos, placehold.it, or any placeholder image service
+- Never use SVG shapes or empty divs where a real image should appear`
     : `IMAGES — no real image URLs are available for this page:
 - Do NOT output any <img> tags at all
 - Do NOT use broken src values, placeholder services, or data: URIs
 - Instead, wherever a product/content image appears in the screenshot, render a styled <div> placeholder:
   - Match the approximate size and position from the screenshot
   - Fill it with the product name or a short description as centered text
-  - Use a background colour that matches the dominant colour of that image area in the screenshot (e.g. light grey for electronics, warm tones for food)
-  - Style: display:flex; align-items:center; justify-content:center; font-size:0.85rem; color:#555; border-radius matching the screenshot
-- This produces a visually accurate clone without broken image tags`
+  - Use a background colour that matches the dominant colour of that image area in the screenshot
+  - Style: display:flex; align-items:center; justify-content:center; font-size:0.85rem; color:#555; border-radius matching the screenshot`
 
   return `You are a web developer. Recreate the screenshot as a complete self-contained HTML file.
 - Output ONLY raw HTML — no markdown, no code fences, no explanation
@@ -213,10 +318,12 @@ function buildCloneSystemPrompt(hasImages: boolean): string {
 ${imageRules}`
 }
 
-function buildCloneUserPrompt(url: string, imageCount: number, pageSections: string): string {
+function buildCloneUserPrompt(url: string, imagePromptBlock: string, pageSections: string): string {
   return `Recreate this website (${url}) as a complete, self-contained HTML file.
 
-${imageCount > 0 ? `The page has ${imageCount} image${imageCount > 1 ? 's' : ''} — use IMAGE_1${imageCount > 1 ? ` through IMAGE_${imageCount}` : ''} as src values for <img> tags in the order they appear.` : 'No real image URLs are available — use styled placeholder divs instead of <img> tags as instructed.'}
+${imagePromptBlock
+    ? `${imagePromptBlock}\n\nUse the EXACT image URLs provided above. Place each token in its corresponding section as indicated by its name.`
+    : 'No real image URLs are available — use styled placeholder divs instead of <img> tags as instructed.'}
 
 ${pageSections ? `${pageSections}\n\nYou MUST include ALL of the above sections in your output. Do not skip any.` : ''}
 
@@ -228,15 +335,15 @@ export async function generateClone(
   screenshotBase64: string,
   url: string
 ): Promise<{ html: string; tokensUsed: number }> {
-  // Extract real image URLs and page sections from the scraped HTML.
-  // We do NOT send the HTML to Claude — only the screenshot + section list.
-  const { srcs } = extractAndNumberImages(htmlContent)
+  // Build semantic image map and extract page sections from the scraped HTML.
+  // We do NOT send the HTML to Claude — only the screenshot + image map + section list.
+  const { tokenToUrl, promptBlock } = buildImageMap(htmlContent)
   const pageSections = extractPageSections(htmlContent)
 
   const response = await anthropic.messages.create({
     model: CLONE_MODEL,
     max_tokens: 6000,
-    system: buildCloneSystemPrompt(srcs.length > 0),
+    system: buildCloneSystemPrompt(tokenToUrl.size > 0),
     messages: [
       {
         role: 'user',
@@ -247,7 +354,7 @@ export async function generateClone(
           },
           {
             type: 'text',
-            text: buildCloneUserPrompt(url, srcs.length, pageSections),
+            text: buildCloneUserPrompt(url, promptBlock, pageSections),
           },
         ],
       },
@@ -265,7 +372,7 @@ export async function generateClone(
   if (!claudeHtml) throw new Error('Claude returned empty HTML — please try again')
 
   return {
-    html: injectImageUrls(claudeHtml, srcs),
+    html: injectImageUrls(claudeHtml, tokenToUrl),
     tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
   }
 }
@@ -282,16 +389,16 @@ export async function generateCloneStreaming(
 ): Promise<{ html: string; tokensUsed: number }> {
   const SAVE_INTERVAL = 2000 // chars between DB saves
 
-  // Extract real image URLs and page sections from the scraped HTML.
-  // We do NOT send the HTML to Claude — only the screenshot + section list.
-  const { srcs } = extractAndNumberImages(htmlContent)
+  // Build semantic image map and extract page sections from the scraped HTML.
+  // We do NOT send the HTML to Claude — only the screenshot + image map + section list.
+  const { tokenToUrl, promptBlock } = buildImageMap(htmlContent)
   const pageSections = extractPageSections(htmlContent)
 
   const stream = await anthropic.messages.create({
     model: CLONE_MODEL,
     max_tokens: 6000,
     stream: true,
-    system: buildCloneSystemPrompt(srcs.length > 0),
+    system: buildCloneSystemPrompt(tokenToUrl.size > 0),
     messages: [
       {
         role: 'user',
@@ -302,7 +409,7 @@ export async function generateCloneStreaming(
           },
           {
             type: 'text',
-            text: buildCloneUserPrompt(url, srcs.length, pageSections),
+            text: buildCloneUserPrompt(url, promptBlock, pageSections),
           },
         ],
       },
@@ -345,7 +452,7 @@ export async function generateCloneStreaming(
   if (!claudeHtml) throw new Error('Claude returned empty HTML — please try again')
 
   return {
-    html: injectImageUrls(claudeHtml, srcs),
+    html: injectImageUrls(claudeHtml, tokenToUrl),
     tokensUsed: inputTokens + outputTokens,
   }
 }
