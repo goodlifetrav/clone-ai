@@ -165,7 +165,24 @@ export function injectImageUrls(claudeHtml: string, srcs: string[]): string {
   return result
 }
 
-function buildCloneSystemPrompt(): string {
+function buildCloneSystemPrompt(hasImages: boolean): string {
+  const imageRules = hasImages
+    ? `IMAGES — this is critical, read carefully:
+- For every product/content image visible in the screenshot, output an <img> tag
+- Use IMAGE_1, IMAGE_2, IMAGE_3… as src values in the order images appear top-to-bottom
+- You MUST output actual <img src="IMAGE_N"> tags — never use <svg> shapes, empty divs, or CSS backgrounds for images
+- Never use data: URIs, picsum, placehold.it, or any placeholder image service
+- Every image visible in the screenshot MUST have a corresponding <img src="IMAGE_N"> tag`
+    : `IMAGES — no real image URLs are available for this page:
+- Do NOT output any <img> tags at all
+- Do NOT use broken src values, placeholder services, or data: URIs
+- Instead, wherever a product/content image appears in the screenshot, render a styled <div> placeholder:
+  - Match the approximate size and position from the screenshot
+  - Fill it with the product name or a short description as centered text
+  - Use a background colour that matches the dominant colour of that image area in the screenshot (e.g. light grey for electronics, warm tones for food)
+  - Style: display:flex; align-items:center; justify-content:center; font-size:0.85rem; color:#555; border-radius matching the screenshot
+- This produces a visually accurate clone without broken image tags`
+
   return `You are a web developer. Recreate the screenshot as a complete self-contained HTML file.
 - Output ONLY raw HTML — no markdown, no code fences, no explanation
 - Start your response with <!DOCTYPE html> and end with </html>
@@ -175,18 +192,13 @@ function buildCloneSystemPrompt(): string {
 - Make it responsive with modern CSS (flexbox, grid)
 - Include Google Fonts CDN link if web fonts are used
 - No JavaScript unless essential
-IMAGES — this is critical, read carefully:
-- For every product/content image visible in the screenshot, output an <img> tag
-- Use IMAGE_1, IMAGE_2, IMAGE_3… as src values in the order images appear top-to-bottom
-- You MUST output actual <img src="IMAGE_N"> tags — never use <svg> shapes, empty divs, or CSS backgrounds for images
-- Never use data: URIs, picsum, placehold.it, or any placeholder image service
-- Every image visible in the screenshot MUST have a corresponding <img src="IMAGE_N"> tag`
+${imageRules}`
 }
 
 function buildCloneUserPrompt(url: string, imageCount: number): string {
   return `Recreate this website (${url}) as a complete, self-contained HTML file.
 
-${imageCount > 0 ? `The page has ${imageCount} image${imageCount > 1 ? 's' : ''} — use IMAGE_1${imageCount > 1 ? ` through IMAGE_${imageCount}` : ''} as src values for <img> tags in the order they appear.` : ''}
+${imageCount > 0 ? `The page has ${imageCount} image${imageCount > 1 ? 's' : ''} — use IMAGE_1${imageCount > 1 ? ` through IMAGE_${imageCount}` : ''} as src values for <img> tags in the order they appear.` : 'No real image URLs are available — use styled placeholder divs instead of <img> tags as instructed.'}
 
 Reconstruct the full page layout from the screenshot. Include all visible text, sections, navigation, product cards, and structure.`
 }
@@ -203,7 +215,7 @@ export async function generateClone(
   const response = await anthropic.messages.create({
     model: CLONE_MODEL,
     max_tokens: 4000,
-    system: buildCloneSystemPrompt(),
+    system: buildCloneSystemPrompt(srcs.length > 0),
     messages: [
       {
         role: 'user',
@@ -257,7 +269,7 @@ export async function generateCloneStreaming(
     model: CLONE_MODEL,
     max_tokens: 4000,
     stream: true,
-    system: buildCloneSystemPrompt(),
+    system: buildCloneSystemPrompt(srcs.length > 0),
     messages: [
       {
         role: 'user',

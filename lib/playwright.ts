@@ -112,8 +112,8 @@ async function mirrorImagesToR2(
 
   const { createHash } = await import('crypto')
 
-  // Skip PDFs and non-photo document URLs
-  const SKIP_PATTERNS = /\.pdf($|\?)|energy|label|document|fiche|datasheet/i
+  // Skip PDFs, energy labels, and non-photo document URLs
+  const SKIP_PATTERNS = /\.pdf($|\?)|energy|label|document|fiche|datasheet|energy_arrow|energy-rating|euro.*rating/i
 
   // Deduplicate by attrSrc (the HTML-matching key), filter by minimum dimensions, take top 20
   const seen = new Set<string>()
