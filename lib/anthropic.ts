@@ -50,45 +50,119 @@ function stripMarkdownFences(text: string): string {
     .replace(/\n?```\s*$/, '')
 }
 
-export async function generateClone(
-  htmlContent: string,
-  screenshotBase64: string,
-  url: string
-): Promise<{ html: string; tokensUsed: number }> {
-  const response = await anthropic.messages.create({
-    model: CLONE_MODEL,
-    max_tokens: 3000,
-    system: `You are a web developer. Recreate the screenshot as a complete self-contained HTML file.
+/**
+ * Replace every <img src="..."> in the HTML with <img src="IMAGE_N"> placeholders
+ * (1-indexed, in DOM order).  Returns the modified HTML and the original src list so
+ * we can inject real URLs back after Claude generates the clone.
+ *
+ * This prevents Claude from ignoring or mangling image URLs — it only ever sees
+ * simple tokens like IMAGE_1, IMAGE_2, which it faithfully copies through.
+ */
+export function extractAndNumberImages(html: string): { html: string; srcs: string[] } {
+  const srcs: string[] = []
+  const result = html.replace(/<img\b([^>]*)>/gi, (_m, attrs: string) => {
+    const srcMatch = attrs.match(/\bsrc=(?:"([^"]*)"|'([^']*)'|([^\s>/]+))/)
+    const src = (srcMatch ? (srcMatch[1] ?? srcMatch[2] ?? srcMatch[3] ?? '') : '').trim()
+    if (!src) return '<img>'
+    if (!srcs.includes(src)) srcs.push(src)
+    const n = srcs.indexOf(src) + 1
+    const altMatch = attrs.match(/\balt=(?:"([^"]*)"|'([^']*)'|([^\s>/]+))/)
+    const altVal = altMatch ? (altMatch[1] ?? altMatch[2] ?? altMatch[3] ?? '') : ''
+    return `<img src="IMAGE_${n}"${altVal ? ` alt="${altVal}"` : ''}>`
+  })
+  return { html: result, srcs }
+}
+
+/**
+ * After Claude generates HTML:
+ *  1. Replace IMAGE_N tokens with the real src URLs.
+ *  2. Replace any decorative SVG placeholder shapes (rect/circle/path with no
+ *     title/aria-label) with <img> tags using the still-unused image URLs.
+ *     This is the fallback for when Claude generates SVGs instead of <img> tags.
+ */
+export function injectImageUrls(claudeHtml: string, srcs: string[]): string {
+  if (srcs.length === 0) return claudeHtml
+  let result = claudeHtml
+
+  // 1 — replace IMAGE_N placeholders
+  const used = new Set<number>()
+  result = result.replace(/IMAGE_(\d+)/g, (match, n) => {
+    const idx = parseInt(n, 10) - 1
+    if (idx >= 0 && idx < srcs.length) {
+      used.add(idx)
+      return srcs[idx]
+    }
+    return match
+  })
+
+  // 2 — replace decorative SVGs with unused image URLs (SVG-placeholder fallback)
+  const unusedSrcs = srcs.filter((_, i) => !used.has(i))
+  if (unusedSrcs.length === 0) return result
+
+  let unusedIdx = 0
+  result = result.replace(/<svg\b(?![^>]*\b(?:title|aria-label)\b)[^>]*>[\s\S]*?<\/svg>/gi, (svgTag) => {
+    if (unusedIdx >= unusedSrcs.length) return svgTag
+    // Only swap out SVGs that contain basic placeholder shapes, not icon paths
+    if (/<(?:rect|circle|polygon)\b/i.test(svgTag)) {
+      return `<img src="${unusedSrcs[unusedIdx++]}" style="width:100%;height:100%;object-fit:cover;">`
+    }
+    return svgTag
+  })
+
+  return result
+}
+
+function buildCloneSystemPrompt(): string {
+  return `You are a web developer. Recreate the screenshot as a complete self-contained HTML file.
 - Output ONLY raw HTML — no markdown, no code fences, no explanation
 - Start your response with <!DOCTYPE html> and end with </html>
 - Inline all CSS in a <style> tag in <head>
 - Match the visual design exactly: colors, fonts, layout, spacing, content
 - Make it responsive with modern CSS (flexbox, grid)
 - Include Google Fonts CDN link if web fonts are used
-- IMPORTANT: Use the exact image src URLs from the original HTML — never replace with placeholders
-- No JavaScript unless essential`,
+- No JavaScript unless essential
+IMAGES — this is critical:
+- The source HTML uses IMAGE_1, IMAGE_2, IMAGE_3 … as placeholders for real images
+- You MUST output <img src="IMAGE_1">, <img src="IMAGE_2">, etc. — copy these tokens exactly
+- You MUST NOT generate <svg> shapes, rectangles, circles, or paths to represent images
+- You MUST NOT use data: URIs for images
+- You MUST NOT invent URLs or use placeholder image services (picsum, placehold.it, etc.)
+- Every image visible in the screenshot MUST appear as an <img src="IMAGE_N"> tag`
+}
+
+function buildCloneUserPrompt(url: string, processedHtml: string, imageCount: number): string {
+  return `Recreate this website (${url}) as a complete, self-contained HTML file.
+
+${imageCount > 0 ? `This page has ${imageCount} image${imageCount > 1 ? 's' : ''} (IMAGE_1${imageCount > 1 ? ` through IMAGE_${imageCount}` : ''}). Each one MUST appear as an <img src="IMAGE_N"> tag — no SVGs, no placeholders.` : ''}
+
+Original HTML structure for reference (images replaced with IMAGE_N tokens):
+${processedHtml}`
+}
+
+export async function generateClone(
+  htmlContent: string,
+  screenshotBase64: string,
+  url: string
+): Promise<{ html: string; tokensUsed: number }> {
+  // Number images before preprocessing so Claude only sees IMAGE_N tokens
+  const { html: numberedHtml, srcs } = extractAndNumberImages(htmlContent)
+  const processedHtml = preprocessHtmlForClone(numberedHtml)
+
+  const response = await anthropic.messages.create({
+    model: CLONE_MODEL,
+    max_tokens: 3000,
+    system: buildCloneSystemPrompt(),
     messages: [
       {
         role: 'user',
         content: [
           {
             type: 'image',
-            source: {
-              type: 'base64',
-              media_type: 'image/jpeg',
-              data: screenshotBase64,
-            },
+            source: { type: 'base64', media_type: 'image/jpeg', data: screenshotBase64 },
           },
           {
             type: 'text',
-            text: `Please recreate this website (${url}) as a complete, self-contained HTML file.
-
-Here is the original HTML source for reference:
-\`\`\`html
-${preprocessHtmlForClone(htmlContent)}
-\`\`\`
-
-Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`,
+            text: buildCloneUserPrompt(url, processedHtml, srcs.length),
           },
         ],
       },
@@ -96,22 +170,17 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
   })
 
   const content = response.content[0]
-  if (content.type !== 'text') {
-    throw new Error('Unexpected response type from Claude')
-  }
+  if (content.type !== 'text') throw new Error('Unexpected response type from Claude')
 
   const raw = stripMarkdownFences(content.text.trim())
-
-  // Extract the HTML document from <!DOCTYPE or <html to </html>
   const htmlMatch =
     raw.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i) ??
     raw.match(/<html[\s\S]*<\/html>/i)
-
-  const html = htmlMatch ? htmlMatch[0] : raw
-  if (!html) throw new Error('Claude returned empty HTML — please try again')
+  const claudeHtml = htmlMatch ? htmlMatch[0] : raw
+  if (!claudeHtml) throw new Error('Claude returned empty HTML — please try again')
 
   return {
-    html,
+    html: injectImageUrls(claudeHtml, srcs),
     tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
   }
 }
@@ -128,41 +197,26 @@ export async function generateCloneStreaming(
 ): Promise<{ html: string; tokensUsed: number }> {
   const SAVE_INTERVAL = 2000 // chars between DB saves
 
+  // Number images before preprocessing so Claude only sees IMAGE_N tokens
+  const { html: numberedHtml, srcs } = extractAndNumberImages(htmlContent)
+  const processedHtml = preprocessHtmlForClone(numberedHtml)
+
   const stream = await anthropic.messages.create({
     model: CLONE_MODEL,
     max_tokens: 3000,
     stream: true,
-    system: `You are a web developer. Recreate the screenshot as a complete self-contained HTML file.
-- Output ONLY raw HTML — no markdown, no code fences, no explanation
-- Start your response with <!DOCTYPE html> and end with </html>
-- Inline all CSS in a <style> tag in <head>
-- Match the visual design exactly: colors, fonts, layout, spacing, content
-- Make it responsive with modern CSS (flexbox, grid)
-- Include Google Fonts CDN link if web fonts are used
-- IMPORTANT: Use the exact image src URLs from the original HTML — never replace with placeholders
-- No JavaScript unless essential`,
+    system: buildCloneSystemPrompt(),
     messages: [
       {
         role: 'user',
         content: [
           {
             type: 'image',
-            source: {
-              type: 'base64',
-              media_type: 'image/jpeg',
-              data: screenshotBase64,
-            },
+            source: { type: 'base64', media_type: 'image/jpeg', data: screenshotBase64 },
           },
           {
             type: 'text',
-            text: `Please recreate this website (${url}) as a complete, self-contained HTML file.
-
-Here is the original HTML source for reference:
-\`\`\`html
-${preprocessHtmlForClone(htmlContent)}
-\`\`\`
-
-Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`,
+            text: buildCloneUserPrompt(url, processedHtml, srcs.length),
           },
         ],
       },
@@ -201,11 +255,11 @@ Create a clean, pixel-perfect clone as a single HTML file with all CSS inlined.`
     clean.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i) ??
     clean.match(/<html[\s\S]*<\/html>/i)
 
-  const html = htmlMatch ? htmlMatch[0] : clean
-  if (!html) throw new Error('Claude returned empty HTML — please try again')
+  const claudeHtml = htmlMatch ? htmlMatch[0] : clean
+  if (!claudeHtml) throw new Error('Claude returned empty HTML — please try again')
 
   return {
-    html,
+    html: injectImageUrls(claudeHtml, srcs),
     tokensUsed: inputTokens + outputTokens,
   }
 }
