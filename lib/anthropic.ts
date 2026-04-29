@@ -7,7 +7,7 @@ export const anthropic = new Anthropic({
 export const MODEL = 'claude-sonnet-4-6'
 
 /** High quality model for cloning */
-export const CLONE_MODEL = 'claude-sonnet-4-20250514'
+export const CLONE_MODEL = 'claude-sonnet-4-6'
 
 /**
  * Strip visually irrelevant content from scraped HTML before sending to Claude.

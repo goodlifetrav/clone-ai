@@ -497,10 +497,22 @@ export async function scrapeWebsite(
       // Convert relative URLs → absolute so Claude preserves real image/asset URLs
       let absoluteHtml = absolutifyHtml(rawHtml, url)
 
-      // Replace original image URLs with R2-hosted copies
+      // Replace original image URLs with R2-hosted copies.
+      // For each https:// URL also try the protocol-relative variant (//...)
+      // because many sites write srcset/src without the scheme.
       if (r2UrlMap.size > 0) {
-        let replacements = 0
+        // Expand map with protocol-relative aliases before iterating
+        const expanded = new Map<string, string>(r2UrlMap)
         for (const [orig, r2] of r2UrlMap) {
+          if (orig.startsWith('https://')) {
+            expanded.set('//' + orig.slice('https://'.length), r2)
+          } else if (orig.startsWith('http://')) {
+            expanded.set('//' + orig.slice('http://'.length), r2)
+          }
+        }
+
+        let replacements = 0
+        for (const [orig, r2] of expanded) {
           const before = absoluteHtml
           absoluteHtml = absoluteHtml.split(orig).join(r2)
           if (absoluteHtml !== before) {
@@ -517,7 +529,6 @@ export async function scrapeWebsite(
                 console.log(`[R2] Replaced in HTML (decoded): ${decoded}`)
               } else {
                 console.log(`[R2] NO MATCH in HTML for: ${orig}`)
-                // Log a snippet of the HTML near where we'd expect the URL to appear
                 const stem = orig.split('/').pop()?.split('?')[0] ?? ''
                 if (stem) {
                   const idx = absoluteHtml.indexOf(stem)
@@ -542,7 +553,7 @@ export async function scrapeWebsite(
             }
           }
         }
-        console.log(`[R2] HTML replacement done: ${replacements}/${r2UrlMap.size} URLs replaced`)
+        console.log(`[R2] HTML replacement done: ${replacements}/${expanded.size} keys checked (${r2UrlMap.size} original + protocol-relative aliases)`)
       }
 
       onProgress?.('Generating clone...')
