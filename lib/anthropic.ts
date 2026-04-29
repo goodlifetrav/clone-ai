@@ -14,7 +14,7 @@ export const CLONE_MODEL = 'claude-sonnet-4-6'
  * Reduces token usage by 80–90% while preserving all structure needed to
  * reconstruct the visual design.
  */
-export function preprocessHtmlForClone(html: string, maxChars = 8000): string {
+export function preprocessHtmlForClone(html: string, maxChars = 12000): string {
   let result = html
   // Remove scripts and their content
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -306,28 +306,38 @@ function buildCloneSystemPrompt(hasImages: boolean): string {
   - Use a background colour that matches the dominant colour of that image area in the screenshot
   - Style: display:flex; align-items:center; justify-content:center; font-size:0.85rem; color:#555; border-radius matching the screenshot`
 
-  return `You are a web developer. Recreate the screenshot as a complete self-contained HTML file.
+  return `You are a web developer. Recreate this page EXACTLY as shown in the screenshot.
 - Output ONLY raw HTML — no markdown, no code fences, no explanation
 - Start your response with <!DOCTYPE html> and end with </html>
 - Inline all CSS in a <style> tag in <head>
-- Match the visual design exactly: colors, fonts, layout, spacing, content text
-- Reconstruct EVERY section visible in the screenshot — hero, navigation, product grids, feature lists, testimonials, footers, etc. Do not skip or abbreviate any section.
+- Reconstruct this page EXACTLY as shown in the screenshot. Match every section, every image placement, every color, every font size. Do not skip or abbreviate any section.
+- EVERY section visible in the screenshot MUST appear in your output — hero, navigation, product grids, feature sections, testimonials, press logos, footers, etc.
+- Match colors with pixel-perfect accuracy — sample exact hex values from the screenshot
+- Match font sizes, weights, and spacing as closely as possible
 - Make it responsive with modern CSS (flexbox, grid)
 - Include Google Fonts CDN link if web fonts are used
 - No JavaScript unless essential
+- An HTML structure extract is provided alongside the screenshot — use it to capture exact text, class names, and content order
 ${imageRules}`
 }
 
-function buildCloneUserPrompt(url: string, imagePromptBlock: string, pageSections: string): string {
+function buildCloneUserPrompt(
+  url: string,
+  imagePromptBlock: string,
+  pageSections: string,
+  structuredHtml: string
+): string {
   return `Recreate this website (${url}) as a complete, self-contained HTML file.
 
 ${imagePromptBlock
-    ? `${imagePromptBlock}\n\nUse the EXACT image URLs provided above. Place each token in its corresponding section as indicated by its name.`
+    ? `${imagePromptBlock}\n\nUse the EXACT token names as <img src="TOKEN"> values. Place each in the section matching its name.`
     : 'No real image URLs are available — use styled placeholder divs instead of <img> tags as instructed.'}
 
 ${pageSections ? `${pageSections}\n\nYou MUST include ALL of the above sections in your output. Do not skip any.` : ''}
 
-Reconstruct the COMPLETE page layout from the screenshot. Include every visible section, all text content, navigation, product cards, and footer. Do not truncate or omit any part of the page.`
+${structuredHtml ? `HTML structure for reference — use this to capture exact text content, section order, and layout:\n\`\`\`html\n${structuredHtml}\n\`\`\`` : ''}
+
+Reconstruct the COMPLETE page EXACTLY as shown in the screenshot. Every section, every color, every font size must match. Do not truncate or omit any part of the page.`
 }
 
 export async function generateClone(
@@ -335,14 +345,13 @@ export async function generateClone(
   screenshotBase64: string,
   url: string
 ): Promise<{ html: string; tokensUsed: number }> {
-  // Build semantic image map and extract page sections from the scraped HTML.
-  // We do NOT send the HTML to Claude — only the screenshot + image map + section list.
   const { tokenToUrl, promptBlock } = buildImageMap(htmlContent)
   const pageSections = extractPageSections(htmlContent)
+  const structuredHtml = preprocessHtmlForClone(htmlContent)
 
   const response = await anthropic.messages.create({
     model: CLONE_MODEL,
-    max_tokens: 6000,
+    max_tokens: 8000,
     system: buildCloneSystemPrompt(tokenToUrl.size > 0),
     messages: [
       {
@@ -354,7 +363,7 @@ export async function generateClone(
           },
           {
             type: 'text',
-            text: buildCloneUserPrompt(url, promptBlock, pageSections),
+            text: buildCloneUserPrompt(url, promptBlock, pageSections, structuredHtml),
           },
         ],
       },
@@ -389,14 +398,13 @@ export async function generateCloneStreaming(
 ): Promise<{ html: string; tokensUsed: number }> {
   const SAVE_INTERVAL = 2000 // chars between DB saves
 
-  // Build semantic image map and extract page sections from the scraped HTML.
-  // We do NOT send the HTML to Claude — only the screenshot + image map + section list.
   const { tokenToUrl, promptBlock } = buildImageMap(htmlContent)
   const pageSections = extractPageSections(htmlContent)
+  const structuredHtml = preprocessHtmlForClone(htmlContent)
 
   const stream = await anthropic.messages.create({
     model: CLONE_MODEL,
-    max_tokens: 6000,
+    max_tokens: 8000,
     stream: true,
     system: buildCloneSystemPrompt(tokenToUrl.size > 0),
     messages: [
@@ -409,7 +417,7 @@ export async function generateCloneStreaming(
           },
           {
             type: 'text',
-            text: buildCloneUserPrompt(url, promptBlock, pageSections),
+            text: buildCloneUserPrompt(url, promptBlock, pageSections, structuredHtml),
           },
         ],
       },

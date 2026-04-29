@@ -423,11 +423,15 @@ export async function scrapeWebsite(
 
       onProgress?.('Taking screenshot...')
 
-      // Full page screenshot — no height cap, capture the entire page.
+      // Full page screenshot capped at 15 000 px height to avoid huge images
+      // on extremely long pages, while still covering all meaningful content.
+      const pageHeight = await page.evaluate(() =>
+        Math.min(document.documentElement.scrollHeight, 15000)
+      )
       const screenshotBuffer = await page.screenshot({
-        fullPage: true,
+        clip: { x: 0, y: 0, width: 1920, height: pageHeight },
         type: 'jpeg',
-        quality: 70,
+        quality: 90,
       })
       const screenshotBase64 = screenshotBuffer.toString('base64')
 

@@ -60,12 +60,15 @@ function prepareHtml(raw: string): string {
     /<html([^>]*)>/i,
     (_, attrs) => `<html${attrs.replace(/\s*data-theme=["'][^"']*["']/gi, '')}>`
   )
+  // HEAD_INJECT: <base target="_blank"> ensures all links open in a new tab,
+  // followed by the CSS reset to force light mode.
+  const HEAD_INJECT = '<base target="_blank">' + CSS_RESET
   if (/<\/head>/i.test(html)) {
-    html = html.replace(/<\/head>/i, `${CSS_RESET}</head>`)
+    html = html.replace(/<\/head>/i, () => HEAD_INJECT + '</head>')
   } else if (/<head[^>]*>/i.test(html)) {
-    html = html.replace(/<head([^>]*)>/i, `<head$1>${CSS_RESET}`)
+    html = html.replace(/(<head[^>]*>)/i, (m) => m + HEAD_INJECT)
   } else {
-    html = CSS_RESET + html
+    html = HEAD_INJECT + html
   }
   // Inject CORS proxy script before </body> so broken images retry via proxy.
   // Use function-form replace to prevent $ in the script string being
