@@ -156,6 +156,12 @@ export function injectImageUrls(claudeHtml: string, srcs: string[]): string {
     )
   }
 
+  // ── Final cleanup: remove any leftover IMAGE_N tokens ─────────────────
+  // If Claude emitted IMAGE_N tokens for images we don't have URLs for,
+  // strip them entirely rather than leaving broken <img src="IMAGE_N"> tags.
+  result = result.replace(/<img\b[^>]*\bsrc=["']IMAGE_\d+["'][^>]*>/gi, '')
+  result = result.replace(/\bIMAGE_\d+\b/g, '')
+
   return result
 }
 

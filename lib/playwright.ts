@@ -334,7 +334,7 @@ export async function scrapeWebsite(
       })
 
       // Second pass: scroll to each lazy img individually to ensure
-      // IntersectionObserver fires and Apple-style lazy images fully load.
+      // IntersectionObserver fires for every image element.
       await page.evaluate(async () => {
         const imgs = Array.from(document.querySelectorAll('img'))
         for (const img of imgs) {
@@ -343,7 +343,9 @@ export async function scrapeWebsite(
         }
         window.scrollTo(0, 0)
       })
-      await page.waitForTimeout(1500)
+
+      // Wait 5 seconds for all lazy images to finish loading across any site
+      await page.waitForTimeout(5000)
 
       // Wait for any lazy-loaded network requests to finish
       await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {})
@@ -370,27 +372,52 @@ export async function scrapeWebsite(
       const rawHtml = await page.content()
 
       // Collect image metadata (src, rendered dimensions) before closing context.
-      // attrSrc = img.src property (browser-absolutified src attribute) — this is what
-      // absolutifyHtml will produce in the HTML string, so it's our map key for replacement.
-      // src = currentSrc || img.src — the actually-loaded URL (may differ via srcset).
-      // Also check data-src / data-srcset for Apple-style lazy images that haven't
-      // swapped their src attribute yet.
+      // Covers: <img> tags, <picture><source> srcsets, and CSS background-image on divs.
       const imageInfos: ImageInfo[] = projectId
-        ? await page.evaluate((): ImageInfo[] =>
-            Array.from(document.querySelectorAll('img'))
-              .map((img) => {
-                const el = img as HTMLImageElement
-                // Prefer the actually-loaded currentSrc, then src, then data-src fallback
-                const dataSrc = el.getAttribute('data-src') || el.getAttribute('data-lazy-src') || ''
-                const src = el.currentSrc || el.src || dataSrc
-                const attrSrc = el.src || dataSrc
-                // For unloaded lazy images, try to get dimensions from attributes
-                const w = el.naturalWidth || parseInt(el.getAttribute('width') || '0', 10)
-                const h = el.naturalHeight || parseInt(el.getAttribute('height') || '0', 10)
-                return { src, attrSrc, width: w, height: h }
-              })
-              .filter((i) => i.attrSrc.startsWith('http'))
-          )
+        ? await page.evaluate((): ImageInfo[] => {
+            const results: Array<{ src: string; attrSrc: string; width: number; height: number }> = []
+
+            // ── 1. <img> elements ──────────────────────────────────────────
+            for (const img of Array.from(document.querySelectorAll('img'))) {
+              const el = img as HTMLImageElement
+              const dataSrc = el.getAttribute('data-src') || el.getAttribute('data-lazy-src') || ''
+              const src = el.currentSrc || el.src || dataSrc
+              const attrSrc = el.src || dataSrc
+              if (!attrSrc.startsWith('http')) continue
+              const w = el.naturalWidth || parseInt(el.getAttribute('width') || '0', 10)
+              const h = el.naturalHeight || parseInt(el.getAttribute('height') || '0', 10)
+              results.push({ src, attrSrc, width: w, height: h })
+            }
+
+            // ── 2. <picture><source srcset="…"> ───────────────────────────
+            for (const source of Array.from(document.querySelectorAll('picture source'))) {
+              const el = source as HTMLSourceElement
+              const srcset = el.getAttribute('srcset') || el.getAttribute('data-srcset') || ''
+              if (!srcset) continue
+              // Pick the first URL from the srcset descriptor list
+              const firstUrl = srcset.trim().split(/[\s,]+/)[0]
+              if (!firstUrl.startsWith('http')) continue
+              // Inherit dimensions from sibling <img> if available
+              const siblingImg = el.closest('picture')?.querySelector('img') as HTMLImageElement | null
+              const w = siblingImg?.naturalWidth || 0
+              const h = siblingImg?.naturalHeight || 0
+              results.push({ src: firstUrl, attrSrc: firstUrl, width: w, height: h })
+            }
+
+            // ── 3. CSS background-image on block elements ──────────────────
+            for (const el of Array.from(document.querySelectorAll('div, section, article, figure, span'))) {
+              const style = (el as HTMLElement).style?.backgroundImage
+              if (!style || !style.includes('url(')) continue
+              // Extract URL from url("…") — handle quoted and unquoted forms
+              const match = style.match(/url\(["']?(https?:\/\/[^"')]+)["']?\)/)
+              if (!match) continue
+              const url = match[1]
+              const rect = (el as HTMLElement).getBoundingClientRect()
+              results.push({ src: url, attrSrc: url, width: Math.round(rect.width), height: Math.round(rect.height) })
+            }
+
+            return results
+          })
         : []
 
       // Mirror images to R2 while context is still open (uses browser session for downloads)
