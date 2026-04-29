@@ -169,7 +169,7 @@ export async function GET(
 
         const { data: user } = await supabase
           .from('users')
-          .select('id, tokens_used, clones_count, email, plan')
+          .select('id, tokens_used, clones_count, email, plan, free_clones_used')
           .eq('id', project.user_id)
           .single()
 
@@ -245,13 +245,15 @@ export async function GET(
         }
 
         if (user) {
-          await supabase
-            .from('users')
-            .update({
-              tokens_used: (user.tokens_used || 0) + tokensUsed,
-              clones_count: (user.clones_count || 0) + 1,
-            })
-            .eq('id', user.id)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const userUpdate: Record<string, any> = {
+            tokens_used: (user.tokens_used || 0) + tokensUsed,
+            clones_count: (user.clones_count || 0) + 1,
+          }
+          if (user.plan === 'free') {
+            userUpdate.free_clones_used = (user.free_clones_used || 0) + 1
+          }
+          await supabase.from('users').update(userUpdate).eq('id', user.id)
         }
 
         await supabase.from('project_versions').insert({

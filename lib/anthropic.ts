@@ -14,7 +14,7 @@ export const CLONE_MODEL = 'claude-haiku-4-5-20251001'
  * Reduces token usage by 80–90% while preserving all structure needed to
  * reconstruct the visual design.
  */
-export function preprocessHtmlForClone(html: string, maxChars = 6000): string {
+export function preprocessHtmlForClone(html: string, maxChars = 8000): string {
   let result = html
   // Remove scripts and their content
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -214,7 +214,7 @@ export async function generateClone(
 
   const response = await anthropic.messages.create({
     model: CLONE_MODEL,
-    max_tokens: 4000,
+    max_tokens: 6000,
     system: buildCloneSystemPrompt(srcs.length > 0),
     messages: [
       {
@@ -267,7 +267,7 @@ export async function generateCloneStreaming(
 
   const stream = await anthropic.messages.create({
     model: CLONE_MODEL,
-    max_tokens: 4000,
+    max_tokens: 6000,
     stream: true,
     system: buildCloneSystemPrompt(srcs.length > 0),
     messages: [
@@ -367,7 +367,7 @@ export async function chatWithProjectStreaming(
 
   const stream = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 4000,
+    max_tokens: 6000,
     stream: true,
     system: `You are an expert web developer helping users modify their cloned website.
 The user will ask you to make changes to the HTML.
@@ -456,7 +456,7 @@ export async function chatWithProject(
 
   const response = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 4000,
+    max_tokens: 6000,
     system: `You are an expert web developer helping users modify their cloned website.
 The user will ask you to make changes to the HTML.
 

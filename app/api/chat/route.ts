@@ -19,21 +19,15 @@ export async function GET(request: NextRequest) {
 
     const { data: user } = await supabase
       .from('users')
-      .select('plan, is_admin, email')
+      .select('plan, is_admin, email, free_chats_used')
       .eq('clerk_id', userId)
       .single()
-
-    const { count } = await supabase
-      .from('chat_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('project_id', projectId)
-      .eq('role', 'user')
 
     const isLimited =
       user?.plan === 'free' && !user?.is_admin && !isAdminEmail(user?.email)
 
     return NextResponse.json({
-      messagesUsed: count ?? 0,
+      messagesUsed: isLimited ? (user?.free_chats_used ?? 0) : 0,
       isLimited,
       limit: isLimited ? FREE_CHAT_LIMIT : null,
     })
@@ -62,7 +56,7 @@ export async function POST(request: NextRequest) {
 
   const { data: user } = await supabase
     .from('users')
-    .select('id, plan, is_admin, tokens_used, email')
+    .select('id, plan, is_admin, tokens_used, email, free_chats_used')
     .eq('clerk_id', userId)
     .single()
 
@@ -71,16 +65,10 @@ export async function POST(request: NextRequest) {
   const adminOverride = user.is_admin || isAdminEmail(user.email)
 
   if (user.plan === 'free' && !adminOverride) {
-    const { count: messageCount } = await supabase
-      .from('chat_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('project_id', projectId)
-      .eq('role', 'user')
-
-    if ((messageCount ?? 0) >= FREE_CHAT_LIMIT) {
+    if ((user.free_chats_used ?? 0) >= FREE_CHAT_LIMIT) {
       return NextResponse.json(
         {
-          error: "You've reached your free chat limit.",
+          error: "You've used your 5 free edits. Upgrade to Pro for unlimited AI modifications.",
           upgradeRequired: true,
           chatLimitReached: true,
         },
@@ -151,18 +139,16 @@ export async function POST(request: NextRequest) {
           .update({ html_content: finalHtml, updated_at: new Date().toISOString() })
           .eq('id', projectId)
 
-        await supabase
-          .from('users')
-          .update({ tokens_used: user.tokens_used + tokensUsed })
-          .eq('id', user.id)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const userUpdate: Record<string, any> = { tokens_used: user.tokens_used + tokensUsed }
+        let newFreeChatsUsed = user.free_chats_used ?? 0
+        if (user.plan === 'free' && !adminOverride) {
+          newFreeChatsUsed += 1
+          userUpdate.free_chats_used = newFreeChatsUsed
+        }
+        await supabase.from('users').update(userUpdate).eq('id', user.id)
 
-        const { count: newCount } = await supabase
-          .from('chat_messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('project_id', projectId)
-          .eq('role', 'user')
-
-        send({ done: true, html: finalHtml, message: finalMessage, messagesUsed: newCount ?? 0 })
+        send({ done: true, html: finalHtml, message: finalMessage, messagesUsed: newFreeChatsUsed })
       } catch (err) {
         const error = err as Error
         console.error('Chat stream error:', error)

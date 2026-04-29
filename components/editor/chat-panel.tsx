@@ -378,10 +378,10 @@ export function ChatPanel({
               <Zap className="w-6 h-6 text-amber-600 dark:text-amber-400" />
             </div>
             <h2 className="text-lg font-bold text-neutral-900 dark:text-white text-center mb-2">
-              Free Chat Limit Reached
+              Free Edits Used
             </h2>
             <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center mb-6">
-              You've reached your free chat limit. Upgrade to continue chatting with AI and unlock unlimited messages.
+              You&apos;ve used your 5 free edits. Upgrade to Pro for unlimited AI modifications.
             </p>
             <div className="flex flex-col gap-2">
               <Link href="/pricing" className="w-full">

@@ -423,16 +423,9 @@ export async function scrapeWebsite(
 
       onProgress?.('Taking screenshot...')
 
-      // Full page screenshot up to 8000px so Claude gets the complete layout.
-      // Pages taller than 8000px are clipped to avoid exceeding Claude's image size limits.
-      const SCREENSHOT_MAX_HEIGHT = 8000
-      const pageHeight = await page.evaluate(() => document.documentElement.scrollHeight)
+      // Full page screenshot — no height cap, capture the entire page.
       const screenshotBuffer = await page.screenshot({
-        fullPage: pageHeight <= SCREENSHOT_MAX_HEIGHT,
-        clip:
-          pageHeight > SCREENSHOT_MAX_HEIGHT
-            ? { x: 0, y: 0, width: 1920, height: SCREENSHOT_MAX_HEIGHT }
-            : undefined,
+        fullPage: true,
         type: 'jpeg',
         quality: 70,
       })
