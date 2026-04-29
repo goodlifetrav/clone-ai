@@ -207,22 +207,9 @@ export async function scrapeWebsite(
       const context = await browser.newContext({
         viewport: { width: 1920, height: 1080 },
         userAgent: USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
-        locale: 'en-US',
-        extraHTTPHeaders: {
-          'Accept-Language': 'en-US,en;q=0.9',
-        },
-        geolocation: { latitude: 37.7749, longitude: -122.4194 },
-        permissions: ['geolocation'],
       })
 
       const page = await context.newPage()
-
-      // Override navigator.language at the JS level so sites that read it
-      // directly (instead of relying on HTTP headers) also get en-US.
-      await page.addInitScript(() => {
-        Object.defineProperty(navigator, 'language', { get: () => 'en-US' })
-        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] })
-      })
 
       onProgress?.(`Visiting ${url}...`)
       await page.goto(url, {
