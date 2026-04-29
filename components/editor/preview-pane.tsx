@@ -34,9 +34,30 @@ function injectLinkInterceptor(html: string): string {
   }
 
   function isProxiable(url) {
-    return url &&
-      (url.startsWith('http://') || url.startsWith('https://')) &&
+    return typeof url === 'string' &&
+      (url.indexOf('http://') === 0 || url.indexOf('https://') === 0) &&
       url.indexOf('corsproxy.io') === -1;
+  }
+
+  // Parse all http(s) URLs out of a CSS string (handles url("…"), url('…'), url(…))
+  // Uses only string operations — no regex — to avoid template-literal escape issues.
+  function extractCssUrls(text) {
+    var results = [];
+    var pos = 0;
+    while (true) {
+      var idx = text.indexOf('url(', pos);
+      if (idx === -1) break;
+      idx += 4;
+      var q = text[idx];
+      var quoted = (q === '"' || q === "'");
+      var start = quoted ? idx + 1 : idx;
+      var end = quoted ? text.indexOf(q, start) : text.indexOf(')', start);
+      if (end === -1) { pos = idx; continue; }
+      var url = text.slice(start, end).trim();
+      if (isProxiable(url)) results.push(url);
+      pos = end + 1;
+    }
+    return results;
   }
 
   // Fix a single <img> element — add onerror and handle already-broken images
@@ -50,7 +71,7 @@ function injectLinkInterceptor(html: string): string {
       if (isProxiable(orig)) img.src = proxyUrl(orig);
     }
     img.addEventListener('error', retry);
-    // Already broken (loaded but empty, or error before listener attached)
+    // Already broken (complete but zero-size — errored before listener attached)
     if (img.complete && img.naturalWidth === 0 && isProxiable(img.src)) retry();
   }
 
@@ -58,43 +79,29 @@ function injectLinkInterceptor(html: string): string {
   function fixInlineBg(el) {
     var bg = el.style && el.style.backgroundImage;
     if (!bg) return;
-    var match = bg.match(/url\\(['"]?(https?:\\/\\/[^'"\\)\\s]+)['"]?\\)/);
-    if (!match || !isProxiable(match[1])) return;
-    var url = match[1];
-    var tester = new Image();
-    tester.onerror = function() {
-      if (el.style.backgroundImage.indexOf('corsproxy.io') === -1) {
-        el.style.backgroundImage = el.style.backgroundImage.replace(url, proxyUrl(url));
-      }
-    };
-    tester.src = url;
+    extractCssUrls(bg).forEach(function(url) {
+      var tester = new Image();
+      tester.onerror = function() {
+        if (el.style.backgroundImage.indexOf('corsproxy.io') === -1) {
+          el.style.backgroundImage = el.style.backgroundImage.split(url).join(proxyUrl(url));
+        }
+      };
+      tester.src = url;
+    });
   }
 
   // Fix all url() references inside <style> tags
   function fixStyleTags() {
-    var urlRe = /url\\(['"]?(https?:\\/\\/[^'"\\)\\s]+)['"]?\\)/g;
     document.querySelectorAll('style').forEach(function(styleEl) {
-      var css = styleEl.textContent || '';
-      var seen = {};
-      var m;
-      urlRe.lastIndex = 0;
-      while ((m = urlRe.exec(css)) !== null) {
-        var url = m[1];
-        if (!isProxiable(url) || seen[url]) continue;
-        seen[url] = true;
-        (function(u) {
-          var tester = new Image();
-          tester.onerror = function() {
-            if ((styleEl.textContent || '').indexOf('corsproxy.io') !== -1) return;
-            var escaped = u.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
-            styleEl.textContent = (styleEl.textContent || '').replace(
-              new RegExp(escaped, 'g'),
-              proxyUrl(u)
-            );
-          };
-          tester.src = u;
-        })(url);
-      }
+      var urls = extractCssUrls(styleEl.textContent || '');
+      urls.forEach(function(url) {
+        var tester = new Image();
+        tester.onerror = function() {
+          if ((styleEl.textContent || '').indexOf('corsproxy.io') !== -1) return;
+          styleEl.textContent = (styleEl.textContent || '').split(url).join(proxyUrl(url));
+        };
+        tester.src = url;
+      });
     });
   }
 
