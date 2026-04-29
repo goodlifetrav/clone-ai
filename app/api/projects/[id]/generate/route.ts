@@ -122,7 +122,7 @@ export async function GET(
             title: cachedScrape.title ?? '',
           }
         } else {
-          scrapeResult = await scrapeWebsite(url, (step) => send({ step }))
+          scrapeResult = await scrapeWebsite(url, (step) => send({ step }), id)
           void supabase.from('scrape_cache').insert({
             url,
             html: scrapeResult.html,

@@ -5,6 +5,12 @@ export interface ScrapeResult {
   error?: string
 }
 
+interface ImageInfo {
+  src: string
+  width: number
+  height: number
+}
+
 /**
  * Convert all relative URLs in scraped HTML to absolute URLs so that
  * images, stylesheets, and other assets load from the original domain
@@ -57,9 +63,74 @@ function absolutifyHtml(html: string, pageUrl: string): string {
   )
 }
 
+/**
+ * Download images from the page using the browser context (same session /
+ * cookies as the page, so hotlink protection is bypassed) and upload them
+ * to Cloudflare R2.  Returns a map of original absolute URL → R2 URL.
+ *
+ * Limits: top 20 images by DOM order, ≥50×50 px, ≤2 MB.
+ */
+async function mirrorImagesToR2(
+  images: ImageInfo[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  browserContext: any,
+  projectId: string,
+  onProgress?: (step: string) => void
+): Promise<Map<string, string>> {
+  const { isR2Configured, uploadToR2 } = await import('./r2')
+  if (!isR2Configured()) return new Map()
+
+  const { createHash } = await import('crypto')
+
+  // Deduplicate by src, filter by minimum dimensions, take top 20
+  const seen = new Set<string>()
+  const candidates = images.filter((img) => {
+    if (!img.src || seen.has(img.src)) return false
+    seen.add(img.src)
+    return img.width >= 50 && img.height >= 50
+  }).slice(0, 20)
+
+  if (candidates.length === 0) return new Map()
+  onProgress?.(`Uploading ${candidates.length} images to storage…`)
+
+  const MAX_BYTES = 2 * 1024 * 1024 // 2 MB
+
+  const entries = await Promise.allSettled(
+    candidates.map(async (img): Promise<[string, string] | null> => {
+      try {
+        const res = await browserContext.request.get(img.src, { timeout: 15000 })
+        if (!res.ok()) return null
+
+        const buffer = Buffer.from(await res.body())
+        if (buffer.length > MAX_BYTES) return null
+
+        const contentType: string =
+          (res.headers()['content-type'] || 'image/jpeg').split(';')[0].trim()
+        const ext = contentType.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg'
+        const hash = createHash('md5').update(img.src).digest('hex').slice(0, 16)
+        const key = `projects/${projectId}/${hash}.${ext}`
+
+        const r2Url = await uploadToR2(buffer, key, contentType)
+        return [img.src, r2Url]
+      } catch {
+        return null
+      }
+    })
+  )
+
+  const urlMap = new Map<string, string>()
+  for (const result of entries) {
+    if (result.status === 'fulfilled' && result.value) {
+      urlMap.set(result.value[0], result.value[1])
+    }
+  }
+  return urlMap
+}
+
 export async function scrapeWebsite(
   url: string,
-  onProgress?: (step: string) => void
+  onProgress?: (step: string) => void,
+  projectId?: string
 ): Promise<ScrapeResult> {
   try {
     const { chromium } = await import('playwright')
@@ -229,13 +300,40 @@ export async function scrapeWebsite(
 
       // Extract the full HTML after all content has loaded and rendered
       const title = await page.title()
-      const html = await page.content()
+      const rawHtml = await page.content()
+
+      // Collect image metadata (src, rendered dimensions) before closing context
+      const imageInfos: ImageInfo[] = projectId
+        ? await page.evaluate((): ImageInfo[] =>
+            Array.from(document.querySelectorAll('img'))
+              .map((img) => ({
+                src: (img as HTMLImageElement).currentSrc || (img as HTMLImageElement).src,
+                width: (img as HTMLImageElement).naturalWidth,
+                height: (img as HTMLImageElement).naturalHeight,
+              }))
+              .filter((i) => i.src.startsWith('http'))
+          )
+        : []
+
+      // Mirror images to R2 while context is still open (uses browser session for downloads)
+      const r2UrlMap =
+        projectId && imageInfos.length > 0
+          ? await mirrorImagesToR2(imageInfos, context, projectId, onProgress)
+          : new Map<string, string>()
 
       await context.close()
       await browser.close()
 
       // Convert relative URLs → absolute so Claude preserves real image/asset URLs
-      const absoluteHtml = absolutifyHtml(html, url)
+      let absoluteHtml = absolutifyHtml(rawHtml, url)
+
+      // Replace original image URLs with R2-hosted copies
+      if (r2UrlMap.size > 0) {
+        for (const [orig, r2] of r2UrlMap) {
+          // Simple global string replace — safe since URLs are unique
+          absoluteHtml = absoluteHtml.split(orig).join(r2)
+        }
+      }
 
       onProgress?.('Generating clone...')
       return { html: absoluteHtml, screenshotBase64, title }
