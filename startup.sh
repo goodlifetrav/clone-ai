@@ -12,4 +12,4 @@ else
   echo "[startup] Playwright Chromium already installed — skipping."
 fi
 
-exec node .next/standalone/server.js
+exec node server.js
