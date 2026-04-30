@@ -125,7 +125,6 @@ export function ChatPanel({
         body: JSON.stringify({
           projectId,
           message: userMessage.content,
-          currentHtml,
           imageBase64: sentImage?.base64,
           imageMimeType: sentImage?.mimeType,
           uploadedImageUrls: uploadedImages ?? [],

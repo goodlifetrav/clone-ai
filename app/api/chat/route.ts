@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { projectId, message, currentHtml, imageBase64, imageMimeType, uploadedImageUrls } = body
+  const { projectId, message, imageBase64, imageMimeType, uploadedImageUrls } = body
 
   if (!projectId || !message) {
     return NextResponse.json({ error: 'projectId and message are required' }, { status: 400 })
@@ -115,6 +115,14 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        const { data: project } = await supabase
+          .from('projects')
+          .select('html_content')
+          .eq('id', projectId)
+          .single()
+
+        const currentHtml = project?.html_content ?? ''
+
         let finalHtml = currentHtml
         let finalMessage = ''
         let tokensUsed = 0
