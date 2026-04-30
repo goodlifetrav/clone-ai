@@ -512,15 +512,24 @@ Rules:
   type TextChange = { type: 'text'; search: string; replace: string }
   type Change = CssChange | TextChange
 
+  console.log('[chatWithProjectStreaming] raw Claude response:', raw)
+
   let changes: Change[] = []
   try {
-    const jsonText = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '')
+    // Strip markdown code fences
+    let jsonText = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '')
+    // Extract just the JSON array by finding the first [ and last ]
+    const start = jsonText.indexOf('[')
+    const end = jsonText.lastIndexOf(']')
+    if (start !== -1 && end !== -1 && end > start) {
+      jsonText = jsonText.slice(start, end + 1)
+    }
     const parsed = JSON.parse(jsonText)
     if (Array.isArray(parsed)) changes = parsed
   } catch {
     return {
       html: currentHtml,
-      message: 'That change could not be made. Please try a different request.',
+      message: 'Could not parse the changes. Please try again.',
       tokensUsed,
     }
   }
