@@ -95,7 +95,7 @@ async function runDomPipeline(projectId: string, url: string): Promise<void> {
     const [
       { extractSite },
       { inlineCss },
-      { rehostAssets },
+      { makeUrlsAbsolute },
       { cleanHtml },
     ] = await Promise.all([
       import('@/lib/extractor'),
@@ -114,9 +114,9 @@ async function runDomPipeline(projectId: string, url: string): Promise<void> {
     html = await inlineCss(html, url)
     console.log(`[DOM] CSS inlined — ${html.length} chars`)
 
-    // 3. Re-host images, fonts, and other assets to R2
-    html = await rehostAssets(html, url, projectId)
-    console.log(`[DOM] Assets rehosted — ${html.length} chars`)
+    // 3. Rewrite relative asset URLs to absolute
+    html = makeUrlsAbsolute(html, url)
+    console.log(`[DOM] URLs absolutified — ${html.length} chars`)
 
     // 4. Strip scripts/tracking, add <base target="_blank">
     html = cleanHtml(html)

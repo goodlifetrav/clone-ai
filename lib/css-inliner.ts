@@ -58,6 +58,29 @@ export async function inlineCss(html: string, baseUrl: string): Promise<string> 
         }
       }
 
+      // Resolve url() references inside the CSS against the CSS file's own URL
+      // so that relative paths like url(../images/foo.png) become absolute
+      // before the stylesheet is inlined into the page.
+      css = css.replace(
+        /url\(\s*(["']?)((?!data:)[^"')]+)\1\s*\)/gi,
+        (match: string, q: string, val: string) => {
+          const trimmed = val.trim()
+          if (
+            trimmed.startsWith('data:') ||
+            trimmed.startsWith('javascript:') ||
+            trimmed.startsWith('#')
+          ) {
+            return match
+          }
+          try {
+            const abs = new URL(trimmed, cssUrl).href
+            return `url(${q}${abs}${q})`
+          } catch {
+            return match
+          }
+        }
+      )
+
       $(el).replaceWith(`<style>${css}</style>`)
     })
   )
