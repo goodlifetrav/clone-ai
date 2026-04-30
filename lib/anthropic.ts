@@ -477,7 +477,8 @@ export async function chatWithProjectStreaming(
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   onPartialHtml: (partialHtml: string) => void,
   imageBase64?: string,
-  imageMimeType?: string
+  imageMimeType?: string,
+  uploadedImageUrls?: string[]
 ): Promise<{ html: string; message: string; tokensUsed: number }> {
   const lastUserMessage = messages[messages.length - 1]
 
@@ -488,10 +489,12 @@ export async function chatWithProjectStreaming(
 
 CSS change: {"type": "css", "selector": "string", "property": "string", "value": "string"}
 Text change: {"type": "text", "search": "exact string to find", "replace": "replacement string"}
+Image swap: {"type": "attr", "selector": "css selector for the img element", "attribute": "src", "value": "new image url"}
 
 Rules:
 - For color, font, size, spacing, visibility changes use type css
 - For changing words, labels, headings, button text, any content changes use type text
+- For swapping or replacing images use type attr with attribute src and the new image URL as value
 - For the search field in text changes, use the shortest unique string that identifies the text, do not include surrounding HTML tags
 - If a request needs both CSS and text changes return both types in the same array
 - If you cannot make the change return []
@@ -500,7 +503,7 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
     messages: [
       {
         role: 'user',
-        content: `Here is a snippet of the website HTML so you can identify the correct CSS selectors:\n\n${(() => { const b = currentHtml.search(/<body/i); return currentHtml.slice(b !== -1 ? b : 0, (b !== -1 ? b : 0) + 4000) })()}\n\nThe user wants to make this change: ${lastUserMessage.content}`,
+        content: `Here is a snippet of the website HTML so you can identify the correct CSS selectors:\n\n${(() => { const b = currentHtml.search(/<body/i); return currentHtml.slice(b !== -1 ? b : 0, (b !== -1 ? b : 0) + 4000) })()}\n\nThe user wants to make this change: ${lastUserMessage.content}${uploadedImageUrls && uploadedImageUrls.length > 0 ? '\n\nThe user has uploaded these images that are available to use (use these URLs directly in src attributes):\n' + uploadedImageUrls.join('\n') : ''}`,
       },
     ],
   })
@@ -511,7 +514,8 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
 
   type CssChange = { type: 'css'; selector: string; property: string; value: string }
   type TextChange = { type: 'text'; search: string; replace: string }
-  type Change = CssChange | TextChange
+  type AttrChange = { type: 'attr'; selector: string; attribute: string; value: string }
+  type Change = CssChange | TextChange | AttrChange
 
   console.log('[chatWithProjectStreaming] raw Claude response:', raw)
 
@@ -547,11 +551,33 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
     }
   }
 
-  // Apply text changes directly to the HTML
+  // Apply text and attr changes directly to the HTML
   let updatedHtml = currentHtml
   for (const item of changes) {
     if (item.type === 'text' && item.search && item.replace !== undefined) {
       updatedHtml = updatedHtml.replace(new RegExp(item.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), item.replace)
+    } else if (item.type === 'attr' && item.attribute === 'src' && item.value) {
+      // Find the img element hinted by the selector (class or id) and replace its src.
+      // Extract the first class or id from the selector as a search hint.
+      const idHint = item.selector.match(/#([a-z0-9_-]+)/i)?.[1]
+      const classHint = item.selector.match(/\.([a-z0-9_-]+)/i)?.[1]
+      const hint = idHint ?? classHint
+      let replaced = false
+      if (hint) {
+        const escapedHint = hint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const contextRe = new RegExp(
+          `(<img\\b[^>]*\\b(?:class|id)=["'][^"']*${escapedHint}[^"']*["'][^>]*?)\\bsrc=["'][^"']*["']`,
+          'i'
+        )
+        if (contextRe.test(updatedHtml)) {
+          updatedHtml = updatedHtml.replace(contextRe, `$1src="${item.value}"`)
+          replaced = true
+        }
+      }
+      if (!replaced) {
+        // Fall back: replace the first img src in the document
+        updatedHtml = updatedHtml.replace(/(<img\b[^>]*?)\bsrc=["'][^"']*["']/, `$1src="${item.value}"`)
+      }
     }
   }
 

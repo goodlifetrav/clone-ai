@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { projectId, message, currentHtml, imageBase64, imageMimeType } = body
+  const { projectId, message, currentHtml, imageBase64, imageMimeType, uploadedImageUrls } = body
 
   if (!projectId || !message) {
     return NextResponse.json({ error: 'projectId and message are required' }, { status: 400 })
@@ -125,7 +125,8 @@ export async function POST(request: NextRequest) {
             chatMessages,
             (partialHtml) => send({ htmlChunk: partialHtml }),
             imageBase64,
-            imageMimeType
+            imageMimeType,
+            uploadedImageUrls
           ))
 
         // Persist to DB

@@ -128,6 +128,7 @@ export function ChatPanel({
           currentHtml,
           imageBase64: sentImage?.base64,
           imageMimeType: sentImage?.mimeType,
+          uploadedImageUrls: uploadedImages ?? [],
         }),
       })
 
