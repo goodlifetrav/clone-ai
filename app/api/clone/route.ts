@@ -65,10 +65,104 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create project' }, { status: 500 })
     }
 
+    // Fire-and-forget DOM extraction pipeline.
+    // The client receives projectId immediately and navigates to the editor,
+    // which streams from /api/projects/[id]/generate.
+    // If the DOM pipeline completes first it sets status='complete' and the
+    // generate route returns the cached HTML instantly.
+    // If it fails the project stays 'pending' and the generate route falls back
+    // to the existing screenshot/Claude Vision approach.
+    runDomPipeline(project.id, url).catch((err) =>
+      console.error('[DOM] Unhandled pipeline error:', err)
+    )
+
     return NextResponse.json({ projectId: project.id })
   } catch (err) {
     const error = err as Error
     console.error('Clone error:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOM extraction pipeline (runs asynchronously after the response is sent)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function runDomPipeline(projectId: string, url: string): Promise<void> {
+  const supabase = createServiceClient()
+
+  try {
+    const [
+      { extractSite },
+      { inlineCss },
+      { rehostAssets },
+      { cleanHtml },
+      { anthropic },
+    ] = await Promise.all([
+      import('@/lib/extractor'),
+      import('@/lib/css-inliner'),
+      import('@/lib/asset-rehost'),
+      import('@/lib/html-cleaner'),
+      import('@/lib/anthropic'),
+    ])
+
+    console.log(`[DOM] Starting pipeline for project ${projectId} — ${url}`)
+
+    // 1. Extract rendered HTML via headless Chromium
+    let html = await extractSite(url)
+    console.log(`[DOM] Extracted ${html.length} chars`)
+
+    // 2. Inline external CSS (replaces <link rel="stylesheet"> with <style>)
+    html = await inlineCss(html, url)
+    console.log(`[DOM] CSS inlined — ${html.length} chars`)
+
+    // 3. Re-host images, fonts, and other assets to R2
+    html = await rehostAssets(html, url, projectId)
+    console.log(`[DOM] Assets rehosted — ${html.length} chars`)
+
+    // 4. Strip scripts/tracking, add <base target="_blank">
+    html = cleanHtml(html)
+    console.log(`[DOM] HTML cleaned — ${html.length} chars`)
+
+    // 5. Claude Haiku cleanup pass — send first 6000 chars for a fast fix
+    const sample = html.slice(0, 6000)
+    const aiResponse = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content:
+            'Fix any remaining broken asset references and remove any checkout, cart, or login ' +
+            "functionality that won't work standalone. Return only the complete fixed HTML.\n\n" +
+            sample,
+        },
+      ],
+    })
+    const aiText =
+      aiResponse.content[0].type === 'text' ? aiResponse.content[0].text.trim() : ''
+    if (aiText) {
+      html = aiText
+      console.log(`[DOM] Claude cleanup applied — ${html.length} chars`)
+    }
+
+    // 6. Save to database
+    await supabase
+      .from('projects')
+      .update({ html_content: html, status: 'complete', clone_method: 'dom' })
+      .eq('id', projectId)
+
+    console.log(`[DOM] Project ${projectId} complete via DOM extraction`)
+  } catch (err) {
+    console.error(`[DOM] Pipeline failed for project ${projectId}:`, err)
+    // Leave status as 'pending' — generate route will use screenshot fallback
+    await supabase
+      .from('projects')
+      .update({ clone_method: 'screenshot' })
+      .eq('id', projectId)
+      .then(
+        () => {},
+        (e: unknown) => console.error('[DOM] Failed to update clone_method:', e)
+      )
   }
 }
