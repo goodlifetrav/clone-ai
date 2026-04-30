@@ -557,11 +557,23 @@ Rules:
   // Strip any previous chat-edit block, then inject the new one
   updatedHtml = updatedHtml.replace(/<style data-chat-edit>[\s\S]*?<\/style>\n?/g, '')
 
+  const BG_EXTRA_SELECTORS = [
+    'html', 'body', '#root', '#app', '.app', 'main',
+    '[data-shopify]', '.page-container',
+    'div[class*="wrapper"]', 'div[class*="container"]',
+  ]
+
   const cssChanges = changes.filter((c): c is CssChange => c.type === 'css' && !!c.selector && !!c.property && !!c.value)
   if (cssChanges.length > 0) {
-    const cssRules = cssChanges
-      .map((c) => `  ${c.selector} { ${c.property}: ${c.value} !important; }`)
-      .join('\n')
+    const cssRules = cssChanges.flatMap((c) => {
+      const value = c.value.includes('!important') ? c.value : `${c.value} !important`
+      const primary = `  ${c.selector} { ${c.property}: ${value}; }`
+      if (c.property.toLowerCase() === 'background-color') {
+        const extra = BG_EXTRA_SELECTORS.map((s) => `  ${s} { ${c.property}: ${value}; }`)
+        return [primary, ...extra]
+      }
+      return [primary]
+    }).join('\n')
 
     const styleBlock = `<style data-chat-edit>\n${cssRules}\n</style>`
     console.log('[chatWithProjectStreaming] injected style block', styleBlock)
