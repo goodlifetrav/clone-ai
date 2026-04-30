@@ -7,12 +7,8 @@ services:
       - "3000:3000"
     env_file:
       - .env.local
-    volumes:
-      # Persist Playwright browser cache across container restarts so Chromium
-      # is only downloaded once.
-      - playwright-cache:/root/.cache/ms-playwright
     restart: unless-stopped
     command: ["sh", "startup.sh"]
-
-volumes:
-  playwright-cache:
+    # No playwright-cache volume — Chromium is baked into the Docker image layer.
+    # Mounting a volume at /root/.cache/ms-playwright would shadow the baked
+    # browsers and force a re-download on every fresh container.
