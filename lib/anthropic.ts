@@ -495,11 +495,12 @@ Rules:
 - For the search field in text changes, use the shortest unique string that identifies the text, do not include surrounding HTML tags
 - If a request needs both CSS and text changes return both types in the same array
 - If you cannot make the change return []
-- Never return anything except the JSON array`,
+- Never return anything except the JSON array
+CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questions. Never return plain text. If you are unsure what to change, make your best guess and return a JSON array. If you truly cannot make the change, return an empty array [].`,
     messages: [
       {
         role: 'user',
-        content: `Here is a snippet of the website HTML so you can identify the correct CSS selectors:\n\n${currentHtml.slice(0, 2000)}\n\nThe user wants to make this change: ${lastUserMessage.content}`,
+        content: `Here is a snippet of the website HTML so you can identify the correct CSS selectors:\n\n${currentHtml.slice(0, 4000)}\n\nThe user wants to make this change: ${lastUserMessage.content}`,
       },
     ],
   })
