@@ -551,7 +551,7 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
   let updatedHtml = currentHtml
   for (const item of changes) {
     if (item.type === 'text' && item.search && item.replace !== undefined) {
-      updatedHtml = updatedHtml.split(item.search).join(item.replace)
+      updatedHtml = updatedHtml.replace(new RegExp(item.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), item.replace)
     }
   }
 
