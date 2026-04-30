@@ -517,7 +517,10 @@ Rules:
   let changes: Change[] = []
   try {
     // Strip markdown code fences
-    let jsonText = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '')
+    let jsonText = raw
+      .replace(/^```(?:json|JSON|html|HTML)?\s*/m, '')
+      .replace(/```\s*$/m, '')
+      .trim()
     // Extract just the JSON array by finding the first [ and last ]
     const start = jsonText.indexOf('[')
     const end = jsonText.lastIndexOf(']')
