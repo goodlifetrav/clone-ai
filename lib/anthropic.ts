@@ -499,7 +499,7 @@ Rules:
     messages: [
       {
         role: 'user',
-        content: lastUserMessage.content,
+        content: `Here is a snippet of the website HTML so you can identify the correct CSS selectors:\n\n${currentHtml.slice(0, 2000)}\n\nThe user wants to make this change: ${lastUserMessage.content}`,
       },
     ],
   })
