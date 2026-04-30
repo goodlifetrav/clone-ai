@@ -484,10 +484,22 @@ export async function chatWithProjectStreaming(
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 500,
+    system: `You are a website editor. The user will describe a change they want to make to their website. Return ONLY a valid JSON array with no explanation, no markdown, no code blocks. Each item in the array must be one of these two types:
+
+CSS change: {"type": "css", "selector": "string", "property": "string", "value": "string"}
+Text change: {"type": "text", "search": "exact string to find", "replace": "replacement string"}
+
+Rules:
+- For color, font, size, spacing, visibility changes use type css
+- For changing words, labels, headings, button text, any content changes use type text
+- For the search field in text changes, use the shortest unique string that identifies the text, do not include surrounding HTML tags
+- If a request needs both CSS and text changes return both types in the same array
+- If you cannot make the change return []
+- Never return anything except the JSON array`,
     messages: [
       {
         role: 'user',
-        content: `A user wants to modify a website. Their request is: ${lastUserMessage.content}. Return ONLY a valid JSON array of CSS changes needed, no explanation, no markdown, no code blocks. Format: [{"selector": "nav", "property": "background-color", "value": "#000000"}]. Return an empty array [] if the request cannot be done with CSS alone.`,
+        content: lastUserMessage.content,
       },
     ],
   })
@@ -496,43 +508,57 @@ export async function chatWithProjectStreaming(
   const tokensUsed = response.usage.input_tokens + response.usage.output_tokens
   const raw = content.type === 'text' ? content.text.trim() : ''
 
-  let cssChanges: Array<{ selector: string; property: string; value: string }> = []
+  type CssChange = { type: 'css'; selector: string; property: string; value: string }
+  type TextChange = { type: 'text'; search: string; replace: string }
+  type Change = CssChange | TextChange
+
+  let changes: Change[] = []
   try {
     const jsonText = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '')
     const parsed = JSON.parse(jsonText)
-    if (Array.isArray(parsed)) cssChanges = parsed
+    if (Array.isArray(parsed)) changes = parsed
   } catch {
     return {
       html: currentHtml,
-      message: 'That change could not be made with CSS. Please try a different request.',
+      message: 'That change could not be made. Please try a different request.',
       tokensUsed,
     }
   }
 
-  if (cssChanges.length === 0) {
+  if (changes.length === 0) {
     return {
       html: currentHtml,
-      message: 'That change could not be made with CSS. Please try a different request.',
+      message: 'That change could not be made. Please try a different request.',
       tokensUsed,
+    }
+  }
+
+  // Apply text changes directly to the HTML
+  let updatedHtml = currentHtml
+  for (const item of changes) {
+    if (item.type === 'text' && item.search && item.replace !== undefined) {
+      updatedHtml = updatedHtml.split(item.search).join(item.replace)
     }
   }
 
   // Strip any previous chat-edit block, then inject the new one
-  let updatedHtml = currentHtml.replace(/<style data-chat-edit>[\s\S]*?<\/style>\n?/g, '')
+  updatedHtml = updatedHtml.replace(/<style data-chat-edit>[\s\S]*?<\/style>\n?/g, '')
 
-  const cssRules = cssChanges
-    .filter((c) => c.selector && c.property && c.value)
-    .map((c) => `  ${c.selector} { ${c.property}: ${c.value} !important; }`)
-    .join('\n')
+  const cssChanges = changes.filter((c): c is CssChange => c.type === 'css' && !!c.selector && !!c.property && !!c.value)
+  if (cssChanges.length > 0) {
+    const cssRules = cssChanges
+      .map((c) => `  ${c.selector} { ${c.property}: ${c.value} !important; }`)
+      .join('\n')
 
-  const styleBlock = `<style data-chat-edit>\n${cssRules}\n</style>`
+    const styleBlock = `<style data-chat-edit>\n${cssRules}\n</style>`
 
-  if (/<\/head>/i.test(updatedHtml)) {
-    updatedHtml = updatedHtml.replace(/<\/head>/i, `${styleBlock}\n</head>`)
-  } else if (/<body/i.test(updatedHtml)) {
-    updatedHtml = updatedHtml.replace(/<body/i, `${styleBlock}\n<body`)
-  } else {
-    updatedHtml = styleBlock + '\n' + updatedHtml
+    if (/<\/head>/i.test(updatedHtml)) {
+      updatedHtml = updatedHtml.replace(/<\/head>/i, `${styleBlock}\n</head>`)
+    } else if (/<body/i.test(updatedHtml)) {
+      updatedHtml = updatedHtml.replace(/<body/i, `${styleBlock}\n<body`)
+    } else {
+      updatedHtml = styleBlock + '\n' + updatedHtml
+    }
   }
 
   onPartialHtml(updatedHtml)
