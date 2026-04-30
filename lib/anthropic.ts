@@ -470,8 +470,9 @@ export async function generateCloneStreaming(
 }
 
 // Streaming version of chatWithProject.
-// Calls onPartialHtml with the HTML section as it is generated so the caller
-// can push chunks to the client in real time.
+// Claude returns a small JSON array of CSS changes; we apply them as a <style>
+// block injected into the full HTML. This preserves the complete original page
+// regardless of size — Claude never needs to reproduce the HTML.
 export async function chatWithProjectStreaming(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -480,15 +481,6 @@ export async function chatWithProjectStreaming(
   imageMimeType?: string
 ): Promise<{ html: string; message: string; tokensUsed: number }> {
   const lastUserMessage = messages[messages.length - 1]
-  const CHUNK_INTERVAL = 800 // chars between onPartialHtml calls
-  const HTML_MARKER = 'HTML:\n'
-  // Truncate HTML sent to Claude to reduce input token costs.
-  // 15 000 chars ≈ 3 000–4 000 tokens — enough for meaningful edits.
-  const MAX_HTML_CHARS = 15000
-  const htmlForClaude =
-    currentHtml.length > MAX_HTML_CHARS
-      ? currentHtml.slice(0, MAX_HTML_CHARS) + '\n<!-- [HTML truncated] -->'
-      : currentHtml
 
   const userContent: Anthropic.MessageParam['content'] = []
   if (imageBase64 && imageMimeType) {
@@ -503,31 +495,35 @@ export async function chatWithProjectStreaming(
   }
   userContent.push({
     type: 'text',
-    text: `Here is the current HTML of the website:\n\`\`\`html\n${htmlForClaude}\n\`\`\`\n\n${lastUserMessage.content}`,
+    text: `Here is the current HTML of the website:\n\`\`\`html\n${currentHtml}\n\`\`\`\n\n${lastUserMessage.content}`,
   })
 
   const stream = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 6000,
+    max_tokens: 1000,
     stream: true,
     system: `You are an expert web developer helping users modify their cloned website.
-The user will ask you to make changes to the HTML.
+The user will describe visual or styling changes they want made to the page.
 
-IMPORTANT: Always respond with:
-1. A brief explanation of what you changed (1-3 sentences)
-2. Then the complete updated HTML file
+Respond with a JSON object in this EXACT format — no markdown, no code fences, nothing else:
+{
+  "explanation": "Brief description of what you changed (1-2 sentences)",
+  "changes": [
+    {"selector": "CSS selector", "property": "CSS property name", "value": "CSS value"},
+    ...
+  ]
+}
 
-Format your response EXACTLY like this:
-EXPLANATION: [your explanation here]
-HTML:
-[complete html file starting with <!DOCTYPE html>]
-
-Always output the complete HTML file, not just the changed parts.`,
+Rules:
+- Use standard CSS selectors (element, .class, #id, descendant, etc.)
+- Each entry in changes must have exactly three keys: selector, property, value
+- Multiple properties on the same selector = multiple entries in the array
+- If the request cannot be handled with CSS alone, explain why in the explanation and return an empty changes array
+- Return ONLY the raw JSON object — no surrounding text`,
     messages: [{ role: 'user', content: userContent }],
   })
 
   let accumulated = ''
-  let lastChunkAt = 0
   let inputTokens = 0
   let outputTokens = 0
 
@@ -536,34 +532,53 @@ Always output the complete HTML file, not just the changed parts.`,
       inputTokens = event.message.usage.input_tokens
     } else if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
       accumulated += event.delta.text
-
-      // Once the HTML section starts, emit partial HTML on each interval
-      const markerIdx = accumulated.indexOf(HTML_MARKER)
-      if (markerIdx !== -1 && accumulated.length - lastChunkAt >= CHUNK_INTERVAL) {
-        lastChunkAt = accumulated.length
-        let partial = accumulated.slice(markerIdx + HTML_MARKER.length)
-        if (partial.startsWith('```')) {
-          partial = partial.replace(/^```(?:html)?\n?/, '')
-        }
-        if (partial.trim()) onPartialHtml(partial.trim())
-      }
     } else if (event.type === 'message_delta') {
       outputTokens = event.usage.output_tokens
     }
   }
 
-  // Parse final result
-  const explanationMatch = accumulated.match(/EXPLANATION:\s*([\s\S]*?)(?=\nHTML:|$)/)
-  const htmlMatch = accumulated.match(/HTML:\s*\n?([\s\S]*)$/)
+  // Parse Claude's JSON response
+  let explanation = 'Changes applied.'
+  let cssChanges: Array<{ selector: string; property: string; value: string }> = []
 
-  let explanation = explanationMatch ? explanationMatch[1].trim() : 'Changes applied.'
-  let html = htmlMatch ? htmlMatch[1].trim() : currentHtml
-  if (html.startsWith('```')) {
-    html = html.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '').trim()
+  try {
+    const jsonText = accumulated.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '')
+    const parsed = JSON.parse(jsonText)
+    if (typeof parsed.explanation === 'string') explanation = parsed.explanation
+    if (Array.isArray(parsed.changes)) cssChanges = parsed.changes
+  } catch {
+    return {
+      html: currentHtml,
+      message: 'Could not parse the requested changes. Please try rephrasing.',
+      tokensUsed: inputTokens + outputTokens,
+    }
   }
 
+  // Build a <style> block from the CSS changes and inject it into the full HTML.
+  // Any previous chat-edit block is replaced so rules don't accumulate across edits.
+  let updatedHtml = currentHtml.replace(/<style data-chat-edit>[\s\S]*?<\/style>\n?/g, '')
+
+  if (cssChanges.length > 0) {
+    const cssRules = cssChanges
+      .filter((c) => c.selector && c.property && c.value)
+      .map((c) => `  ${c.selector} { ${c.property}: ${c.value} !important; }`)
+      .join('\n')
+
+    const styleBlock = `<style data-chat-edit>\n${cssRules}\n</style>`
+
+    if (/<\/head>/i.test(updatedHtml)) {
+      updatedHtml = updatedHtml.replace(/<\/head>/i, `${styleBlock}\n</head>`)
+    } else if (/<body/i.test(updatedHtml)) {
+      updatedHtml = updatedHtml.replace(/<body/i, `${styleBlock}\n<body`)
+    } else {
+      updatedHtml = styleBlock + '\n' + updatedHtml
+    }
+  }
+
+  onPartialHtml(updatedHtml)
+
   return {
-    html,
+    html: updatedHtml,
     message: explanation,
     tokensUsed: inputTokens + outputTokens,
   }
