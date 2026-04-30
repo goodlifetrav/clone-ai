@@ -529,6 +529,7 @@ Rules:
     }
     const parsed = JSON.parse(jsonText)
     if (Array.isArray(parsed)) changes = parsed
+    console.log('[chatWithProjectStreaming] parsed changes:', JSON.stringify(changes))
   } catch {
     return {
       html: currentHtml,
@@ -563,6 +564,7 @@ Rules:
       .join('\n')
 
     const styleBlock = `<style data-chat-edit>\n${cssRules}\n</style>`
+    console.log('[chatWithProjectStreaming] injected style block', styleBlock)
 
     if (/<\/head>/i.test(updatedHtml)) {
       updatedHtml = updatedHtml.replace(/<\/head>/i, `${styleBlock}\n</head>`)
