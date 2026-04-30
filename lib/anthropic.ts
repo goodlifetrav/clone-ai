@@ -469,10 +469,9 @@ export async function generateCloneStreaming(
   }
 }
 
-// Streaming version of chatWithProject.
-// Claude returns a small JSON array of CSS changes; we apply them as a <style>
-// block injected into the full HTML. This preserves the complete original page
-// regardless of size — Claude never needs to reproduce the HTML.
+// Chat edit: asks Haiku for a JSON array of CSS changes, applies them as a
+// <style data-chat-edit> block. The full HTML is never sent to Claude and is
+// always preserved exactly — only the style block changes.
 export async function chatWithProjectStreaming(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -482,105 +481,66 @@ export async function chatWithProjectStreaming(
 ): Promise<{ html: string; message: string; tokensUsed: number }> {
   const lastUserMessage = messages[messages.length - 1]
 
-  const userContent: Anthropic.MessageParam['content'] = []
-  if (imageBase64 && imageMimeType) {
-    userContent.push({
-      type: 'image',
-      source: {
-        type: 'base64',
-        media_type: imageMimeType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
-        data: imageBase64,
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 500,
+    messages: [
+      {
+        role: 'user',
+        content: `A user wants to modify a website. Their request is: ${lastUserMessage.content}. Return ONLY a valid JSON array of CSS changes needed, no explanation, no markdown, no code blocks. Format: [{"selector": "nav", "property": "background-color", "value": "#000000"}]. Return an empty array [] if the request cannot be done with CSS alone.`,
       },
-    })
-  }
-  userContent.push({
-    type: 'text',
-    text: `Here is the current HTML of the website:\n\`\`\`html\n${currentHtml}\n\`\`\`\n\n${lastUserMessage.content}`,
+    ],
   })
 
-  const stream = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 1000,
-    stream: true,
-    system: `You are an expert web developer helping users modify their cloned website.
-The user will describe visual or styling changes they want made to the page.
+  const content = response.content[0]
+  const tokensUsed = response.usage.input_tokens + response.usage.output_tokens
+  const raw = content.type === 'text' ? content.text.trim() : ''
 
-Respond with a JSON object in this EXACT format — no markdown, no code fences, nothing else:
-{
-  "explanation": "Brief description of what you changed (1-2 sentences)",
-  "changes": [
-    {"selector": "CSS selector", "property": "CSS property name", "value": "CSS value"},
-    ...
-  ]
-}
-
-Rules:
-- Use standard CSS selectors (element, .class, #id, descendant, etc.)
-- Each entry in changes must have exactly three keys: selector, property, value
-- Multiple properties on the same selector = multiple entries in the array
-- If the request cannot be handled with CSS alone, explain why in the explanation and return an empty changes array
-- Return ONLY the raw JSON object — no surrounding text`,
-    messages: [{ role: 'user', content: userContent }],
-  })
-
-  let accumulated = ''
-  let inputTokens = 0
-  let outputTokens = 0
-
-  for await (const event of stream) {
-    if (event.type === 'message_start') {
-      inputTokens = event.message.usage.input_tokens
-    } else if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      accumulated += event.delta.text
-    } else if (event.type === 'message_delta') {
-      outputTokens = event.usage.output_tokens
-    }
-  }
-
-  // Parse Claude's JSON response
-  let explanation = 'Changes applied.'
   let cssChanges: Array<{ selector: string; property: string; value: string }> = []
-
   try {
-    const jsonText = accumulated.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '')
+    const jsonText = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '')
     const parsed = JSON.parse(jsonText)
-    if (typeof parsed.explanation === 'string') explanation = parsed.explanation
-    if (Array.isArray(parsed.changes)) cssChanges = parsed.changes
+    if (Array.isArray(parsed)) cssChanges = parsed
   } catch {
     return {
       html: currentHtml,
-      message: 'Could not parse the requested changes. Please try rephrasing.',
-      tokensUsed: inputTokens + outputTokens,
+      message: 'That change could not be made with CSS. Please try a different request.',
+      tokensUsed,
     }
   }
 
-  // Build a <style> block from the CSS changes and inject it into the full HTML.
-  // Any previous chat-edit block is replaced so rules don't accumulate across edits.
+  if (cssChanges.length === 0) {
+    return {
+      html: currentHtml,
+      message: 'That change could not be made with CSS. Please try a different request.',
+      tokensUsed,
+    }
+  }
+
+  // Strip any previous chat-edit block, then inject the new one
   let updatedHtml = currentHtml.replace(/<style data-chat-edit>[\s\S]*?<\/style>\n?/g, '')
 
-  if (cssChanges.length > 0) {
-    const cssRules = cssChanges
-      .filter((c) => c.selector && c.property && c.value)
-      .map((c) => `  ${c.selector} { ${c.property}: ${c.value} !important; }`)
-      .join('\n')
+  const cssRules = cssChanges
+    .filter((c) => c.selector && c.property && c.value)
+    .map((c) => `  ${c.selector} { ${c.property}: ${c.value} !important; }`)
+    .join('\n')
 
-    const styleBlock = `<style data-chat-edit>\n${cssRules}\n</style>`
+  const styleBlock = `<style data-chat-edit>\n${cssRules}\n</style>`
 
-    if (/<\/head>/i.test(updatedHtml)) {
-      updatedHtml = updatedHtml.replace(/<\/head>/i, `${styleBlock}\n</head>`)
-    } else if (/<body/i.test(updatedHtml)) {
-      updatedHtml = updatedHtml.replace(/<body/i, `${styleBlock}\n<body`)
-    } else {
-      updatedHtml = styleBlock + '\n' + updatedHtml
-    }
+  if (/<\/head>/i.test(updatedHtml)) {
+    updatedHtml = updatedHtml.replace(/<\/head>/i, `${styleBlock}\n</head>`)
+  } else if (/<body/i.test(updatedHtml)) {
+    updatedHtml = updatedHtml.replace(/<body/i, `${styleBlock}\n<body`)
+  } else {
+    updatedHtml = styleBlock + '\n' + updatedHtml
   }
 
   onPartialHtml(updatedHtml)
 
   return {
     html: updatedHtml,
-    message: explanation,
-    tokensUsed: inputTokens + outputTokens,
+    message: 'Changes applied.',
+    tokensUsed,
   }
 }
 
