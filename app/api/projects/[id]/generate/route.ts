@@ -80,6 +80,44 @@ export async function GET(
     return NextResponse.json({ error: 'Project is not pending' }, { status: 400 })
   }
 
+  // ── Race-condition guard ───────────────────────────────────────────────
+  // The DOM pipeline in /api/clone fires async and may finish before or after
+  // this request arrives.  Poll for up to 10 s (1 s intervals) before claiming
+  // the project.  If the DOM pipeline completes the project in that window we
+  // return its HTML immediately without running the screenshot pipeline at all.
+  {
+    const POLL_INTERVAL_MS = 1000
+    const POLL_MAX_MS = 10000
+    let waited = 0
+    while (waited < POLL_MAX_MS) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+      waited += POLL_INTERVAL_MS
+
+      const { data: latest } = await supabase
+        .from('projects')
+        .select('status, html_content')
+        .eq('id', id)
+        .single()
+
+      if (latest?.status === 'complete') {
+        // DOM pipeline beat us — stream the finished HTML and exit
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(makeEvent({ done: true, html: latest.html_content }))
+            controller.close()
+          },
+        })
+        return new Response(stream, { headers: SSE_HEADERS })
+      }
+
+      // Still pending — keep waiting
+      if (latest?.status === 'pending') continue
+
+      // Any other status (processing, error) — stop polling and fall through
+      break
+    }
+  }
+
   // Claim the project — set status to 'processing'
   await supabase.from('projects').update({ status: 'processing' }).eq('id', id)
 
