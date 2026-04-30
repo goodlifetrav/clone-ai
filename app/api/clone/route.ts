@@ -97,13 +97,11 @@ async function runDomPipeline(projectId: string, url: string): Promise<void> {
       { inlineCss },
       { rehostAssets },
       { cleanHtml },
-      { anthropic },
     ] = await Promise.all([
       import('@/lib/extractor'),
       import('@/lib/css-inliner'),
       import('@/lib/asset-rehost'),
       import('@/lib/html-cleaner'),
-      import('@/lib/anthropic'),
     ])
 
     console.log(`[DOM] Starting pipeline for project ${projectId} — ${url}`)
@@ -124,29 +122,7 @@ async function runDomPipeline(projectId: string, url: string): Promise<void> {
     html = cleanHtml(html)
     console.log(`[DOM] HTML cleaned — ${html.length} chars`)
 
-    // 5. Claude Haiku cleanup pass — send first 6000 chars for a fast fix
-    const sample = html.slice(0, 6000)
-    const aiResponse = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 4096,
-      messages: [
-        {
-          role: 'user',
-          content:
-            'Fix any remaining broken asset references and remove any checkout, cart, or login ' +
-            "functionality that won't work standalone. Return only the complete fixed HTML.\n\n" +
-            sample,
-        },
-      ],
-    })
-    const aiText =
-      aiResponse.content[0].type === 'text' ? aiResponse.content[0].text.trim() : ''
-    if (aiText) {
-      html = aiText
-      console.log(`[DOM] Claude cleanup applied — ${html.length} chars`)
-    }
-
-    // 6. Save to database
+    // 5. Save to database
     await supabase
       .from('projects')
       .update({ html_content: html, status: 'complete', clone_method: 'dom' })

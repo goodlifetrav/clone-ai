@@ -38,13 +38,31 @@ function extFromType(contentType: string): string {
   return EXT[contentType] ?? 'bin'
 }
 
+/**
+ * Decode the HTML entities that browsers write into attribute values.
+ * Only decodes the subset that appears in URLs: &amp; &lt; &gt; &quot; &#39;
+ */
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+}
+
 /** Collect all absolute asset URLs referenced in the HTML string. */
 function collectUrls(html: string, base: URL): Set<string> {
   const urls = new Set<string>()
 
   const resolve = (raw: string): string | null => {
     if (!raw || isSkippable(raw)) return null
-    try { return new URL(raw.trim(), base).href } catch { return null }
+    // Decode HTML entities before resolving — HTML often encodes & as &amp;
+    // in attribute values, which makes the raw string fail URL parsing or
+    // not match the actual network URL.
+    const decoded = decodeHtmlEntities(raw.trim())
+    try { return new URL(decoded, base).href } catch { return null }
   }
 
   // src="..."
@@ -115,11 +133,18 @@ export async function rehostAssets(
   console.log(`[rehostAssets] Uploaded ${urlMap.size}/${assetUrls.size} assets`)
   if (urlMap.size === 0) return html
 
-  // Replace longest URLs first to avoid partial-match clobbering
+  // Replace longest URLs first to avoid partial-match clobbering.
+  // Also replace the &amp;-encoded form because HTML attribute values often
+  // encode '&' as '&amp;', so the raw URL extracted above won't match
+  // the string that actually appears in the markup.
   let result = html
   const sorted = [...urlMap.entries()].sort((a, b) => b[0].length - a[0].length)
   for (const [orig, r2] of sorted) {
     result = result.split(orig).join(r2)
+    const encoded = orig.replace(/&/g, '&amp;')
+    if (encoded !== orig) {
+      result = result.split(encoded).join(r2)
+    }
   }
   return result
 }
