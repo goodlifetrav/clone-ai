@@ -500,7 +500,7 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
     messages: [
       {
         role: 'user',
-        content: `Here is a snippet of the website HTML so you can identify the correct CSS selectors:\n\n${currentHtml.slice(0, 4000)}\n\nThe user wants to make this change: ${lastUserMessage.content}`,
+        content: `Here is a snippet of the website HTML so you can identify the correct CSS selectors:\n\n${(() => { const b = currentHtml.search(/<body/i); return currentHtml.slice(b !== -1 ? b : 0, (b !== -1 ? b : 0) + 4000) })()}\n\nThe user wants to make this change: ${lastUserMessage.content}`,
       },
     ],
   })
