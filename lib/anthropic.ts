@@ -505,7 +505,19 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
     messages: [
       {
         role: 'user',
-        content: `Here is a snippet of the website HTML so you can identify the correct CSS selectors:\n\n${(() => { const b = currentHtml.search(/<body/i); return currentHtml.slice(b !== -1 ? b : 0, (b !== -1 ? b : 0) + 4000) })()}\n\nThe user wants to make this change: ${lastUserMessage.content}${uploadedImageUrls && uploadedImageUrls.length > 0 ? '\n\nThe user has uploaded these images that are available to use (use these URLs directly in src attributes):\n' + uploadedImageUrls.join('\n') : ''}`,
+        content: (() => {
+          const hasImages = uploadedImageUrls && uploadedImageUrls.length > 0
+          let htmlSnippet: string
+          if (hasImages) {
+            const imgTags = [...currentHtml.matchAll(/<img\b[^>]*>/gi)].slice(0, 20).map(m => m[0])
+            htmlSnippet = imgTags.length > 0 ? imgTags.join('\n') : ''
+          } else {
+            const b = currentHtml.search(/<body/i)
+            htmlSnippet = currentHtml.slice(b !== -1 ? b : 0, (b !== -1 ? b : 0) + 4000)
+          }
+          const imageSection = hasImages ? `\n\nThe user has uploaded these images that are available to use (use these URLs directly in src attributes):\n${uploadedImageUrls!.join('\n')}` : ''
+          return `Here is a snippet of the website HTML so you can identify the correct CSS selectors:\n\n${htmlSnippet}\n\nThe user wants to make this change: ${lastUserMessage.content}${imageSection}`
+        })(),
       },
     ],
   })
