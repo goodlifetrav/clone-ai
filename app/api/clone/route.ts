@@ -95,7 +95,7 @@ async function runDomPipeline(projectId: string, url: string): Promise<void> {
     const [
       { extractSite },
       { inlineCss },
-      { makeUrlsAbsolute },
+      { makeUrlsAbsolute, rehostImages },
       { cleanHtml },
     ] = await Promise.all([
       import('@/lib/extractor'),
@@ -118,11 +118,16 @@ async function runDomPipeline(projectId: string, url: string): Promise<void> {
     html = makeUrlsAbsolute(html, url)
     console.log(`[DOM] URLs absolutified — ${html.length} chars`)
 
-    // 4. Strip scripts/tracking, add <base target="_blank">
+    // 4. Re-host images to R2
+    console.log('[DOM] Rehosting images...')
+    html = await rehostImages(html, projectId)
+    console.log('[DOM] Images rehosted')
+
+    // 5. Strip scripts/tracking, add <base target="_blank">
     html = cleanHtml(html)
     console.log(`[DOM] HTML cleaned — ${html.length} chars`)
 
-    // 5. Save to database
+    // 6. Save to database
     await supabase
       .from('projects')
       .update({ html_content: html, status: 'complete', clone_method: 'dom' })

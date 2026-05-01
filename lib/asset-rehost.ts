@@ -1,3 +1,74 @@
+import { createHash } from 'crypto'
+import { uploadToR2, isR2Configured } from './r2'
+
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif'])
+
+/**
+ * rehostImages — fetch every <img src> URL in the HTML, upload each to R2,
+ * and rewrite all matching URLs in the markup.
+ */
+export async function rehostImages(html: string, projectId: string): Promise<string> {
+  if (!isR2Configured()) return html
+
+  try {
+    // Collect unique img src URLs
+    const seen = new Set<string>()
+    const imgSrcRe = /<img\b[^>]*\bsrc=(["'])([^"']+)\1/gi
+    let m: RegExpExecArray | null
+    while ((m = imgSrcRe.exec(html)) !== null) {
+      const url = m[2].trim()
+      if (url) seen.add(url)
+    }
+
+    // Deduplicate, cap at 50
+    const urls = [...seen].slice(0, 50)
+
+    const urlMap = new Map<string, string>()
+
+    await Promise.allSettled(
+      urls.map(async (rawUrl) => {
+        try {
+          if (rawUrl.startsWith('data:')) return
+          if (rawUrl.includes('r2.dev')) return
+
+          // Resolve protocol-relative
+          const url = rawUrl.startsWith('//') ? 'https:' + rawUrl : rawUrl
+
+          // Check extension (ignore query params)
+          const pathname = url.split('?')[0]
+          const ext = pathname.split('.').pop()?.toLowerCase() ?? ''
+          if (!IMAGE_EXTS.has(ext)) return
+
+          const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+          if (!res.ok) return
+
+          const buffer = Buffer.from(await res.arrayBuffer())
+          const hash = createHash('md5').update(url).digest('hex')
+          const key = `projects/${projectId}/images/${hash}.${ext}`
+          const r2Url = await uploadToR2(buffer, key, `image/${ext === 'jpg' ? 'jpeg' : ext}`)
+          urlMap.set(rawUrl, r2Url)
+        } catch {
+          // skip this image
+        }
+      })
+    )
+
+    if (urlMap.size === 0) return html
+
+    // Replace longest URLs first to avoid partial-match clobbering
+    let result = html
+    const sorted = [...urlMap.entries()].sort((a, b) => b[0].length - a[0].length)
+    for (const [orig, r2] of sorted) {
+      result = result.split(orig).join(r2)
+      const encoded = orig.replace(/&/g, '&amp;')
+      if (encoded !== orig) result = result.split(encoded).join(r2)
+    }
+    return result
+  } catch {
+    return html
+  }
+}
+
 /**
  * makeUrlsAbsolute — rewrite all relative asset URLs in HTML to absolute URLs.
  * Pure string replacement — no fetching, no uploading, no external dependencies.
