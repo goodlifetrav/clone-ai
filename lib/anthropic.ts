@@ -482,6 +482,8 @@ export async function chatWithProjectStreaming(
 ): Promise<{ html: string; message: string; tokensUsed: number }> {
   const lastUserMessage = messages[messages.length - 1]
 
+  console.log('[chatWithProjectStreaming] uploadedImageUrls:', JSON.stringify(uploadedImageUrls))
+
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 500,
