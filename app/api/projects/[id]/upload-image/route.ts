@@ -63,6 +63,12 @@ export async function POST(
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${ext}`
   const key = `projects/${projectId}/uploads/${filename}`
 
-  const url = await uploadToR2(buffer, key, file.type)
-  return NextResponse.json({ url })
+  try {
+    const url = await uploadToR2(buffer, key, file.type)
+    console.log('[upload-image] success:', url)
+    return NextResponse.json({ url })
+  } catch (err) {
+    console.error('[upload-image] R2 error:', err)
+    return NextResponse.json({ error: 'Upload failed: ' + String(err) }, { status: 500 })
+  }
 }
