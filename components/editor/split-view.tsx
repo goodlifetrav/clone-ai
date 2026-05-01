@@ -85,7 +85,6 @@ export function SplitView({
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [chatInputAppend, setChatInputAppend] = useState<string | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
-  const imageUploadRef = useRef<HTMLInputElement>(null)
 
   // Auto-switch tabs based on project.status transitions (clone streaming)
   useEffect(() => {
@@ -198,15 +197,6 @@ export function SplitView({
 
   return (
     <div className="relative flex flex-col h-[100dvh] bg-white dark:bg-neutral-950">
-      {/* Hidden file input for image uploads */}
-      <input
-        ref={imageUploadRef}
-        type="file"
-        accept=".jpg,.jpeg,.png,.gif,.webp,.svg,image/*"
-        className="hidden"
-        onChange={handleImageFileSelect}
-      />
-
       {/* ── Toolbar ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-shrink-0 overflow-x-auto">
         {/* Desktop: chat panel toggle */}
@@ -295,21 +285,21 @@ export function SplitView({
           <span className="hidden sm:inline">Download</span>
         </Button>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs gap-1 flex-shrink-0"
-          onClick={() => imageUploadRef.current?.click()}
-          disabled={uploadingImage}
-          title="Upload an image to R2 and insert its URL into the AI chat"
-        >
-          {uploadingImage ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
-          ) : (
-            <ImagePlus className="w-3 h-3" />
-          )}
-          <span className="hidden sm:inline">{uploadingImage ? 'Uploading…' : 'Upload'}</span>
-        </Button>
+        <label htmlFor="image-upload-input" className="cursor-pointer">
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 flex-shrink-0" asChild disabled={uploadingImage}>
+            <span>
+              {uploadingImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
+              <span className="hidden sm:inline">{uploadingImage ? 'Uploading…' : 'Upload'}</span>
+            </span>
+          </Button>
+          <input
+            id="image-upload-input"
+            type="file"
+            accept=".jpg,.jpeg,.png,.gif,.webp,.svg,image/*"
+            className="hidden"
+            onChange={handleImageFileSelect}
+          />
+        </label>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
