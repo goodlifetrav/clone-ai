@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Send, Loader2, User, Bot, Zap, Upload, ImagePlus } from 'lucide-react'
+import { Send, Loader2, User, Bot, Zap, Upload, ImagePlus, X } from 'lucide-react'
 import type { ChatMessage } from '@/types'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
@@ -47,6 +47,7 @@ export function ChatPanel({
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [pendingImages, setPendingImages] = useState<string[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -64,6 +65,7 @@ export function ChatPanel({
       })
       if (res.ok) {
         const data = await res.json() as { url: string }
+        setPendingImages((prev) => [...prev, data.url])
         onImageUploaded?.(data.url)
       }
     } catch { /* silent */ } finally {
@@ -99,6 +101,7 @@ export function ChatPanel({
       })
       if (res.ok) {
         const data = await res.json() as { url: string }
+        setPendingImages((prev) => [...prev, data.url])
         onImageUploaded?.(data.url)
       }
     } catch { /* silent */ } finally {
@@ -123,14 +126,6 @@ export function ChatPanel({
     }
     fetchChatStatus()
   }, [projectId])
-
-  // When the toolbar uploads an image, append its URL to the chat input
-  useEffect(() => {
-    if (appendToInput) {
-      setInput((prev) => (prev ? `${prev} ${appendToInput}` : appendToInput))
-      onAppendConsumed?.()
-    }
-  }, [appendToInput, onAppendConsumed])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -160,6 +155,8 @@ export function ChatPanel({
     const newMessages = [...messages, userMessage]
     onMessagesChange(newMessages)
     setInput('')
+    const imagesToSend = [...pendingImages]
+    setPendingImages([])
     setLoading(true)
     onGenerating?.(true)
 
@@ -170,7 +167,7 @@ export function ChatPanel({
         body: JSON.stringify({
           projectId,
           message: userMessage.content,
-          uploadedImageUrls: uploadedImages ?? [],
+          uploadedImageUrls: imagesToSend,
         }),
       })
 
@@ -295,24 +292,6 @@ export function ChatPanel({
           )}
         </div>
 
-        {/* Uploaded image library */}
-        {uploadedImages && uploadedImages.length > 0 && (
-          <div className="px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/60">
-            <p className="text-xs text-neutral-400 mb-1.5">Uploaded images — click to insert URL:</p>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {uploadedImages.map((url, i) => (
-                <button
-                  key={i}
-                  onClick={() => onImageLibraryInsert?.(url)}
-                  className="flex-shrink-0 w-14 h-14 rounded border border-neutral-200 dark:border-neutral-700 overflow-hidden hover:border-neutral-500 dark:hover:border-neutral-400 transition-colors"
-                  title={`Click to insert: ${url}`}
-                >
-                  <img src={url} alt={`Upload ${i + 1}`} className="w-full h-full object-cover" />
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Messages */}
         <ScrollArea className="flex-1 min-h-0 p-4">
@@ -387,6 +366,23 @@ export function ChatPanel({
                 Upgrade
               </Button>
             </Link>
+          </div>
+        )}
+
+        {/* Pending image thumbnails */}
+        {pendingImages.length > 0 && (
+          <div className="px-4 pt-2 flex gap-2 flex-wrap border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
+            {pendingImages.map((url, i) => (
+              <div key={i} className="relative w-14 h-14 flex-shrink-0">
+                <img src={url} alt={`Attachment ${i + 1}`} className="w-full h-full object-cover rounded border border-neutral-200 dark:border-neutral-700" />
+                <button
+                  onClick={() => setPendingImages((prev) => prev.filter((_, idx) => idx !== i))}
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 rounded-full flex items-center justify-center"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
