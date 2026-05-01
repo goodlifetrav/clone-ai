@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
-import { uploadToR2, isR2Configured } from '@/lib/r2'
 
 const ALLOWED_TYPES = new Set([
   'image/jpeg',
@@ -21,10 +20,6 @@ export async function POST(
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id: projectId } = await params
-
-  if (!isR2Configured()) {
-    return NextResponse.json({ error: 'Image storage not configured' }, { status: 503 })
-  }
 
   const supabase = createServiceClient()
 
@@ -58,17 +53,28 @@ export async function POST(
     return NextResponse.json({ error: 'File too large (max 10 MB)' }, { status: 400 })
   }
 
+  // Ensure the bucket exists (ignore error if it already does)
+  try {
+    await supabase.storage.createBucket('uploads', { public: true })
+  } catch {
+    // bucket already exists — continue
+  }
+
   const buffer = Buffer.from(await file.arrayBuffer())
   const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${ext}`
-  const key = `projects/${projectId}/uploads/${filename}`
+  const path = `projects/${projectId}/${filename}`
 
-  try {
-    const url = await uploadToR2(buffer, key, file.type)
-    console.log('[upload-image] success:', url)
-    return NextResponse.json({ url })
-  } catch (err) {
-    console.error('[upload-image] R2 error:', err)
-    return NextResponse.json({ error: 'Upload failed: ' + String(err) }, { status: 500 })
+  const { error: uploadError } = await supabase.storage
+    .from('uploads')
+    .upload(path, buffer, { contentType: file.type, upsert: false })
+
+  if (uploadError) {
+    console.error('[upload-image] Supabase storage error:', uploadError)
+    return NextResponse.json({ error: 'Upload failed: ' + uploadError.message }, { status: 500 })
   }
+
+  const { data: { publicUrl } } = supabase.storage.from('uploads').getPublicUrl(path)
+  console.log('[upload-image] success:', publicUrl)
+  return NextResponse.json({ url: publicUrl })
 }
