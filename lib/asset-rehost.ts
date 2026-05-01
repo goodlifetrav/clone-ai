@@ -1,7 +1,15 @@
 import { createHash } from 'crypto'
 import { uploadToR2, isR2Configured } from './r2'
 
-const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif'])
+const NON_IMAGE_EXTS = new Set(['css', 'js', 'woff', 'woff2', 'ttf', 'eot', 'svg'])
+
+const CONTENT_TYPE_TO_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/avif': 'avif',
+}
 
 /**
  * rehostImages — fetch every <img src> URL in the HTML, upload each to R2,
@@ -34,18 +42,23 @@ export async function rehostImages(html: string, projectId: string): Promise<str
           // Resolve protocol-relative
           const url = rawUrl.startsWith('//') ? 'https:' + rawUrl : rawUrl
 
-          // Check extension (ignore query params)
+          // Skip known non-image extensions
           const pathname = url.split('?')[0]
-          const ext = pathname.split('.').pop()?.toLowerCase() ?? ''
-          if (!IMAGE_EXTS.has(ext)) return
+          const urlExt = pathname.split('.').pop()?.toLowerCase() ?? ''
+          if (NON_IMAGE_EXTS.has(urlExt)) return
 
           const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
           if (!res.ok) return
 
+          // Verify Content-Type is an image
+          const contentType = res.headers.get('content-type')?.split(';')[0].trim() ?? ''
+          if (!contentType.startsWith('image/')) return
+
+          const ext = CONTENT_TYPE_TO_EXT[contentType] ?? 'jpg'
           const buffer = Buffer.from(await res.arrayBuffer())
           const hash = createHash('md5').update(url).digest('hex')
           const key = `projects/${projectId}/images/${hash}.${ext}`
-          const r2Url = await uploadToR2(buffer, key, `image/${ext === 'jpg' ? 'jpeg' : ext}`)
+          const r2Url = await uploadToR2(buffer, key, contentType)
           urlMap.set(rawUrl, r2Url)
         } catch {
           // skip this image
