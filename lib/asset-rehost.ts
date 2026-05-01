@@ -30,6 +30,7 @@ export async function rehostImages(html: string, projectId: string): Promise<str
 
     // Deduplicate, cap at 50
     const urls = [...seen].slice(0, 50)
+    console.log(`[rehostImages] Found ${urls.length} image URLs to process`)
 
     const urlMap = new Map<string, string>()
 
@@ -47,12 +48,16 @@ export async function rehostImages(html: string, projectId: string): Promise<str
           const urlExt = pathname.split('.').pop()?.toLowerCase() ?? ''
           if (NON_IMAGE_EXTS.has(urlExt)) return
 
+          console.log(`[rehostImages] Processing: ${url}`)
           const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
           if (!res.ok) return
 
           // Verify Content-Type is an image
           const contentType = res.headers.get('content-type')?.split(';')[0].trim() ?? ''
-          if (!contentType.startsWith('image/')) return
+          if (!contentType.startsWith('image/')) {
+            console.log(`[rehostImages] Skipped (non-image content-type): ${url} - ${contentType}`)
+            return
+          }
 
           const ext = CONTENT_TYPE_TO_EXT[contentType] ?? 'jpg'
           const buffer = Buffer.from(await res.arrayBuffer())
@@ -60,8 +65,9 @@ export async function rehostImages(html: string, projectId: string): Promise<str
           const key = `projects/${projectId}/images/${hash}.${ext}`
           const r2Url = await uploadToR2(buffer, key, contentType)
           urlMap.set(rawUrl, r2Url)
-        } catch {
-          // skip this image
+          console.log(`[rehostImages] Uploaded: ${url} -> ${r2Url}`)
+        } catch (err) {
+          console.log(`[rehostImages] Skipped (fetch failed): ${rawUrl} - ${err}`)
         }
       })
     )
