@@ -285,21 +285,17 @@ export function SplitView({
           <span className="hidden sm:inline">Download</span>
         </Button>
 
-        <label htmlFor="image-upload-input" className="cursor-pointer">
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 flex-shrink-0" asChild disabled={uploadingImage}>
-            <span>
-              {uploadingImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
-              <span className="hidden sm:inline">{uploadingImage ? 'Uploading…' : 'Upload'}</span>
-            </span>
-          </Button>
+        <div className="relative h-7 px-2 text-xs gap-1 flex-shrink-0 flex items-center cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded">
+          {uploadingImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
+          <span className="hidden sm:inline ml-1">{uploadingImage ? 'Uploading…' : 'Upload'}</span>
           <input
-            id="image-upload-input"
             type="file"
             accept=".jpg,.jpeg,.png,.gif,.webp,.svg,image/*"
-            className="hidden"
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
             onChange={handleImageFileSelect}
+            disabled={uploadingImage}
           />
-        </label>
+        </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
