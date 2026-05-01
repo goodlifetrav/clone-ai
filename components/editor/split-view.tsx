@@ -28,8 +28,6 @@ import {
   PanelLeftOpen,
   Bot,
   Sparkles,
-  ImagePlus,
-  Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { Project, ProjectVersion, ChatMessage } from '@/types'
@@ -84,7 +82,6 @@ export function SplitView({
   // Image upload state
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [chatInputAppend, setChatInputAppend] = useState<string | null>(null)
-  const [uploadingImage, setUploadingImage] = useState(false)
 
   // Auto-switch tabs based on project.status transitions (clone streaming)
   useEffect(() => {
@@ -165,27 +162,6 @@ export function SplitView({
     setIntegrationModal('vercel')
   }
 
-  const handleImageFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploadingImage(true)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const res = await fetch(`/api/projects/${project.id}/upload-image`, {
-        method: 'POST',
-        body: formData,
-      })
-      if (res.ok) {
-        const data = await res.json() as { url: string }
-        setUploadedImages((prev) => [...prev, data.url])
-        setChatInputAppend(data.url)
-      }
-    } catch { /* silent — upload errors are non-fatal */ } finally {
-      setUploadingImage(false)
-      e.target.value = ''
-    }
-  }
 
   const rightTabs: { id: RightTab; label: string; icon: React.ReactNode }[] = [
     { id: 'preview', label: 'Preview', icon: <Eye className="w-3.5 h-3.5" /> },
@@ -285,17 +261,6 @@ export function SplitView({
           <span className="hidden sm:inline">Download</span>
         </Button>
 
-        <div className="relative h-7 px-2 text-xs gap-1 flex-shrink-0 flex items-center cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded">
-          {uploadingImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
-          <span className="hidden sm:inline ml-1">{uploadingImage ? 'Uploading…' : 'Upload'}</span>
-          <input
-            type="file"
-            accept=".jpg,.jpeg,.png,.gif,.webp,.svg,image/*"
-            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-            onChange={handleImageFileSelect}
-            disabled={uploadingImage}
-          />
-        </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -376,6 +341,10 @@ export function SplitView({
             onAppendConsumed={() => setChatInputAppend(null)}
             uploadedImages={uploadedImages}
             onImageLibraryInsert={(url) => setChatInputAppend(url)}
+            onImageUploaded={(url) => {
+              setUploadedImages((prev) => [...prev, url])
+              setChatInputAppend(url)
+            }}
           />
         </div>
 

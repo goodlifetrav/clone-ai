@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Send, ImagePlus, X, Loader2, User, Bot, Zap } from 'lucide-react'
+import { Send, Loader2, User, Bot, Zap, Upload } from 'lucide-react'
 import type { ChatMessage } from '@/types'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
@@ -23,6 +23,8 @@ interface ChatPanelProps {
   /** R2 URLs of images uploaded this session, shown as a clickable library */
   uploadedImages?: string[]
   onImageLibraryInsert?: (url: string) => void
+  /** Called when a drag-drop upload completes with the new public URL */
+  onImageUploaded?: (url: string) => void
 }
 
 export function ChatPanel({
@@ -36,15 +38,51 @@ export function ChatPanel({
   onAppendConsumed,
   uploadedImages,
   onImageLibraryInsert,
+  onImageUploaded,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [image, setImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null)
   const [messagesUsed, setMessagesUsed] = useState<number | null>(null)
   const [chatLimit, setChatLimit] = useState<number | null>(null)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (!file || !file.type.startsWith('image/')) return
+    setUploadingImage(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(`/api/projects/${projectId}/upload-image`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (res.ok) {
+        const data = await res.json() as { url: string }
+        onImageUploaded?.(data.url)
+      }
+    } catch { /* silent */ } finally {
+      setUploadingImage(false)
+    }
+  }
 
   // Fetch initial message count and limit on mount
   useEffect(() => {
@@ -78,21 +116,8 @@ export function ChatPanel({
 
   const isAtLimit = chatLimit !== null && messagesUsed !== null && messagesUsed >= chatLimit
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const result = ev.target?.result as string
-      const base64 = result.split(',')[1]
-      setImage({ base64, mimeType: file.type, preview: result })
-    }
-    reader.readAsDataURL(file)
-  }
-
   const handleSend = async () => {
-    if (!input.trim() && !image) return
+    if (!input.trim()) return
     if (loading) return
 
     // Block at limit before hitting the API
@@ -113,8 +138,6 @@ export function ChatPanel({
     const newMessages = [...messages, userMessage]
     onMessagesChange(newMessages)
     setInput('')
-    const sentImage = image
-    setImage(null)
     setLoading(true)
     onGenerating?.(true)
 
@@ -125,8 +148,6 @@ export function ChatPanel({
         body: JSON.stringify({
           projectId,
           message: userMessage.content,
-          imageBase64: sentImage?.base64,
-          imageMimeType: sentImage?.mimeType,
           uploadedImageUrls: uploadedImages ?? [],
         }),
       })
@@ -331,20 +352,6 @@ export function ChatPanel({
           )}
         </ScrollArea>
 
-        {/* Image preview */}
-        {image && (
-          <div className="px-4 py-2 border-t border-neutral-200 dark:border-neutral-800">
-            <div className="relative inline-block">
-              <img src={image.preview} alt="Upload" className="h-16 w-auto rounded border" />
-              <button
-                onClick={() => setImage(null)}
-                className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
-              >
-                <X className="w-2.5 h-2.5" />
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Limit reached banner */}
         {isAtLimit && (
@@ -362,44 +369,49 @@ export function ChatPanel({
         )}
 
         {/* Input — sticky on mobile so it's always visible above the keyboard */}
-        <div className="px-4 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex gap-2 sticky bottom-0">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleImageUpload}
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 flex-shrink-0"
-            onClick={() => fileInputRef.current?.click()}
-            title="Upload image"
-            disabled={isAtLimit}
-          >
-            <ImagePlus className="w-4 h-4" />
-          </Button>
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isAtLimit ? 'Upgrade to continue chatting...' : 'Ask AI to modify the website...'}
-            disabled={loading || isAtLimit}
-            className="flex-1"
-          />
-          <Button
-            size="icon"
-            className="h-9 w-9 flex-shrink-0"
-            onClick={handleSend}
-            disabled={loading || isAtLimit || (!input.trim() && !image)}
-          >
-            {loading ? (
+        <div
+          className={cn(
+            'px-4 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex gap-2 sticky bottom-0 transition-colors',
+            isDragging && 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700'
+          )}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {isDragging ? (
+            <div className="flex-1 flex items-center justify-center gap-2 text-sm text-blue-500 dark:text-blue-400 py-1">
+              <Upload className="w-4 h-4" />
+              Drop image to upload
+            </div>
+          ) : uploadingImage ? (
+            <div className="flex-1 flex items-center gap-2 text-sm text-neutral-400 py-1">
               <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-          </Button>
+              Uploading image…
+            </div>
+          ) : (
+            <>
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={isAtLimit ? 'Upgrade to continue chatting...' : 'Ask AI to modify the website... or drag an image here'}
+                disabled={loading || isAtLimit}
+                className="flex-1"
+              />
+              <Button
+                size="icon"
+                className="h-9 w-9 flex-shrink-0"
+                onClick={handleSend}
+                disabled={loading || isAtLimit || !input.trim()}
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
