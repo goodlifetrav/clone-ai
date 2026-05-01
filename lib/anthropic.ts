@@ -571,27 +571,40 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
     if (item.type === 'text' && item.search && item.replace !== undefined) {
       updatedHtml = updatedHtml.replace(new RegExp(item.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), item.replace)
     } else if (item.type === 'attr' && item.attribute === 'src' && item.value) {
-      // Find the img element hinted by the selector (class or id) and replace its src.
-      // Extract the first class or id from the selector as a search hint.
-      const idHint = item.selector.match(/#([a-z0-9_-]+)/i)?.[1]
-      const classHint = item.selector.match(/\.([a-z0-9_-]+)/i)?.[1]
+      const sel = item.selector
+
+      // 1. src* contains selector: img[src*='partial-value']
+      const srcContains = sel.match(/\[src\*=['"]?([^'"\]]+)['"]?\]/i)?.[1]
+      if (srcContains) {
+        const escaped = srcContains.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const re = new RegExp(`(<img\\b[^>]*\\bsrc=["'][^"']*${escaped}[^"']*["'][^>]*?)\\bsrc=["'][^"']*["']`, 'i')
+        // Replace just the src attribute of the matched tag
+        const replRe = new RegExp(`(<img\\b[^>]*?)\\bsrc=(["'])([^"']*${escaped}[^"']*)\\2`, 'i')
+        if (replRe.test(updatedHtml)) {
+          updatedHtml = updatedHtml.replace(replRe, `$1src=$2${item.value}$2`)
+        }
+        // skip other strategies regardless of match — selector was specific
+        continue
+      }
+
+      // 2. Class or id hint: img.hero or img#banner
+      const idHint = sel.match(/#([a-z0-9_-]+)/i)?.[1]
+      const classHint = sel.match(/\.([a-z0-9_-]+)/i)?.[1]
       const hint = idHint ?? classHint
-      let replaced = false
       if (hint) {
-        const escapedHint = hint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const contextRe = new RegExp(
-          `(<img\\b[^>]*\\b(?:class|id)=["'][^"']*${escapedHint}[^"']*["'][^>]*?)\\bsrc=["'][^"']*["']`,
+        const escaped = hint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const re = new RegExp(
+          `(<img\\b[^>]*\\b(?:class|id)=["'][^"']*${escaped}[^"']*["'][^>]*?)\\bsrc=["'][^"']*["']`,
           'i'
         )
-        if (contextRe.test(updatedHtml)) {
-          updatedHtml = updatedHtml.replace(contextRe, `$1src="${item.value}"`)
-          replaced = true
+        if (re.test(updatedHtml)) {
+          updatedHtml = updatedHtml.replace(re, `$1src="${item.value}"`)
         }
+        // no match → leave HTML unchanged (do not fall back to first img)
+        continue
       }
-      if (!replaced) {
-        // Fall back: replace the first img src in the document
-        updatedHtml = updatedHtml.replace(/(<img\b[^>]*?)\bsrc=["'][^"']*["']/, `$1src="${item.value}"`)
-      }
+
+      // 3. No useful selector info — leave unchanged
     }
   }
 
