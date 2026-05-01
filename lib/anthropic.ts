@@ -583,7 +583,9 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
     }
   }
 
-  // Strip any previous chat-edit block, then inject the new one
+  // Extract any existing chat-edit rules so we can accumulate across edits
+  const existingMatch = updatedHtml.match(/<style data-chat-edit>([\s\S]*?)<\/style>/)
+  const existingRules = existingMatch ? existingMatch[1].trim() : ''
   updatedHtml = updatedHtml.replace(/<style data-chat-edit>[\s\S]*?<\/style>\n?/g, '')
 
   const BG_EXTRA_SELECTORS = [
@@ -594,7 +596,7 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
 
   const cssChanges = changes.filter((c): c is CssChange => c.type === 'css' && !!c.selector && !!c.property && !!c.value)
   if (cssChanges.length > 0) {
-    const cssRules = cssChanges.flatMap((c) => {
+    const newRules = cssChanges.flatMap((c) => {
       const value = c.value.includes('!important') ? c.value : `${c.value} !important`
       const primary = `  ${c.selector} { ${c.property}: ${value}; }`
       if (c.property.toLowerCase() === 'background-color') {
@@ -604,6 +606,7 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
       return [primary]
     }).join('\n')
 
+    const cssRules = [existingRules, newRules].filter(Boolean).join('\n')
     const styleBlock = `<style data-chat-edit>\n${cssRules}\n</style>`
     console.log('[chatWithProjectStreaming] injected style block', styleBlock)
 
