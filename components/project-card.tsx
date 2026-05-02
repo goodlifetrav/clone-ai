@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { Project, Folder } from '@/types'
 import { formatDate, extractDomain } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,7 @@ import {
   GitFork,
   Download,
   Loader2,
+  Pencil,
   FolderInput,
   FolderOpen,
 } from 'lucide-react'
@@ -49,6 +50,10 @@ export function ProjectCard({
   const [deleting, setDeleting] = useState(false)
   const [forking, setForking] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [name, setName] = useState(project.name)
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState(project.name)
+  const renameInputRef = useRef<HTMLInputElement>(null)
 
   const isProcessing = project.status === 'processing'
   const isError = project.status === 'error'
@@ -105,6 +110,36 @@ export function ProjectCard({
     }
   }
 
+  useEffect(() => {
+    if (isRenaming) renameInputRef.current?.focus()
+  }, [isRenaming])
+
+  const handleRenameStart = () => {
+    setRenameValue(name)
+    setIsRenaming(true)
+  }
+
+  const handleRenameSubmit = async () => {
+    const trimmed = renameValue.trim()
+    setIsRenaming(false)
+    if (!trimmed || trimmed === name) return
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      })
+      if (res.ok) setName(trimmed)
+    } catch {
+      // revert on error — name state unchanged
+    }
+  }
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') handleRenameSubmit()
+    if (e.key === 'Escape') setIsRenaming(false)
+  }
+
   return (
     <div
       className="group relative rounded-xl border border-neutral-200 bg-white overflow-hidden hover:shadow-md transition-all duration-200 dark:border-neutral-800 dark:bg-neutral-900 cursor-grab active:cursor-grabbing"
@@ -117,9 +152,20 @@ export function ProjectCard({
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-sm text-neutral-900 dark:text-white truncate">
-              <Link href={`/editor/${project.id}`} className="hover:underline">
-                {project.name}
-              </Link>
+              {isRenaming ? (
+                <input
+                  ref={renameInputRef}
+                  className="w-full bg-transparent border-b border-neutral-400 dark:border-neutral-500 outline-none text-sm font-semibold text-neutral-900 dark:text-white"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={handleRenameSubmit}
+                  onKeyDown={handleRenameKeyDown}
+                />
+              ) : (
+                <Link href={`/editor/${project.id}`} className="hover:underline">
+                  {name}
+                </Link>
+              )}
             </h3>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
               {extractDomain(project.url)}
@@ -189,6 +235,11 @@ export function ProjectCard({
                 </DropdownMenuSub>
               )}
 
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleRenameStart}>
+                <Pencil className="w-4 h-4 mr-2" />
+                Rename
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-red-600 dark:text-red-400"
