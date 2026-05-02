@@ -469,9 +469,8 @@ export async function generateCloneStreaming(
   }
 }
 
-// Chat edit: asks Haiku for a JSON array of CSS changes, applies them as a
-// <style data-chat-edit> block. The full HTML is never sent to Claude and is
-// always preserved exactly — only the style block changes.
+// Chat edit: asks Claude Sonnet for a JS DOM script, injects it before </body>.
+// The full HTML is preserved exactly — only the injected script changes.
 export async function chatWithProjectStreaming(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -482,42 +481,36 @@ export async function chatWithProjectStreaming(
 ): Promise<{ html: string; message: string; tokensUsed: number }> {
   const lastUserMessage = messages[messages.length - 1]
 
-  console.log('[chatWithProjectStreaming] uploadedImageUrls:', JSON.stringify(uploadedImageUrls))
+  const hasUploadedImages = uploadedImageUrls && uploadedImageUrls.length > 0
+  const userMessage = hasUploadedImages
+    ? `${lastUserMessage.content}\n\nUploaded image URLs available to use: ${uploadedImageUrls!.join(', ')}`
+    : lastUserMessage.content
+
+  console.log('[chatWithProjectStreaming] userMessage:', userMessage)
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 2000,
-    system: `You are a website editor. The user will describe a change they want to make to their website. Return ONLY a valid JSON array with no explanation, no markdown, no code blocks. Each item in the array must be one of these two types:
+    max_tokens: 1000,
+    system: `You are a website editor. The user will describe a change they want to make to a website. Return ONLY a valid JSON object with no explanation, no markdown, no code blocks:
+{
+  "explanation": "brief description of what you changed",
+  "script": "javascript code that manipulates the DOM to make the change"
+}
 
-CSS change: {"type": "css", "selector": "string", "property": "string", "value": "string"}
-Text change: {"type": "text", "search": "exact string to find", "replace": "replacement string"}
-Image swap: {"type": "attr", "selector": "css selector for the img element", "attribute": "src", "value": "new image url"}
-
-Rules:
-- For color, font, size, spacing, visibility changes use type css
-- For changing words, labels, headings, button text, any content changes use type text
-- For swapping or replacing images use type attr with attribute src and the new image URL as value
-- For the search field in text changes, use the shortest unique string that identifies the text, do not include surrounding HTML tags
-- If a request needs both CSS and text changes return both types in the same array
-- If you cannot make the change return []
-- Never return anything except the JSON array
-CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questions. Never return plain text. If you are unsure what to change, make your best guess and return a JSON array. If you truly cannot make the change, return an empty array [].`,
+Rules for the script:
+- Use document.querySelector and document.querySelectorAll to find elements
+- Use element.style to change CSS properties - always set important with element.style.setProperty('property', 'value', 'important')
+- For background changes target multiple elements: document.querySelectorAll('body, main, div, section, header, footer, nav').forEach(el => el.style.setProperty('background-color', 'black', 'important'))
+- For text changes use document.querySelectorAll('*') and check textContent to find and replace text nodes
+- For image changes find img elements and change their src attribute
+- If uploadedImageUrls are provided, use them for image src changes
+- The script must be self-contained and work when injected into a page
+- Never use document.write or eval
+- Keep the script under 500 chars when possible`,
     messages: [
       {
         role: 'user',
-        content: (() => {
-          const hasImages = uploadedImageUrls && uploadedImageUrls.length > 0
-          let htmlSnippet: string
-          if (hasImages) {
-            const imgTags = [...currentHtml.matchAll(/<img\b[^>]*>/gi)].slice(0, 20).map(m => m[0])
-            htmlSnippet = imgTags.length > 0 ? imgTags.join('\n') : ''
-          } else {
-            const b = currentHtml.search(/<body/i)
-            htmlSnippet = currentHtml.slice(b !== -1 ? b : 0, (b !== -1 ? b : 0) + 4000)
-          }
-          const imageSection = hasImages ? `\n\nThe user has uploaded these images that are available to use (use these URLs directly in src attributes):\n${uploadedImageUrls!.join('\n')}` : ''
-          return `Here is a snippet of the website HTML so you can identify the correct CSS selectors:\n\n${htmlSnippet}\n\nThe user wants to make this change: ${lastUserMessage.content}${imageSection}`
-        })(),
+        content: userMessage,
       },
     ],
   })
@@ -526,29 +519,24 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
   const tokensUsed = response.usage.input_tokens + response.usage.output_tokens
   const raw = content.type === 'text' ? content.text.trim() : ''
 
-  type CssChange = { type: 'css'; selector: string; property: string; value: string }
-  type TextChange = { type: 'text'; search: string; replace: string }
-  type AttrChange = { type: 'attr'; selector: string; attribute: string; value: string }
-  type Change = CssChange | TextChange | AttrChange
-
   console.log('[chatWithProjectStreaming] raw Claude response:', raw)
 
-  let changes: Change[] = []
+  let explanation = 'Changes applied.'
+  let script = ''
   try {
-    // Strip markdown code fences
     let jsonText = raw
-      .replace(/^```(?:json|JSON|html|HTML)?\s*/m, '')
+      .replace(/^```(?:json|JSON)?\s*/m, '')
       .replace(/```\s*$/m, '')
       .trim()
-    // Extract just the JSON array by finding the first [ and last ]
-    const start = jsonText.indexOf('[')
-    const end = jsonText.lastIndexOf(']')
+    const start = jsonText.indexOf('{')
+    const end = jsonText.lastIndexOf('}')
     if (start !== -1 && end !== -1 && end > start) {
       jsonText = jsonText.slice(start, end + 1)
     }
     const parsed = JSON.parse(jsonText)
-    if (Array.isArray(parsed)) changes = parsed
-    console.log('[chatWithProjectStreaming] parsed changes:', JSON.stringify(changes))
+    explanation = parsed.explanation ?? explanation
+    script = parsed.script ?? ''
+    console.log('[chatWithProjectStreaming] parsed script:', script)
   } catch {
     return {
       html: currentHtml,
@@ -557,7 +545,7 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
     }
   }
 
-  if (changes.length === 0) {
+  if (!script.trim()) {
     return {
       html: currentHtml,
       message: 'That change could not be made. Please try a different request.',
@@ -565,90 +553,21 @@ CRITICAL: You must ALWAYS return a valid JSON array. Never ask clarifying questi
     }
   }
 
-  // Apply text and attr changes directly to the HTML
-  let updatedHtml = currentHtml
-  for (const item of changes) {
-    if (item.type === 'text' && item.search && item.replace !== undefined) {
-      updatedHtml = updatedHtml.replace(new RegExp(item.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), item.replace)
-    } else if (item.type === 'attr' && item.attribute === 'src' && item.value) {
-      const sel = item.selector
+  // Remove any previous chat-edit script block, then inject the new one
+  let updatedHtml = currentHtml.replace(/<script data-chat-edit>[\s\S]*?<\/script>\n?/g, '')
 
-      // 1. src* contains selector: img[src*='partial-value']
-      const srcContains = sel.match(/\[src\*=['"]?([^'"\]]+)['"]?\]/i)?.[1]
-      if (srcContains) {
-        const escaped = srcContains.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const re = new RegExp(`(<img\\b[^>]*\\bsrc=["'][^"']*${escaped}[^"']*["'][^>]*?)\\bsrc=["'][^"']*["']`, 'i')
-        // Replace just the src attribute of the matched tag
-        const replRe = new RegExp(`(<img\\b[^>]*?)\\bsrc=(["'])([^"']*${escaped}[^"']*)\\2`, 'i')
-        if (replRe.test(updatedHtml)) {
-          updatedHtml = updatedHtml.replace(replRe, `$1src=$2${item.value}$2`)
-        }
-        // skip other strategies regardless of match — selector was specific
-        continue
-      }
-
-      // 2. Class or id hint: img.hero or img#banner
-      const idHint = sel.match(/#([a-z0-9_-]+)/i)?.[1]
-      const classHint = sel.match(/\.([a-z0-9_-]+)/i)?.[1]
-      const hint = idHint ?? classHint
-      if (hint) {
-        const escaped = hint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const re = new RegExp(
-          `(<img\\b[^>]*\\b(?:class|id)=["'][^"']*${escaped}[^"']*["'][^>]*?)\\bsrc=["'][^"']*["']`,
-          'i'
-        )
-        if (re.test(updatedHtml)) {
-          updatedHtml = updatedHtml.replace(re, `$1src="${item.value}"`)
-        }
-        // no match → leave HTML unchanged (do not fall back to first img)
-        continue
-      }
-
-      // 3. No useful selector info — leave unchanged
-    }
-  }
-
-  // Extract any existing chat-edit rules so we can accumulate across edits
-  const existingMatch = updatedHtml.match(/<style data-chat-edit>([\s\S]*?)<\/style>/)
-  const existingRules = existingMatch ? existingMatch[1].trim() : ''
-  updatedHtml = updatedHtml.replace(/<style data-chat-edit>[\s\S]*?<\/style>\n?/g, '')
-
-  const BG_EXTRA_SELECTORS = [
-    'html', 'body', '#root', '#app', '.app', 'main',
-    '[data-shopify]', '.page-container',
-    'div[class*="wrapper"]', 'div[class*="container"]',
-  ]
-
-  const cssChanges = changes.filter((c): c is CssChange => c.type === 'css' && !!c.selector && !!c.property && !!c.value)
-  if (cssChanges.length > 0) {
-    const newRules = cssChanges.flatMap((c) => {
-      const value = c.value.includes('!important') ? c.value : `${c.value} !important`
-      const primary = `  ${c.selector} { ${c.property}: ${value}; }`
-      if (c.property.toLowerCase() === 'background-color') {
-        const extra = BG_EXTRA_SELECTORS.map((s) => `  ${s} { ${c.property}: ${value}; }`)
-        return [primary, ...extra]
-      }
-      return [primary]
-    }).join('\n')
-
-    const cssRules = [existingRules, newRules].filter(Boolean).join('\n')
-    const styleBlock = `<style data-chat-edit>\n${cssRules}\n</style>`
-    console.log('[chatWithProjectStreaming] injected style block', styleBlock)
-
-    if (/<\/head>/i.test(updatedHtml)) {
-      updatedHtml = updatedHtml.replace(/<\/head>/i, `${styleBlock}\n</head>`)
-    } else if (/<body/i.test(updatedHtml)) {
-      updatedHtml = updatedHtml.replace(/<body/i, `${styleBlock}\n<body`)
-    } else {
-      updatedHtml = styleBlock + '\n' + updatedHtml
-    }
+  const scriptBlock = `<script data-chat-edit>${script}</script>`
+  if (/<\/body>/i.test(updatedHtml)) {
+    updatedHtml = updatedHtml.replace(/<\/body>/i, `${scriptBlock}\n</body>`)
+  } else {
+    updatedHtml = updatedHtml + '\n' + scriptBlock
   }
 
   onPartialHtml(updatedHtml)
 
   return {
     html: updatedHtml,
-    message: 'Changes applied.',
+    message: explanation,
     tokensUsed,
   }
 }
