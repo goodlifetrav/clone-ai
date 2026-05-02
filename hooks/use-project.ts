@@ -78,6 +78,23 @@ export function useProject(projectId: string) {
     fetchVersions()
   }, [fetchProject, fetchVersions])
 
+  useEffect(() => {
+    if (!project) return
+    fetch(`/api/chat/history?projectId=${projectId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data?.messages?.length) return
+        setMessages(
+          data.messages.map((m: { role: 'user' | 'assistant'; content: string; created_at: string }) => ({
+            role: m.role,
+            content: m.content,
+          }))
+        )
+      })
+      .catch(() => {/* silently fail */})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id])
+
   // ── Streaming / polling while project is generating ────────────────────────
   const streamStartedRef = useRef(false)
 
