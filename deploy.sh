@@ -29,7 +29,8 @@ cp -r public .next/standalone/public
 
 # 4. Restart container
 log "Stopping any container on port 3000..."
-docker stop $(docker ps -q --filter "publish=3000") 2>/dev/null || true
+docker stop n8n-cloneai-1 2>/dev/null || true
+cd /docker/n8n
 log "Restarting container..."
 docker compose up -d --force-recreate "$COMPOSE_SERVICE"
 
