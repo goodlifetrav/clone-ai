@@ -5,7 +5,7 @@ import { chatWithProjectStreaming } from '@/lib/anthropic'
 import { isAdminEmail } from '@/lib/admin'
 import { reportError } from '@/lib/error-report'
 
-const FREE_CHAT_LIMIT = 5
+const FREE_CHAT_LIMIT = 2
 
 export async function GET(request: NextRequest) {
   try {
