@@ -21,7 +21,6 @@ import {
   Trash2,
   GitFork,
   Download,
-  Globe,
   Loader2,
   AlertCircle,
   FolderInput,
@@ -129,15 +128,11 @@ export function ProjectCard({
               <AlertCircle className="w-8 h-8 text-red-400" />
               <span className="text-xs text-red-500 font-medium">Failed</span>
             </div>
-          ) : project.thumbnail_url ? (
-            <img
-              src={project.thumbnail_url}
-              alt={project.name}
-              className="w-full h-full object-cover object-top"
-            />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Globe className="w-10 h-10 text-neutral-400 dark:text-neutral-500" />
+            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-950">
+              <span className="text-5xl font-bold text-white/80 select-none">
+                {project.name.charAt(0).toUpperCase()}
+              </span>
             </div>
           )}
 

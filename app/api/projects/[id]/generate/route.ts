@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { Resend } from 'resend'
-import { createServiceClient, uploadThumbnail } from '@/lib/supabase'
+import { createServiceClient } from '@/lib/supabase'
 import { scrapeWebsite } from '@/lib/playwright'
 import { generateCloneStreaming, injectImageUrls } from '@/lib/anthropic'
 import { extractDomain } from '@/lib/utils'
@@ -188,12 +188,6 @@ export async function GET(
           .from('projects')
           .update({ name: projectName, html_content: finalHtml, status: 'complete' })
           .eq('id', id)
-
-        const pngBuffer = Buffer.from(scrapeResult.screenshotBase64, 'base64')
-        const thumbnailUrl = await uploadThumbnail(id, pngBuffer)
-        if (thumbnailUrl) {
-          await supabase.from('projects').update({ thumbnail_url: thumbnailUrl }).eq('id', id)
-        }
 
         if (user) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
