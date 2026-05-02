@@ -5,6 +5,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { scrapeWebsite } from '@/lib/playwright'
 import { generateCloneStreaming, injectImageUrls } from '@/lib/anthropic'
 import { extractDomain } from '@/lib/utils'
+import { reportError } from '@/lib/error-report'
 
 
 const SSE_HEADERS = {
@@ -229,6 +230,7 @@ export async function GET(
       } catch (err) {
         const error = err as Error
         console.error('Generate error:', error)
+        reportError(err, 'GET /api/projects/[id]/generate', { projectId: id, url: project.url })
         await supabase.from('projects').update({ status: 'error' }).eq('id', id)
         send({ error: error.message || 'Generation failed' })
       } finally {

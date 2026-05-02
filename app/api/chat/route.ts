@@ -3,6 +3,7 @@ import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
 import { chatWithProjectStreaming } from '@/lib/anthropic'
 import { isAdminEmail } from '@/lib/admin'
+import { reportError } from '@/lib/error-report'
 
 const FREE_CHAT_LIMIT = 5
 
@@ -161,6 +162,7 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         const error = err as Error
         console.error('Chat stream error:', error)
+        reportError(err, 'POST /api/chat', { projectId })
         send({ error: error.message || 'Internal server error' })
       } finally {
         try { controller.close() } catch { /* already closed */ }

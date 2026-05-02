@@ -3,13 +3,16 @@ import { auth, currentUser } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
 import { extractDomain } from '@/lib/utils'
 import { isAdminEmail } from '@/lib/admin'
+import { reportError } from '@/lib/error-report'
 
 export async function POST(request: NextRequest) {
+  let cloneUrl: string | undefined
   try {
     const { userId } = await auth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { url } = await request.json()
+    cloneUrl = url
     if (!url) return NextResponse.json({ error: 'URL is required' }, { status: 400 })
 
     const supabase = createServiceClient()
@@ -80,6 +83,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const error = err as Error
     console.error('Clone error:', error)
+    reportError(err, 'POST /api/clone', { url: cloneUrl })
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
   }
 }
