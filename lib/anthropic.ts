@@ -504,11 +504,17 @@ Rules for the script:
 - For text content changes: find elements by checking element.textContent.trim() === 'exact text' then change element.textContent
 - For image changes: find img elements and change their src attribute
 - Never target '*' for background or color changes as it breaks the page
-- Keep scripts concise and under 500 characters`,
+- Keep scripts concise and under 500 characters
+- When you can see class names in the HTML snippet, target those specific classes in your script. For example if you see class="px-4 bg-white", use document.querySelectorAll('.bg-white, [class*="bg-white"]').forEach(el => el.style.setProperty('background-color', 'black', 'important'))`,
     messages: [
       {
         role: 'user',
-        content: userMessage,
+        content: (() => {
+          const bodyIdx = currentHtml.search(/<body|<main/i)
+          const start = bodyIdx !== -1 ? bodyIdx : 0
+          const htmlSnippet = currentHtml.slice(start, start + 3000)
+          return `Here is a snippet of the website HTML structure (CSS removed for brevity):\n${htmlSnippet}\n\nUser request: ${userMessage}`
+        })(),
       },
     ],
   })
