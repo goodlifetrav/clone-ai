@@ -28,6 +28,8 @@ cp -r .next/static .next/standalone/.next/static
 cp -r public .next/standalone/public
 
 # 4. Restart container
+log "Stopping any container on port 3000..."
+docker stop $(docker ps -q --filter "publish=3000") 2>/dev/null || true
 log "Restarting container..."
 docker compose up -d --force-recreate "$COMPOSE_SERVICE"
 
