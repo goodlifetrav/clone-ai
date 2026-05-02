@@ -485,8 +485,8 @@ export async function chatWithProjectStreaming(
   console.log('[chatWithProjectStreaming] uploadedImageUrls:', JSON.stringify(uploadedImageUrls))
 
   const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 500,
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 2000,
     system: `You are a website editor. The user will describe a change they want to make to their website. Return ONLY a valid JSON array with no explanation, no markdown, no code blocks. Each item in the array must be one of these two types:
 
 CSS change: {"type": "css", "selector": "string", "property": "string", "value": "string"}
