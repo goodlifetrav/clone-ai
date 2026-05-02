@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/select'
 
 interface VisualEditorProps {
-  onStyleChange: (css: string) => void
+  onScriptChange: (script: string) => void
   className?: string
 }
 
@@ -45,7 +45,7 @@ function Label_({ children, htmlFor }: { children: React.ReactNode; htmlFor?: st
   )
 }
 
-export function VisualEditor({ onStyleChange, className = '' }: VisualEditorProps) {
+export function VisualEditor({ onScriptChange, className = '' }: VisualEditorProps) {
   const [config, setConfig] = useState<StyleConfig>({
     fontFamily: 'system-ui, sans-serif',
     fontSize: 16,
@@ -56,38 +56,35 @@ export function VisualEditor({ onStyleChange, className = '' }: VisualEditorProp
     spacing: 1,
   })
 
-  const generateCss = useCallback((cfg: StyleConfig): string => {
-    return `
-<style id="igualai-visual-editor">
-  :root {
-    --primary-color: ${cfg.primaryColor};
-    --background-color: ${cfg.backgroundColor};
-    --text-color: ${cfg.textColor};
-    --border-radius: ${cfg.borderRadius}px;
-    --spacing-scale: ${cfg.spacing};
-  }
-  body {
-    font-family: ${cfg.fontFamily} !important;
-    font-size: ${cfg.fontSize}px !important;
-    background-color: ${cfg.backgroundColor} !important;
-    color: ${cfg.textColor} !important;
-  }
-  button, .btn, [class*="btn"] {
-    border-radius: ${cfg.borderRadius}px !important;
-  }
-  a { color: ${cfg.primaryColor} !important; }
-  h1, h2, h3, h4, h5, h6 { color: ${cfg.textColor} !important; }
-  section, .section, [class*="section"] {
-    padding: calc(${cfg.spacing} * 2rem) calc(${cfg.spacing} * 1rem) !important;
-  }
-</style>
-`.trim()
+  const generateScript = useCallback((cfg: StyleConfig): string => {
+    const parts: string[] = []
+
+    // Background color — only elements that already have a background
+    parts.push(
+      `const bg='${cfg.backgroundColor}';` +
+      `document.querySelectorAll('*').forEach(el=>{` +
+      `const computed=window.getComputedStyle(el).backgroundColor;` +
+      `if(computed!=='rgba(0, 0, 0, 0)'&&computed!=='transparent'){` +
+      `el.style.setProperty('background-color',bg,'important');}});`
+    )
+
+    // Text color
+    parts.push(
+      `document.querySelectorAll('p,h1,h2,h3,h4,h5,h6,span,a,li,td,th,label,div').forEach(el=>el.style.setProperty('color','${cfg.textColor}','important'));`
+    )
+
+    // Font family
+    parts.push(
+      `document.querySelectorAll('*').forEach(el=>el.style.setProperty('font-family','${cfg.fontFamily}','important'));`
+    )
+
+    return parts.join('\n')
   }, [])
 
   const updateConfig = (partial: Partial<StyleConfig>) => {
     const newConfig = { ...config, ...partial }
     setConfig(newConfig)
-    onStyleChange(generateCss(newConfig))
+    onScriptChange(generateScript(newConfig))
   }
 
   return (

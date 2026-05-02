@@ -132,9 +132,9 @@ export function SplitView({
 
   const html = project.html_content
 
-  const [visualCss, setVisualCss] = useState('')
-  const displayHtml = visualCss
-    ? html.replace('</head>', `${visualCss}</head>`)
+  const [visualScript, setVisualScript] = useState('')
+  const displayHtml = visualScript
+    ? html.replace(/<\/body>/i, `<script id="igualai-visual-editor">${visualScript}</script>\n</body>`)
     : html
 
   const handleDownload = async () => {
@@ -414,7 +414,7 @@ export function SplitView({
                 <CodeEditor value={html} onChange={onHtmlChange} className="h-full" isStreaming={isGenerating} />
               )}
               {rightTab === 'visual' && (
-                <VisualEditor onStyleChange={setVisualCss} className="h-full" />
+                <VisualEditor onScriptChange={setVisualScript} className="h-full" />
               )}
               {rightTab === 'terminal' && (
                 <TerminalPanel html={html} />
