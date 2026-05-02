@@ -16,6 +16,7 @@ import {
   Terminal,
   History,
   Download,
+  HelpCircle,
   GitFork,
   Rocket,
   GitBranch,
@@ -261,6 +262,17 @@ export function SplitView({
           <span className="hidden sm:inline">Download</span>
         </Button>
 
+        <a href="mailto:support@igualai.com?subject=IgualAI Support Request">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs gap-1 flex-shrink-0"
+            title="Contact Support"
+          >
+            <HelpCircle className="w-3 h-3" />
+            <span className="hidden sm:inline">Help</span>
+          </Button>
+        </a>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
