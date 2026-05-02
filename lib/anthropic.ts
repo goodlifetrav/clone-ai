@@ -489,7 +489,7 @@ export async function chatWithProjectStreaming(
   console.log('[chatWithProjectStreaming] userMessage:', userMessage)
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 1000,
     system: `You are a website editor. The user will describe a change they want to make to a website. Return ONLY a valid JSON object with no explanation, no markdown, no code blocks:
 {
@@ -553,10 +553,18 @@ Rules for the script:
     }
   }
 
-  // Remove any previous chat-edit script block, then inject the new one
+  // Collect all previous chat-edit script contents, combine with new script
+  const previousScripts: string[] = []
+  const prevRe = /<script data-chat-edit>([\s\S]*?)<\/script>/g
+  let prevMatch: RegExpExecArray | null
+  while ((prevMatch = prevRe.exec(currentHtml)) !== null) {
+    if (prevMatch[1].trim()) previousScripts.push(prevMatch[1].trim())
+  }
+  const combinedScript = [...previousScripts, script].join('\n')
+
   let updatedHtml = currentHtml.replace(/<script data-chat-edit>[\s\S]*?<\/script>\n?/g, '')
 
-  const scriptBlock = `<script data-chat-edit>${script}</script>`
+  const scriptBlock = `<script data-chat-edit>${combinedScript}</script>`
   if (/<\/body>/i.test(updatedHtml)) {
     updatedHtml = updatedHtml.replace(/<\/body>/i, `${scriptBlock}\n</body>`)
   } else {
