@@ -498,15 +498,13 @@ export async function chatWithProjectStreaming(
 }
 
 Rules for the script:
-- Use document.querySelector and document.querySelectorAll to find elements
-- Use element.style to change CSS properties - always set important with element.style.setProperty('property', 'value', 'important')
-- For background changes target multiple elements: document.querySelectorAll('body, main, div, section, header, footer, nav').forEach(el => el.style.setProperty('background-color', 'black', 'important'))
-- For text changes use document.querySelectorAll('*') and check textContent to find and replace text nodes
-- For image changes find img elements and change their src attribute
-- If uploadedImageUrls are provided, use them for image src changes
-- The script must be self-contained and work when injected into a page
-- Never use document.write or eval
-- Keep the script under 500 chars when possible`,
+- For background color changes: ONLY target high-level container elements using document.querySelectorAll('html, body, #__next, #root, main, .main, [class*="container"], [class*="wrapper"], [class*="layout"]') — never use * or target every element
+- For text color changes: target text elements specifically: document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, a, li, td, th, label, button')
+- Always use element.style.setProperty('property', 'value', 'important')
+- For text content changes: find elements by checking element.textContent.trim() === 'exact text' then change element.textContent
+- For image changes: find img elements and change their src attribute
+- Never target '*' for background or color changes as it breaks the page
+- Keep scripts concise and under 500 characters`,
     messages: [
       {
         role: 'user',
