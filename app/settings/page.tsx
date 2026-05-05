@@ -57,10 +57,15 @@ export default function SettingsPage() {
   const fetchUser = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/projects') // triggers user creation if needed
-      // Try to get user data via a separate endpoint
-      // For now, construct from Clerk user data
-      setDbUser(null)
+      const res = await fetch('/api/user')
+      if (!res.ok) return
+      const data = await res.json()
+      setDbUser({
+        plan: data.plan,
+        tokens_used: data.tokens_used,
+        clones_count: data.clones_count,
+        is_admin: data.is_admin,
+      } as DbUser)
     } catch {
       // silently fail
     } finally {
