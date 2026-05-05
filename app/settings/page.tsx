@@ -374,9 +374,8 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Custom Domains — Pro and Agency only */}
-          {(
-            <Card>
+          {/* Custom Domains */}
+          <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <Globe className="w-4 h-4 text-neutral-500" />
@@ -491,8 +490,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </CardContent>
-            </Card>
-          )}
+          </Card>
 
           {/* Buy Extra Tokens — Pro and Agency only */}
           {(plan === 'pro' || plan === 'agency') && !isAdmin && <Card>
