@@ -30,6 +30,7 @@ import {
   PanelLeftOpen,
   Bot,
   Sparkles,
+  MoreHorizontal,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { Project, ProjectVersion, ChatMessage } from '@/types'
@@ -43,7 +44,7 @@ import {
 import { cn } from '@/lib/utils'
 
 type RightTab = 'preview' | 'code' | 'visual' | 'terminal' | 'versions'
-type MobileTab = 'preview' | 'chat'
+type MobileTab = 'preview' | 'chat' | 'code' | 'more'
 
 interface SplitViewProps {
   project: Project
@@ -78,6 +79,8 @@ export function SplitView({
   // isGenerating covers the chat streaming case managed locally.
   const [chatGenerating, setChatGenerating] = useState(false)
   const [showBrandWizard, setShowBrandWizard] = useState(false)
+  const [showMoreSheet, setShowMoreSheet] = useState(false)
+  const [moreContent, setMoreContent] = useState<'visual' | 'history' | null>(null)
   const rebuildHtmlRef = useRef('')
   const isGenerating = isStreamingProp || chatGenerating
   const prevStatusRef = useRef(project.status)
@@ -297,36 +300,8 @@ export function SplitView({
         </DropdownMenu>
       </div>
 
-      {/* ── Mobile tab bar (Preview / Chat) ─────────────────────── */}
-      <div className="flex sm:hidden flex-shrink-0 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-        <button
-          onClick={() => setMobileTab('preview')}
-          className={cn(
-            'flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 border-b-2 transition-colors',
-            mobileTab === 'preview'
-              ? 'border-neutral-900 dark:border-white text-neutral-900 dark:text-white'
-              : 'border-transparent text-neutral-500 dark:text-neutral-400'
-          )}
-        >
-          <Eye className="w-4 h-4" />
-          Preview
-        </button>
-        <button
-          onClick={() => setMobileTab('chat')}
-          className={cn(
-            'flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 border-b-2 transition-colors',
-            mobileTab === 'chat'
-              ? 'border-neutral-900 dark:border-white text-neutral-900 dark:text-white'
-              : 'border-transparent text-neutral-500 dark:text-neutral-400'
-          )}
-        >
-          <Bot className="w-4 h-4" />
-          Ask AI
-        </button>
-      </div>
-
       {/* ── Main area ────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden pb-16 sm:pb-0">
 
         {/* Left: Chat panel
             Mobile:   visible only when mobileTab === 'chat'
@@ -364,7 +339,7 @@ export function SplitView({
         <div
           className={cn(
             'flex-1 flex-col overflow-hidden',
-            mobileTab === 'preview' ? 'flex' : 'hidden',
+            mobileTab !== 'chat' ? 'flex' : 'hidden',
             'sm:flex'
           )}
         >
@@ -396,9 +371,27 @@ export function SplitView({
 
             {/* ── Mobile layer ─────────────────────────────────────────── */}
             <div className="absolute inset-0 sm:hidden">
-              {isGenerating ? (
+              {mobileTab === 'preview' && (
+                isGenerating
+                  ? <CodeEditor value={html} onChange={onHtmlChange} className="h-full" isStreaming={isGenerating} />
+                  : <PreviewPane projectId={project.id} html={html} className="h-full" />
+              )}
+              {mobileTab === 'code' && (
                 <CodeEditor value={html} onChange={onHtmlChange} className="h-full" isStreaming={isGenerating} />
-              ) : (
+              )}
+              {mobileTab === 'more' && moreContent === 'visual' && (
+                <VisualEditor onOpenRebuild={() => setShowBrandWizard(true)} className="h-full" />
+              )}
+              {mobileTab === 'more' && moreContent === 'history' && (
+                <VersionHistory
+                  versions={versions}
+                  currentHtml={html}
+                  onRestore={onRestoreVersion}
+                  onSaveVersion={onSaveVersion}
+                  className="h-full"
+                />
+              )}
+              {mobileTab === 'more' && moreContent === null && (
                 <PreviewPane projectId={project.id} html={html} className="h-full" />
               )}
             </div>
@@ -433,6 +426,77 @@ export function SplitView({
           </div>
         </div>
       </div>
+
+      {/* ── Mobile bottom nav bar ────────────────────────────────── */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+        {[
+          { id: 'preview' as MobileTab, label: 'Preview', icon: <Eye className="w-5 h-5" /> },
+          { id: 'chat' as MobileTab, label: 'Ask AI', icon: <Bot className="w-5 h-5" /> },
+          { id: 'code' as MobileTab, label: 'Code', icon: <Code2 className="w-5 h-5" /> },
+          { id: 'more' as MobileTab, label: 'More', icon: <MoreHorizontal className="w-5 h-5" /> },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => {
+              if (tab.id === 'more') {
+                setShowMoreSheet(true)
+                setMobileTab('more')
+              } else {
+                setMobileTab(tab.id)
+                setShowMoreSheet(false)
+              }
+            }}
+            className={cn(
+              'flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
+              mobileTab === tab.id
+                ? 'text-purple-600 dark:text-purple-400'
+                : 'text-neutral-500 dark:text-neutral-400'
+            )}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── More slide-up sheet ───────────────────────────────────── */}
+      {showMoreSheet && (
+        <div className="sm:hidden fixed inset-0 z-50 flex flex-col justify-end">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setShowMoreSheet(false)}
+          />
+          {/* Sheet */}
+          <div className="relative bg-white dark:bg-neutral-900 rounded-t-2xl border-t border-neutral-200 dark:border-neutral-800 pb-safe pb-8">
+            <div className="w-10 h-1 bg-neutral-300 dark:bg-neutral-600 rounded-full mx-auto mt-3 mb-4" />
+            <div className="px-4 space-y-1">
+              <button
+                onClick={() => {
+                  setMoreContent('visual')
+                  setRightTab('visual')
+                  setShowMoreSheet(false)
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <Paintbrush className="w-5 h-5 text-purple-500" />
+                Visual
+              </button>
+              <button
+                onClick={() => {
+                  setMoreContent('history')
+                  setRightTab('versions')
+                  setShowMoreSheet(false)
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <History className="w-5 h-5 text-purple-500" />
+                History
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Brand Rebuild wizard */}
       {showBrandWizard && (
