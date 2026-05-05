@@ -5,8 +5,9 @@ import { isAdminEmail } from '@/lib/admin'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -28,7 +29,7 @@ export async function POST(
   const { data: project } = await supabase
     .from('projects')
     .select('html_content, user_id')
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
 
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
@@ -139,7 +140,7 @@ OUTPUT: Complete redesigned HTML document only.`
         await supabase
           .from('projects')
           .update({ html_content: fullHtml, updated_at: new Date().toISOString() })
-          .eq('id', params.id)
+          .eq('id', id)
 
         send({ done: true, html: fullHtml })
       } catch (err) {
