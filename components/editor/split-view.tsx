@@ -132,11 +132,6 @@ export function SplitView({
 
   const html = project.html_content
 
-  const [visualScript, setVisualScript] = useState('')
-  const displayHtml = visualScript
-    ? html.replace(/<\/body>/i, `<script id="igualai-visual-editor">${visualScript}</script>\n</body>`)
-    : html
-
   const handleDownload = async () => {
     const res = await fetch(`/api/projects/${project.id}/download`)
     if (!res.ok) return
@@ -401,20 +396,25 @@ export function SplitView({
               {isGenerating ? (
                 <CodeEditor value={html} onChange={onHtmlChange} className="h-full" isStreaming={isGenerating} />
               ) : (
-                <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
+                <PreviewPane projectId={project.id} html={html} className="h-full" />
               )}
             </div>
 
             {/* ── Desktop layer ────────────────────────────────────────── */}
             <div className="absolute inset-0 hidden sm:block">
               {rightTab === 'preview' && (
-                <PreviewPane projectId={project.id} html={displayHtml} className="h-full" />
+                <PreviewPane projectId={project.id} html={html} className="h-full" />
               )}
               {rightTab === 'code' && (
                 <CodeEditor value={html} onChange={onHtmlChange} className="h-full" isStreaming={isGenerating} />
               )}
               {rightTab === 'visual' && (
-                <VisualEditor onScriptChange={setVisualScript} className="h-full" />
+                <VisualEditor
+                  html={html}
+                  onSave={onHtmlChange}
+                  projectId={project.id}
+                  className="h-full"
+                />
               )}
               {rightTab === 'terminal' && (
                 <TerminalPanel html={html} />
