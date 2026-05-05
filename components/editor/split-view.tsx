@@ -5,6 +5,7 @@ import { PreviewPane } from './preview-pane'
 import { CodeEditor } from './code-editor'
 import { ChatPanel } from './chat-panel'
 import { VisualEditor } from './visual-editor'
+import { BrandWizard } from './brand-wizard'
 import { TerminalPanel } from './terminal-panel'
 import { VersionHistory } from './version-history'
 import { ConnectIntegrationModal } from './connect-integration-modal'
@@ -76,6 +77,8 @@ export function SplitView({
   // isStreamingProp comes from use-project's real-time stream subscription;
   // isGenerating covers the chat streaming case managed locally.
   const [chatGenerating, setChatGenerating] = useState(false)
+  const [showBrandWizard, setShowBrandWizard] = useState(false)
+  const rebuildHtmlRef = useRef('')
   const isGenerating = isStreamingProp || chatGenerating
   const prevStatusRef = useRef(project.status)
   const router = useRouter()
@@ -410,9 +413,7 @@ export function SplitView({
               )}
               {rightTab === 'visual' && (
                 <VisualEditor
-                  html={html}
-                  onSave={onHtmlChange}
-                  projectId={project.id}
+                  onOpenRebuild={() => setShowBrandWizard(true)}
                   className="h-full"
                 />
               )}
@@ -432,6 +433,31 @@ export function SplitView({
           </div>
         </div>
       </div>
+
+      {/* Brand Rebuild wizard */}
+      {showBrandWizard && (
+        <BrandWizard
+          projectId={project.id}
+          onClose={() => setShowBrandWizard(false)}
+          onRebuildStart={() => {
+            rebuildHtmlRef.current = ''
+            setRightTab('code')
+            setChatGenerating(true)
+          }}
+          onHtmlChunk={(chunk) => {
+            rebuildHtmlRef.current += chunk
+            onHtmlChange(rebuildHtmlRef.current)
+          }}
+          onRebuildComplete={(finalHtml) => {
+            onHtmlChange(finalHtml)
+            setChatGenerating(false)
+            setRightTab('preview')
+          }}
+          onRebuildError={() => {
+            setChatGenerating(false)
+          }}
+        />
+      )}
 
       {/* Integration connect modals */}
       {integrationModal && (
