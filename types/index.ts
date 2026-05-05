@@ -50,6 +50,17 @@ export interface ChatMessage {
   created_at: string
 }
 
+export interface CustomDomain {
+  id: string
+  user_id: string
+  project_id: string
+  domain: string
+  verified: boolean
+  ssl_provisioned: boolean
+  created_at: string
+  project_name?: string
+}
+
 export interface Billing {
   id: string
   user_id: string

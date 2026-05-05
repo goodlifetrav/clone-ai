@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
+import { Input } from '@/components/ui/input'
 import {
   Loader2,
   User,
@@ -18,8 +19,13 @@ import {
   CheckCircle2,
   Mail,
   Package,
+  Globe,
+  Trash2,
+  AlertTriangle,
+  ShieldCheck,
+  Plus,
 } from 'lucide-react'
-import type { User as DbUser } from '@/types'
+import type { User as DbUser, CustomDomain, Project } from '@/types'
 import { PLAN_LIMITS } from '@/types'
 import { formatTokens } from '@/lib/utils'
 import Link from 'next/link'
@@ -31,6 +37,15 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [portalLoading, setPortalLoading] = useState(false)
   const [tokenPackLoading, setTokenPackLoading] = useState<string | null>(null)
+  const [domains, setDomains] = useState<CustomDomain[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [newDomain, setNewDomain] = useState('')
+  const [newDomainProjectId, setNewDomainProjectId] = useState('')
+  const [addingDomain, setAddingDomain] = useState(false)
+  const [verifyingDomain, setVerifyingDomain] = useState<string | null>(null)
+  const [deletingDomain, setDeletingDomain] = useState<string | null>(null)
+  const [provisioningSSL, setProvisioningSSL] = useState<string | null>(null)
+  const [pendingDnsId, setPendingDnsId] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState('')
   const [showProfileModal, setShowProfileModal] = useState(false)
 
@@ -58,6 +73,8 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!isSignedIn) return
     fetchUser()
+    fetchDomains()
+    fetchProjects()
   }, [isSignedIn])
 
   const fetchUser = async () => {
@@ -77,6 +94,84 @@ export default function SettingsPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchDomains = async () => {
+    try {
+      const res = await fetch('/api/domains')
+      if (res.ok) {
+        const data = await res.json()
+        setDomains(data.domains ?? [])
+      }
+    } catch { /* silently fail */ }
+  }
+
+  const fetchProjects = async () => {
+    try {
+      const res = await fetch('/api/projects')
+      if (res.ok) {
+        const data = await res.json()
+        setProjects(data.projects ?? [])
+      }
+    } catch { /* silently fail */ }
+  }
+
+  const handleAddDomain = async () => {
+    if (!newDomain.trim() || !newDomainProjectId) return
+    setAddingDomain(true)
+    try {
+      const res = await fetch('/api/domains', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: newDomain.trim(), project_id: newDomainProjectId }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(data.error || 'Failed to add domain'); return }
+      setDomains((prev) => [data.domain, ...prev])
+      setPendingDnsId(data.domain.id)
+      setNewDomain('')
+      setNewDomainProjectId('')
+    } catch { alert('Failed to add domain') }
+    finally { setAddingDomain(false) }
+  }
+
+  const handleVerifyDomain = async (id: string) => {
+    setVerifyingDomain(id)
+    try {
+      const res = await fetch(`/api/domains/${id}`)
+      const data = await res.json()
+      if (data.verified) {
+        setDomains((prev) => prev.map((d) => d.id === id ? { ...d, verified: true } : d))
+        setPendingDnsId(null)
+      } else {
+        alert('DNS not yet propagated. Make sure the A record is set and try again.')
+      }
+    } catch { alert('Verification failed') }
+    finally { setVerifyingDomain(null) }
+  }
+
+  const handleDeleteDomain = async (id: string) => {
+    if (!confirm('Delete this domain?')) return
+    setDeletingDomain(id)
+    try {
+      const res = await fetch(`/api/domains/${id}`, { method: 'DELETE' })
+      if (res.ok) setDomains((prev) => prev.filter((d) => d.id !== id))
+    } catch { /* silently fail */ }
+    finally { setDeletingDomain(null) }
+  }
+
+  const handleProvisionSSL = async (id: string) => {
+    setProvisioningSSL(id)
+    try {
+      const res = await fetch(`/api/domains/${id}/ssl`, { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        setDomains((prev) => prev.map((d) => d.id === id ? { ...d, ssl_provisioned: true } : d))
+      } else {
+        alert(data.error || 'SSL provisioning failed')
+      }
+    } catch { alert('SSL provisioning failed') }
+    finally { setProvisioningSSL(null) }
   }
 
   const handleBuyTokenPack = async (pack: string) => {
@@ -278,6 +373,126 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Custom Domains — Pro and Agency only */}
+          {(plan === 'pro' || plan === 'agency') && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-neutral-500" />
+                  <CardTitle className="text-base">Custom Domains</CardTitle>
+                </div>
+                <CardDescription>Connect a custom domain to one of your cloned pages.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* Domain list */}
+                {domains.length > 0 && (
+                  <div className="space-y-3">
+                    {domains.map((d) => (
+                      <div key={d.id} className="flex flex-col gap-2 p-3 rounded-lg border border-neutral-200 dark:border-neutral-700">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {d.verified ? (
+                              <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                            ) : (
+                              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">{d.domain}</p>
+                              {d.project_name && (
+                                <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{d.project_name}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {d.verified && !d.ssl_provisioned && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs px-2 gap-1"
+                                onClick={() => handleProvisionSSL(d.id)}
+                                disabled={provisioningSSL === d.id}
+                              >
+                                {provisioningSSL === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                                SSL
+                              </Button>
+                            )}
+                            {d.verified && d.ssl_provisioned && (
+                              <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                                <ShieldCheck className="w-3 h-3" /> SSL
+                              </span>
+                            )}
+                            {!d.verified && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs px-2"
+                                onClick={() => handleVerifyDomain(d.id)}
+                                disabled={verifyingDomain === d.id}
+                              >
+                                {verifyingDomain === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Verify DNS'}
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-neutral-400 hover:text-red-500"
+                              onClick={() => handleDeleteDomain(d.id)}
+                              disabled={deletingDomain === d.id}
+                            >
+                              {deletingDomain === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                            </Button>
+                          </div>
+                        </div>
+                        {/* DNS instructions — shown right after adding */}
+                        {pendingDnsId === d.id && !d.verified && (
+                          <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                            <p className="font-semibold">Add this DNS record at your registrar:</p>
+                            <p>Type: <span className="font-mono font-bold">A</span></p>
+                            <p>Name: <span className="font-mono font-bold">@</span></p>
+                            <p>Value: <span className="font-mono font-bold">187.124.219.202</span></p>
+                            <p className="mt-1 text-amber-600 dark:text-amber-400">Then click Verify DNS once it propagates (may take a few minutes).</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add domain form */}
+                <div className="space-y-2.5">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="yourdomain.com"
+                      value={newDomain}
+                      onChange={(e) => setNewDomain(e.target.value)}
+                      className="h-9 text-sm flex-1"
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddDomain()}
+                    />
+                    <select
+                      value={newDomainProjectId}
+                      onChange={(e) => setNewDomainProjectId(e.target.value)}
+                      className="h-9 text-sm px-2 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white flex-1 max-w-[180px]"
+                    >
+                      <option value="">Select project…</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <Button
+                      size="sm"
+                      className="h-9 px-3 gap-1"
+                      onClick={handleAddDomain}
+                      disabled={addingDomain || !newDomain.trim() || !newDomainProjectId}
+                    >
+                      {addingDomain ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Buy Extra Tokens — Pro and Agency only */}
           {(plan === 'pro' || plan === 'agency') && !isAdmin && <Card>
