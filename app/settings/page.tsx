@@ -375,7 +375,7 @@ export default function SettingsPage() {
           </Card>
 
           {/* Custom Domains — Pro and Agency only */}
-          {(plan === 'pro' || plan === 'agency') && (
+          {(
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
