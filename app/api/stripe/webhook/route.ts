@@ -8,9 +8,11 @@ import type { Plan } from '@/types'
 // Reverse map: price ID → plan name, built at module load time
 function buildPriceToPlan(): Record<string, Plan> {
   const map: Record<string, Plan> = {}
-  for (const [plan, priceId] of Object.entries(PRICE_IDS)) {
-    if (priceId && !priceId.includes('_id_here')) {
-      map[priceId] = plan as Plan
+  for (const [plan, periods] of Object.entries(PRICE_IDS)) {
+    for (const priceId of Object.values(periods)) {
+      if (priceId && !priceId.includes('_id_here')) {
+        map[priceId] = plan as Plan
+      }
     }
   }
   return map
