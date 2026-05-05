@@ -279,9 +279,8 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Buy Extra Tokens — Pro and Agency only */}
-          {plan !== 'free' && !isAdmin && (
-            <Card>
+          {/* Buy Extra Tokens */}
+          <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <Package className="w-4 h-4 text-neutral-500" />
@@ -320,8 +319,7 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </CardContent>
-            </Card>
-          )}
+          </Card>
 
           {/* Contact Support */}
           <Card>
