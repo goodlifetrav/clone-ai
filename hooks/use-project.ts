@@ -52,32 +52,20 @@ export function useProject(projectId: string) {
     [projectId]
   )
 
-  const saveVersion = useCallback(async () => {
-    if (!project) return
+  const saveVersion = useCallback(async (html?: string) => {
+    const content = html ?? project?.html_content
+    if (!content) return
     try {
       const res = await fetch(`/api/projects/${projectId}/versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html_content: project.html_content }),
+        body: JSON.stringify({ html_content: content }),
       })
       if (res.ok) await fetchVersions()
     } catch {
       // silently fail
     }
   }, [project, projectId, fetchVersions])
-
-  const saveVersionSilent = useCallback(async (html: string) => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}/versions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html_content: html }),
-      })
-      if (res.ok) await fetchVersions()
-    } catch {
-      // silently fail
-    }
-  }, [projectId, fetchVersions])
 
   const restoreVersion = useCallback(
     async (version: ProjectVersion) => {
@@ -243,7 +231,6 @@ export function useProject(projectId: string) {
     isStreaming,
     updateHtml,
     saveVersion,
-    saveVersionSilent,
     restoreVersion,
     refetch: fetchProject,
   }

@@ -25,7 +25,6 @@ export default function EditorPage() {
     isStreaming,
     updateHtml,
     saveVersion,
-    saveVersionSilent,
     restoreVersion,
   } = useProject(id)
 
@@ -99,7 +98,6 @@ export default function EditorPage() {
       onHtmlChange={updateHtml}
       onMessagesChange={setMessages}
       onSaveVersion={saveVersion}
-      onSaveVersionSilent={saveVersionSilent}
       onRestoreVersion={restoreVersion}
     />
   )
