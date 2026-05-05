@@ -84,7 +84,7 @@ OUTPUT: Complete redesigned HTML document only.`
 
       try {
         const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-03-25:streamGenerateContent?alt=sse&key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${apiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
