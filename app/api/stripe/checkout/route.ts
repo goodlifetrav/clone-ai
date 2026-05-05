@@ -13,16 +13,17 @@ export async function POST(request: NextRequest) {
     const { userId } = await auth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { plan } = await request.json() as { plan: Plan }
+    const { plan, billingPeriod } = await request.json() as { plan: Plan; billingPeriod: 'monthly' | 'annual' }
 
     if (!plan || plan === 'free') {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
     }
 
-    const priceId = PRICE_IDS[plan as keyof typeof PRICE_IDS]
+    const period = billingPeriod === 'annual' ? 'annual' : 'monthly'
+    const priceId = PRICE_IDS[plan as keyof typeof PRICE_IDS]?.[period]
     if (!priceId) {
       return NextResponse.json(
-        { error: `Price ID not configured for plan: ${plan}. Add to .env.local` },
+        { error: `Price ID not configured for plan: ${plan} (${period}). Add to .env.local` },
         { status: 503 }
       )
     }

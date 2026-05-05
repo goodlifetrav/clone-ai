@@ -1,4 +1,4 @@
-export type Plan = 'free' | 'starter' | 'pro' | 'growth' | 'max'
+export type Plan = 'free' | 'pro' | 'agency'
 
 export interface User {
   id: string
@@ -69,10 +69,8 @@ export interface PricingPlan {
   highlighted?: boolean
 }
 
-export const PLAN_LIMITS: Record<Plan, { clones: number; tokens: number; multiplier: number }> = {
-  free: { clones: 1, tokens: 10000, multiplier: 1 },
-  starter: { clones: -1, tokens: 40000, multiplier: 4 },
-  pro: { clones: -1, tokens: 100000, multiplier: 10 },
-  growth: { clones: -1, tokens: 200000, multiplier: 20 },
-  max: { clones: -1, tokens: 400000, multiplier: 40 },
+export const PLAN_LIMITS: Record<Plan, { clones: number; tokens: number }> = {
+  free: { clones: 1, tokens: 10000 },
+  pro: { clones: 20, tokens: 100000 },
+  agency: { clones: 60, tokens: 300000 },
 }

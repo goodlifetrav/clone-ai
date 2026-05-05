@@ -32,7 +32,15 @@ export default function PricingPage() {
             {[
               {
                 q: 'What counts as a token?',
-                a: 'Tokens are units of text processed by the AI. Each word is approximately 1-2 tokens. Cloning and editing websites uses tokens from your monthly allowance.',
+                a: 'Tokens are consumed when you use AI features — specifically AI chat edits and AI Brand Rebuilds. Each AI edit or rebuild uses tokens from your monthly allowance based on how much the AI generates.',
+              },
+              {
+                q: 'Can I buy more tokens?',
+                a: 'Yes. Pro and Agency plan subscribers can purchase additional token packs at any time from Account Settings. Extra tokens carry over until the end of your billing period.',
+              },
+              {
+                q: 'What is hosting?',
+                a: 'With Pro and Agency plans, we host your cloned and rebuilt pages on your custom domain so you can share a live URL instantly — no deployment setup required.',
               },
               {
                 q: 'Can I cancel anytime?',
@@ -40,15 +48,11 @@ export default function PricingPage() {
               },
               {
                 q: 'What happens to my projects if I downgrade?',
-                a: 'Your projects are preserved. You will just lose access to premium features like downloads, forking, and deployment.',
+                a: 'Your projects are preserved. You will just lose access to premium features like AI Brand Rebuild, version history, and hosting.',
               },
               {
                 q: 'Does the cloned site work offline?',
                 a: 'Yes! The downloaded ZIP contains a self-contained index.html with all CSS inlined, so it works without any server or internet connection.',
-              },
-              {
-                q: 'Is there an API?',
-                a: 'API access is planned for the Growth and Max tiers. Join our waitlist to be notified.',
               },
             ].map((faq) => (
               <div key={faq.q} className="border-b border-neutral-100 dark:border-neutral-800 pb-6">
