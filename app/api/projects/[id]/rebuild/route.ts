@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
 import { isAdminEmail } from '@/lib/admin'
+import { anthropic } from '@/lib/anthropic'
 
 export async function POST(
   request: NextRequest,
@@ -37,10 +38,6 @@ export async function POST(
   const body = await request.json()
   const { brandName, tagline, primaryColor, secondaryColor, accentColor, logoUrl, brandDescription, headline, subheadline, ctaText } = body
 
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 })
-
-  // Truncate HTML to avoid token limits — Gemini 2.5 Pro handles ~1M tokens but let's be safe
   const truncatedHtml = project.html_content?.slice(0, 80000) ?? ''
 
   const prompt = `You are an expert web designer. I have a cloned website's HTML below. Your task is to redesign it as a clean, modern, fully self-contained webpage using the brand details provided.
@@ -83,53 +80,23 @@ OUTPUT: Complete redesigned HTML document only.`
       }
 
       try {
-        const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ text: prompt }] }],
-              generationConfig: { maxOutputTokens: 65536, temperature: 0.7 },
-            }),
-          }
-        )
-
-        if (!geminiRes.ok) {
-          const errText = await geminiRes.text()
-          throw new Error(`Gemini API error: ${errText}`)
-        }
-
-        const reader = geminiRes.body!.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
         let fullHtml = ''
 
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
+        const stream = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8000,
+          stream: true,
+          messages: [{ role: 'user', content: prompt }],
+        })
 
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() ?? ''
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            const jsonStr = line.slice(6).trim()
-            if (!jsonStr || jsonStr === '[DONE]') continue
-
-            try {
-              const parsed = JSON.parse(jsonStr)
-              const chunk = parsed?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-              if (chunk) {
-                fullHtml += chunk
-                send({ htmlChunk: chunk })
-              }
-            } catch { /* malformed chunk, skip */ }
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            fullHtml += event.delta.text
+            send({ htmlChunk: event.delta.text })
           }
         }
 
-        // Clean up any markdown code fences Gemini might add
+        // Clean up any markdown code fences
         fullHtml = fullHtml
           .replace(/^```html\n?/i, '')
           .replace(/^```\n?/, '')
