@@ -66,6 +66,19 @@ export function useProject(projectId: string) {
     }
   }, [project, projectId, fetchVersions])
 
+  const saveVersionSilent = useCallback(async (html: string) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/versions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html_content: html }),
+      })
+      if (res.ok) await fetchVersions()
+    } catch {
+      // silently fail
+    }
+  }, [projectId, fetchVersions])
+
   const restoreVersion = useCallback(
     async (version: ProjectVersion) => {
       await updateHtml(version.html_content)
@@ -230,6 +243,7 @@ export function useProject(projectId: string) {
     isStreaming,
     updateHtml,
     saveVersion,
+    saveVersionSilent,
     restoreVersion,
     refetch: fetchProject,
   }

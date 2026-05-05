@@ -55,6 +55,7 @@ interface SplitViewProps {
   onHtmlChange: (html: string) => void
   onMessagesChange: (messages: ChatMessage[]) => void
   onSaveVersion: () => void
+  onSaveVersionSilent: (html: string) => void
   onRestoreVersion: (version: ProjectVersion) => void
 }
 
@@ -66,6 +67,7 @@ export function SplitView({
   onHtmlChange,
   onMessagesChange,
   onSaveVersion,
+  onSaveVersionSilent,
   onRestoreVersion,
 }: SplitViewProps) {
   const [rightTab, setRightTab] = useState<RightTab>('preview')
@@ -322,6 +324,7 @@ export function SplitView({
             onMessagesChange={onMessagesChange}
             onHtmlChange={onHtmlChange}
             onGenerating={handleChatGenerating}
+            onSaveVersion={onSaveVersionSilent}
             appendToInput={chatInputAppend}
             onAppendConsumed={() => setChatInputAppend(null)}
             uploadedImages={uploadedImages}
@@ -516,6 +519,7 @@ export function SplitView({
             onHtmlChange(finalHtml)
             setChatGenerating(false)
             setRightTab('preview')
+            onSaveVersionSilent(finalHtml)
           }}
           onRebuildError={() => {
             setChatGenerating(false)

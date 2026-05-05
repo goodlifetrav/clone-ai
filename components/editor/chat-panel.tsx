@@ -17,6 +17,8 @@ interface ChatPanelProps {
   onHtmlChange: (html: string) => void
   /** Called with true when a request starts streaming, false when it finishes */
   onGenerating?: (generating: boolean) => void
+  /** Called with the final HTML after each successful AI edit to auto-save a version */
+  onSaveVersion?: (html: string) => void
   /** URL to append to the chat input (e.g. after an image upload from the toolbar) */
   appendToInput?: string | null
   onAppendConsumed?: () => void
@@ -34,6 +36,7 @@ export function ChatPanel({
   onMessagesChange,
   onHtmlChange,
   onGenerating,
+  onSaveVersion,
   appendToInput,
   onAppendConsumed,
   uploadedImages,
@@ -215,7 +218,10 @@ export function ChatPanel({
             aiMessage = event.message as string
             newMessagesUsed = event.messagesUsed as number
             // Final HTML (fully parsed and cleaned) replaces the partial
-            if (event.html) onHtmlChange(event.html as string)
+            if (event.html) {
+              onHtmlChange(event.html as string)
+              onSaveVersion?.(event.html as string)
+            }
             break outer
           }
 
