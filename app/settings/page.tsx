@@ -99,9 +99,11 @@ export default function SettingsPage() {
   }
 
   const plan = dbUser?.plan || 'free'
+  const isAdmin = dbUser?.is_admin ?? false
   const tokensUsed = dbUser?.tokens_used || 0
   const tokenLimit = PLAN_LIMITS[plan]?.tokens || 10000
-  const tokenPercent = Math.min(Math.round((tokensUsed / tokenLimit) * 100), 100)
+  const tokenPercent = isAdmin ? 0 : Math.min(Math.round((tokensUsed / tokenLimit) * 100), 100)
+  const barColor = tokenPercent >= 90 ? '#ef4444' : tokenPercent >= 70 ? '#f59e0b' : '#22c55e'
 
   return (
     <div className="min-h-screen bg-white dark:bg-neutral-950">
@@ -221,18 +223,22 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between text-sm mb-2">
                   <span className="text-neutral-600 dark:text-neutral-400">AI Tokens</span>
                   <span className="text-neutral-900 dark:text-white font-medium">
-                    {formatTokens(tokensUsed)} / {formatTokens(tokenLimit)}
+                    {isAdmin ? 'Unlimited' : `${formatTokens(tokensUsed)} / ${formatTokens(tokenLimit)}`}
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-neutral-900 dark:bg-white transition-all duration-500"
-                    style={{ width: `${tokenPercent}%` }}
-                  />
-                </div>
-                <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
-                  {tokenPercent}% used
-                </p>
+                {!isAdmin && (
+                  <>
+                    <div className="h-2 rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${tokenPercent}%`, backgroundColor: barColor }}
+                      />
+                    </div>
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
+                      {tokenPercent}% used
+                    </p>
+                  </>
+                )}
               </div>
 
               {/* Clones count */}
@@ -240,7 +246,7 @@ export default function SettingsPage() {
                 <span className="text-neutral-600 dark:text-neutral-400">Total Clones</span>
                 <span className="font-medium text-neutral-900 dark:text-white">
                   {dbUser?.clones_count || 0}
-                  {plan === 'free' ? ' / 1' : ''}
+                  {!isAdmin && plan === 'free' ? ' / 1' : isAdmin ? ' / Unlimited' : ''}
                 </span>
               </div>
             </CardContent>
