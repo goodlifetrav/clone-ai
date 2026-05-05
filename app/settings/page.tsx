@@ -17,6 +17,7 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Mail,
+  Package,
 } from 'lucide-react'
 import type { User as DbUser } from '@/types'
 import { PLAN_LIMITS } from '@/types'
@@ -29,6 +30,7 @@ export default function SettingsPage() {
   const [dbUser, setDbUser] = useState<DbUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [portalLoading, setPortalLoading] = useState(false)
+  const [tokenPackLoading, setTokenPackLoading] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState('')
   const [showProfileModal, setShowProfileModal] = useState(false)
 
@@ -44,7 +46,11 @@ export default function SettingsPage() {
     if (params.get('success') === 'true') {
       const plan = params.get('plan')
       setSuccessMessage(`Successfully upgraded to ${plan} plan!`)
-      // Clean URL
+      router.replace('/settings')
+    } else if (params.get('tokens') === 'true') {
+      const pack = params.get('pack')
+      const amounts: Record<string, string> = { small: '30,000', medium: '70,000', large: '200,000' }
+      setSuccessMessage(`${amounts[pack ?? ''] ?? ''} tokens added to your account!`)
       router.replace('/settings')
     }
   }, [router])
@@ -70,6 +76,27 @@ export default function SettingsPage() {
       // silently fail
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleBuyTokenPack = async (pack: string) => {
+    setTokenPackLoading(pack)
+    try {
+      const res = await fetch('/api/stripe/token-pack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pack }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert(data.error || 'Failed to start checkout. Please try again.')
+        return
+      }
+      if (data.url) window.location.href = data.url
+    } catch {
+      alert('Failed to start checkout. Please try again.')
+    } finally {
+      setTokenPackLoading(null)
     }
   }
 
@@ -251,6 +278,50 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Buy Extra Tokens — Pro and Agency only */}
+          {plan !== 'free' && !isAdmin && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-neutral-500" />
+                  <CardTitle className="text-base">Buy Extra Tokens</CardTitle>
+                </div>
+                <CardDescription>One-time token packs that extend your monthly allowance.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    { pack: 'small', label: 'Small', tokens: '30,000', price: 5 },
+                    { pack: 'medium', label: 'Medium', tokens: '70,000', price: 10 },
+                    { pack: 'large', label: 'Large', tokens: '200,000', price: 25 },
+                  ].map(({ pack, label, tokens, price }) => (
+                    <div
+                      key={pack}
+                      className="flex flex-col items-center gap-3 p-4 rounded-xl border border-neutral-200 dark:border-neutral-700 text-center"
+                    >
+                      <div>
+                        <p className="font-semibold text-neutral-900 dark:text-white text-sm">{label}</p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{tokens} tokens</p>
+                      </div>
+                      <p className="text-2xl font-bold text-neutral-900 dark:text-white">${price}</p>
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        onClick={() => handleBuyTokenPack(pack)}
+                        disabled={tokenPackLoading === pack}
+                      >
+                        {tokenPackLoading === pack ? (
+                          <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                        ) : null}
+                        Buy
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Contact Support */}
           <Card>

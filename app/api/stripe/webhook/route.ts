@@ -57,10 +57,49 @@ export async function POST(request: NextRequest) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
         const clerkId = session.metadata?.clerk_id
+
+        if (!clerkId) {
+          console.error('checkout.session.completed: missing clerk_id in metadata', {
+            sessionId: session.id,
+          })
+          break
+        }
+
+        // ── Token pack purchase ───────────────────────────────────────────
+        const tokenPack = session.metadata?.tokenPack
+        if (tokenPack) {
+          const TOKEN_PACK_AMOUNTS: Record<string, number> = {
+            small: 30000,
+            medium: 70000,
+            large: 200000,
+          }
+          const tokensToAdd = TOKEN_PACK_AMOUNTS[tokenPack]
+          if (!tokensToAdd) {
+            console.error('checkout.session.completed: unknown tokenPack', { tokenPack })
+            break
+          }
+
+          const { data: userData } = await supabase
+            .from('users')
+            .select('tokens_used')
+            .eq('clerk_id', clerkId)
+            .single()
+
+          const current = userData?.tokens_used ?? 0
+          await supabase
+            .from('users')
+            .update({ tokens_used: Math.max(0, current - tokensToAdd) })
+            .eq('clerk_id', clerkId)
+
+          console.log('checkout.session.completed: tokens granted', { clerkId, tokenPack, tokensToAdd })
+          break
+        }
+
+        // ── Subscription upgrade ──────────────────────────────────────────
         const plan = session.metadata?.plan as Plan
 
-        if (!clerkId || !plan) {
-          console.error('checkout.session.completed: missing clerk_id or plan in metadata', {
+        if (!plan) {
+          console.error('checkout.session.completed: missing plan in metadata', {
             sessionId: session.id,
             metadata: session.metadata,
           })
