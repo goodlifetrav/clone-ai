@@ -12,6 +12,7 @@ function isAppHost(host: string): boolean {
 const isPublicRoute = createRouteMatcher([
   '/',
   '/pricing',
+  '/docs(.*)',
   '/preview(.*)',
   '/api/stripe/webhook',
   '/api/webhooks(.*)',

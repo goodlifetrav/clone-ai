@@ -35,6 +35,9 @@ export function Header() {
         <Link href="/pricing" className="hover:text-neutral-900 dark:hover:text-white transition-colors">
           Pricing
         </Link>
+        <Link href="/docs" className="hover:text-neutral-900 dark:hover:text-white transition-colors">
+          Docs
+        </Link>
         {isSignedIn && (
           <Link href="/dashboard" className="hover:text-neutral-900 dark:hover:text-white transition-colors">
             Dashboard
