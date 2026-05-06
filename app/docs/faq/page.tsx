@@ -9,15 +9,15 @@ export const metadata: Metadata = {
 const FAQS = [
   {
     q: 'What kinds of websites can IgualAI clone?',
-    a: 'Any publicly accessible website. This includes landing pages, marketing sites, portfolios, blogs, and SaaS homepages. Sites behind a login, paywalls, or that block headless browsers may not clone fully.',
+    a: 'Publicly accessible marketing sites, SaaS landing pages, portfolios, agency sites, and business homepages. Sites behind a login or paywall may not clone fully. The following categories are blocked: government and military sites, educational institutions (.gov, .edu), banks and financial institutions, cryptocurrency and NFT platforms, social media platforms, news and media outlets, gambling sites, healthcare and medical sites, legal services, adult content, and real estate listing platforms.',
   },
   {
     q: 'Will the clone look exactly like the original?',
-    a: 'It will be a close visual replica, especially for static content. Complex JavaScript interactions (sliders, animations, dynamic data loading) won\'t be reproduced since the clone is a static HTML file. The layout, colors, typography, and written content will be accurate.',
+    a: 'The initial clone is a faithful visual replica of the layout and design. However, the intended workflow is to then use the AI editor to transform it into a completely new, original website for your brand — replacing all content, colors, and copy while keeping the same page structure. This ensures your final site is 100% original and copyright-safe.',
   },
   {
     q: 'Is cloning websites legal?',
-    a: 'IgualAI is intended for legitimate use cases: recreating a style you own, using a design as inspiration for your own work, building internal prototypes, or saving a snapshot of public content. You are responsible for how you use cloned content. Do not republish copyrighted content as your own. See our Acceptable Use Policy for details.',
+    a: 'IgualAI is designed for brand transformation — you clone a site\'s layout and structure, then use the AI to rebuild it as something entirely new for your business. The output is an original website inspired by a layout, not a copy of someone else\'s content. You are responsible for your use of the tool. Do not republish copyrighted content as your own. See our Acceptable Use Policy for details.',
   },
   {
     q: 'Can I clone a website I own?',

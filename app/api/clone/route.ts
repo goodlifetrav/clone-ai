@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { extractDomain } from '@/lib/utils'
 import { isAdminEmail } from '@/lib/admin'
 import { reportError } from '@/lib/error-report'
+import { checkUrlBlocked } from '@/lib/url-blocker'
 
 export async function POST(request: NextRequest) {
   let cloneUrl: string | undefined
@@ -14,6 +15,11 @@ export async function POST(request: NextRequest) {
     const { url } = await request.json()
     cloneUrl = url
     if (!url) return NextResponse.json({ error: 'URL is required' }, { status: 400 })
+
+    const block = checkUrlBlocked(url)
+    if (block.blocked) {
+      return NextResponse.json({ error: block.reason }, { status: 403 })
+    }
 
     const supabase = createServiceClient()
 

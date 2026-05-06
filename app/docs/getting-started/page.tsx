@@ -41,18 +41,20 @@ export default function GettingStartedPage() {
         </p>
       </Section>
 
-      <Section title="3. Customize with AI">
+      <Section title="3. Transform with AI">
         <p>
-          Type any change you want in the chat panel. For example:
+          Describe your brand in the chat panel and the AI will rebuild the page as a completely
+          new, original website using the cloned layout as a template. For example:
         </p>
         <ul>
-          <li><em>"Change the headline to 'Welcome to My Store'"</em></li>
-          <li><em>"Make the background dark navy and the text white"</em></li>
-          <li><em>"Remove the pricing section"</em></li>
-          <li><em>"Add a contact form below the hero"</em></li>
+          <li><em>"Build this for a coffee shop called Roast & Co. Warm brown tones, cozy and community-focused."</em></li>
+          <li><em>"Redesign this for a fitness app called PeakFit. Bold, energetic, orange and black."</em></li>
+          <li><em>"Make this a landing page for a creative agency called Studio North. Minimal, dark, modern."</em></li>
         </ul>
         <p>
-          The AI edits the HTML in real time and the preview updates instantly.
+          The more brand detail you provide — name, colors, tone, industry — the better the result.
+          The AI replaces all original content with fresh copy and styling while keeping the same
+          page structure and sections.
         </p>
       </Section>
 

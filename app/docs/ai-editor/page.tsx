@@ -17,46 +17,48 @@ export default function AiEditorPage() {
       <Section title="How it works">
         <p>
           The editor splits into two panels: the AI chat on the left and a live preview on the
-          right. When you send a message, IgualAI reads the full HTML of your page, applies your
-          requested change, and streams the updated page back in real time.
+          right. When you send a message, IgualAI uses the cloned page&apos;s layout as a structural
+          template and builds a completely new, original website based on your brand description —
+          streaming the result back in real time.
         </p>
         <p>
-          Every edit is applied directly to the HTML — no framework, no build step.
+          Every edit produces a fresh, self-contained HTML file — no framework, no build step,
+          no trace of the original site&apos;s content or branding.
         </p>
       </Section>
 
-      <Section title="What you can change">
-        <p>You can ask for almost anything:</p>
+      <Section title="What the AI does">
+        <p>
+          The AI uses the cloned site&apos;s layout structure (sections, navigation pattern, content
+          hierarchy) and replaces everything else with original content tailored to your brand:
+        </p>
         <ul>
-          <li>Text content — headlines, body copy, button labels, footer text</li>
-          <li>Colors — backgrounds, text, borders, gradients</li>
-          <li>Layout — spacing, columns, section order, alignment</li>
-          <li>Components — add a contact form, pricing table, image gallery, CTA section</li>
-          <li>Fonts — change typeface, size, weight</li>
-          <li>Images — swap placeholder images with a URL or remove them</li>
-          <li>Animations — add hover effects, fade-ins, transitions</li>
+          <li>Brand name, tagline, and all copy — written fresh for your business</li>
+          <li>Color scheme — matched to your brand colors</li>
+          <li>Typography — fonts and styles appropriate for your industry</li>
+          <li>Images — replaced with brand-appropriate placeholders or your uploaded images</li>
+          <li>Sections — same structure as the original (hero, features, testimonials, footer)</li>
         </ul>
       </Section>
 
       <Section title="Prompt tips">
-        <p>Be specific for best results:</p>
+        <p>Include as much brand context as possible for the best result:</p>
         <ul>
           <li>
-            <strong>Good:</strong>{' '}
-            <em>"Change the hero background to a dark gradient from #0f172a to #1e293b"</em>
+            <strong>Great:</strong>{' '}
+            <em>"Build this for a coffee shop called Roast & Co. Warm brown tones, focus on quality and community. Located in Austin, TX."</em>
           </li>
           <li>
-            <strong>Good:</strong>{' '}
-            <em>"Replace the nav links with: Home, About, Pricing, Contact"</em>
+            <strong>Great:</strong>{' '}
+            <em>"Redesign for a B2B SaaS called Flowdesk. Navy and white, professional, targets HR teams."</em>
           </li>
           <li>
-            <strong>Less effective:</strong> <em>"Make it look nicer"</em>
+            <strong>Too vague:</strong> <em>"Make it look nicer"</em>
           </li>
         </ul>
         <p>
-          You can also ask questions:{' '}
-          <em>"What font is currently used for the headline?"</em> — the AI has full context of
-          your page.
+          The more detail you give — industry, audience, colors, tone — the more accurate and
+          polished the output will be.
         </p>
       </Section>
 
