@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Send, Loader2, User, Bot, Zap, Upload, ImagePlus, X } from 'lucide-react'
+import { Send, Loader2, User, Bot, Zap, Upload, ImagePlus, X, Maximize2, Minimize2 } from 'lucide-react'
 import type { ChatMessage } from '@/types'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
@@ -51,8 +50,21 @@ export function ChatPanel({
   const [isDragging, setIsDragging] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [pendingImages, setPendingImages] = useState<string[]>([])
+  const [isExpanded, setIsExpanded] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Auto-resize textarea to fit content
+  const resizeTextarea = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const maxHeight = isExpanded ? 320 : 160
+    el.style.height = Math.min(el.scrollHeight, maxHeight) + 'px'
+  }, [isExpanded])
+
+  useEffect(() => { resizeTextarea() }, [input, isExpanded, resizeTextarea])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -392,71 +404,90 @@ export function ChatPanel({
           </div>
         )}
 
-        {/* Input — sticky on mobile so it's always visible above the keyboard */}
+        {/* Input area */}
         <div
-          className={cn(
-            'px-4 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex gap-2 sticky bottom-0 transition-colors',
-            isDragging && 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700'
-          )}
+          className="px-3 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 sticky bottom-0"
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+
           {isDragging ? (
-            <div className="flex-1 flex items-center justify-center gap-2 text-sm text-blue-500 dark:text-blue-400 py-1">
+            <div className="flex items-center justify-center gap-2 text-sm text-blue-500 dark:text-blue-400 py-4 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/30">
               <Upload className="w-4 h-4" />
               Drop image to upload
             </div>
           ) : uploadingImage ? (
-            <div className="flex-1 flex items-center gap-2 text-sm text-neutral-400 py-1">
+            <div className="flex items-center gap-2 text-sm text-neutral-400 px-3 py-2">
               <Loader2 className="w-4 h-4 animate-spin" />
               Uploading image…
             </div>
           ) : (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileSelect}
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 flex-shrink-0"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingImage || isAtLimit}
-                title="Upload image"
-              >
-                {uploadingImage ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <ImagePlus className="w-4 h-4" />
-                )}
-              </Button>
-              <Input
+            <div className={cn(
+              'rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 transition-all focus-within:border-neutral-400 dark:focus-within:border-neutral-500',
+              isExpanded && 'shadow-lg'
+            )}>
+              <textarea
+                ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={isAtLimit ? 'Upgrade to continue chatting...' : 'Ask AI to modify the website...'}
                 disabled={loading || isAtLimit}
-                className="flex-1"
+                rows={1}
+                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none disabled:opacity-50 leading-relaxed"
+                style={{ minHeight: '44px', maxHeight: isExpanded ? '320px' : '160px' }}
               />
-              <Button
-                size="icon"
-                className="h-9 w-9 flex-shrink-0"
-                onClick={handleSend}
-                disabled={loading || isAtLimit || !input.trim()}
-              >
-                {loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-              </Button>
-            </>
+              {/* Toolbar row */}
+              <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                <div className="flex items-center gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isAtLimit}
+                    title="Upload image"
+                  >
+                    <ImagePlus className="w-4 h-4" />
+                  </Button>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                    onClick={() => setIsExpanded((v) => !v)}
+                    title={isExpanded ? 'Collapse' : 'Expand'}
+                  >
+                    {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                  </Button>
+                  <Button
+                    size="icon"
+                    className="h-7 w-7 bg-neutral-900 hover:bg-neutral-700 dark:bg-white dark:hover:bg-neutral-200 dark:text-neutral-900 rounded-lg"
+                    onClick={handleSend}
+                    disabled={loading || isAtLimit || !input.trim()}
+                  >
+                    {loading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
           )}
+          <p className="text-center text-[10px] text-neutral-400 dark:text-neutral-600 mt-1.5">
+            Enter to send · Shift+Enter for new line
+          </p>
         </div>
       </div>
 
