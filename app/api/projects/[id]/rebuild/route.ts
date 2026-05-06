@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
 import { isAdminEmail } from '@/lib/admin'
-import { anthropic } from '@/lib/anthropic'
+import { anthropic, preprocessHtmlForClone } from '@/lib/anthropic'
 
 export async function POST(
   request: NextRequest,
@@ -38,7 +38,7 @@ export async function POST(
   const body = await request.json()
   const { brandName, tagline, primaryColor, secondaryColor, accentColor, logoUrl, brandDescription, headline, subheadline, ctaText } = body
 
-  const truncatedHtml = project.html_content?.slice(0, 80000) ?? ''
+  const strippedHtml = preprocessHtmlForClone(project.html_content ?? '', 15000)
 
   const prompt = `You are an expert web designer. I have a cloned website's HTML below. Your task is to redesign it as a clean, modern, fully self-contained webpage using the brand details provided.
 
@@ -65,7 +65,7 @@ INSTRUCTIONS:
 8. Output ONLY the complete HTML document — no explanation, no markdown, no code blocks
 
 ORIGINAL SITE HTML:
-${truncatedHtml}
+${strippedHtml}
 
 OUTPUT: Complete redesigned HTML document only.`
 
@@ -84,7 +84,7 @@ OUTPUT: Complete redesigned HTML document only.`
 
         const stream = await anthropic.messages.create({
           model: 'claude-sonnet-4-6',
-          max_tokens: 8000,
+          max_tokens: 16000,
           stream: true,
           messages: [{ role: 'user', content: prompt }],
         })
