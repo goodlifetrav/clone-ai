@@ -387,7 +387,11 @@ export function SplitView({
                 <VersionHistory
                   versions={versions}
                   currentHtml={html}
-                  onRestore={onRestoreVersion}
+                  onRestore={(version) => {
+                    onSaveVersion(html) // snapshot current state before restoring
+                    onRestoreVersion(version)
+                    setMobileTab('preview')
+                  }}
                   onSaveVersion={onSaveVersion}
                   className="h-full"
                 />
@@ -418,7 +422,11 @@ export function SplitView({
                 <VersionHistory
                   versions={versions}
                   currentHtml={html}
-                  onRestore={onRestoreVersion}
+                  onRestore={(version) => {
+                    onSaveVersion(html) // snapshot current state before restoring
+                    onRestoreVersion(version)
+                    setRightTab('preview')
+                  }}
                   onSaveVersion={onSaveVersion}
                   className="h-full"
                 />
