@@ -186,38 +186,44 @@ export async function chatWithProjectStreamingGemini(
     ? `${lastUserMessage.content}\n\nUploaded image URLs available to use: ${uploadedImageUrls!.join(', ')}`
     : lastUserMessage.content
 
-  // Build conversation history for context (last 6 turns max)
+  // Build conversation history — exclude failed/error messages to avoid confusing the model
   const historyContext = messages.slice(-7, -1)
+    .filter((m) => {
+      const c = m.content.toLowerCase()
+      return !c.startsWith('error:') && !c.includes('could not parse') && !c.includes('could not apply')
+    })
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n')
 
-  // Strip previous chat-edit scripts so Gemini gets clean HTML
+  // Send the FULL HTML — Gemini 2.5 has a 1M token context, no reason to truncate
+  // Strip only previous chat-edit scripts so the model gets clean markup
   const cleanHtml = currentHtml.replace(/<script data-chat-edit>[\s\S]*?<\/script>\n?/g, '')
 
-  const systemPrompt = `You are an expert web developer editing a website's HTML. The user will request changes. You MUST return the complete modified HTML document — no explanations, no markdown, no code fences. Start your response with <!DOCTYPE html> or <html and end with </html>.
+  const systemPrompt = `You are an expert web developer editing a website. The user will describe a change they want. You MUST return the COMPLETE modified HTML document.
 
-Rules:
-- Preserve all existing styles, images, and structure unless the user asks to change them
-- Make ONLY the changes the user requests
-- For color changes: update the CSS in the <style> tag and/or inline styles
-- For text changes: update the text content directly in the HTML
-- For image changes: update the src attributes
-- Keep all existing scripts and functionality intact
-- Output the complete HTML — never truncate or abbreviate`
+CRITICAL RULES — follow these exactly:
+1. PRESERVE the entire page structure — every section, every nav item, every footer, every image, every CSS class
+2. Make ONLY the specific changes the user asks for — nothing else
+3. Keep ALL existing images with their exact src URLs unless the user asks to change an image
+4. Keep ALL existing CSS, fonts, colors, and layout unless the user asks to change them
+5. If the user asks to change text/copy — rewrite just the text content, keep all HTML tags and classes
+6. If the user asks to change a color — update only those color values in the CSS
+7. If the user asks to change a logo/image — update only that src attribute
+8. Never simplify, never remove sections, never restructure — treat this like a surgical edit
+9. Output ONLY the raw HTML starting with <!DOCTYPE html> — no markdown, no code fences, no explanation`
 
-  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Current HTML:
-\`\`\`html
-${cleanHtml.slice(0, 20000)}
-\`\`\`
+  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Here is the complete current HTML of the website:
+
+${cleanHtml}
 
 User request: ${userMessage}
 
-Return the complete modified HTML document only.`
+Return the complete modified HTML with ONLY the requested changes applied. Keep everything else exactly the same.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
     systemPrompt,
-    maxTokens: 16000,
+    maxTokens: 65536,
     onReset: () => { fullHtml = '' }, // clear on retry so no partial HTML bleeds through
     onChunk: (chunk) => {
       fullHtml += chunk

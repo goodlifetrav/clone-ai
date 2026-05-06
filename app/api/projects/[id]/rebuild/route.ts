@@ -85,7 +85,7 @@ OUTPUT: Complete redesigned HTML document only.`
         let fullHtml = ''
 
         await generateTextStreaming(prompt, {
-          maxTokens: 16000,
+          maxTokens: 65536,
           onChunk: (chunk) => {
             fullHtml += chunk
             send({ htmlChunk: chunk })
