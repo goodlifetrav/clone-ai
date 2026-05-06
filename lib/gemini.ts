@@ -62,7 +62,7 @@ export async function generateTextStreaming(
 ): Promise<{ text: string; tokensUsed: number }> {
   const client = getClient()
   const model = client.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.5-flash',
     ...(options.systemPrompt ? { systemInstruction: options.systemPrompt } : {}),
   })
 
@@ -101,7 +101,7 @@ export async function generateText(
 ): Promise<{ text: string; tokensUsed: number }> {
   const client = getClient()
   const model = client.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.5-flash',
     ...(options.systemPrompt ? { systemInstruction: options.systemPrompt } : {}),
   })
 
