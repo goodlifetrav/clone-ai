@@ -210,7 +210,8 @@ CRITICAL RULES — follow these exactly:
 6. If the user asks to change a color — update only those color values in the CSS
 7. If the user asks to change a logo/image — update only that src attribute
 8. Never simplify, never remove sections, never restructure — treat this like a surgical edit
-9. Output ONLY the raw HTML starting with <!DOCTYPE html> — no markdown, no code fences, no explanation`
+9. Output ONLY the raw HTML starting with <!DOCTYPE html> — no markdown, no code fences, no explanation
+10. NEVER use markdown formatting (like **bold** or *italic*) inside HTML — use proper HTML tags like <strong> and <em>`
 
   const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Here is the complete current HTML of the website:
 
