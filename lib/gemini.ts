@@ -173,6 +173,30 @@ export async function generateText(
  * Chat-edit: asks Gemini to return a fully modified HTML document.
  * Streams the response chunk-by-chunk so the editor updates in real time.
  */
+/**
+ * Strip a cloned HTML page down to its structural skeleton so Gemini can use
+ * it as a layout template without being constrained by the original content or
+ * running into output-token limits trying to reproduce a massive site verbatim.
+ */
+function extractHtmlStructure(html: string, maxChars = 25000): string {
+  let result = html
+  result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+  result = result.replace(/<!--[\s\S]*?-->/g, '')
+  result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
+  result = result.replace(/<svg\b(?![^>]*\b(?:title|aria-label)\b)[^>]*>[\s\S]*?<\/svg>/gi, '')
+  // Keep only layout-relevant attributes
+  const ALLOWED = new Set(['class', 'id', 'style', 'src', 'href', 'rel', 'type'])
+  result = result.replace(/<([a-z][a-z0-9-]*)(\s[^>]*)?(\/?)>/gi, (_m, tag: string, attrStr: string | undefined, sc: string) => {
+    if (!attrStr) return `<${tag}${sc}>`
+    const kept = (attrStr.match(/\b([a-z][a-z0-9:-]*)=(?:"[^"]*"|'[^']*'|[^\s>/]+)/gi) ?? [])
+      .filter((a) => ALLOWED.has(a.split('=')[0].toLowerCase().trim()))
+    return `<${tag}${kept.length ? ' ' + kept.join(' ') : ''}${sc}>`
+  })
+  result = result.replace(/\s+/g, ' ').trim()
+  if (result.length > maxChars) result = result.slice(0, maxChars) + '…'
+  return result
+}
+
 export async function chatWithProjectStreamingGemini(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -195,31 +219,28 @@ export async function chatWithProjectStreamingGemini(
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n')
 
-  // Send the FULL HTML — Gemini 2.5 has a 1M token context, no reason to truncate
-  // Strip only previous chat-edit scripts so the model gets clean markup
-  const cleanHtml = currentHtml.replace(/<script data-chat-edit>[\s\S]*?<\/script>\n?/g, '')
+  // Use the structural skeleton as a layout template — this keeps token count
+  // manageable and lets Gemini generate fresh original content (no copyright issues)
+  const structureHtml = extractHtmlStructure(currentHtml)
 
-  const systemPrompt = `You are an expert web developer editing a website. The user will describe a change they want. You MUST return the COMPLETE modified HTML document.
+  const systemPrompt = `You are an expert web designer. You will receive the structural skeleton of a cloned website and the user's brand/content instructions. Your job is to build a completely NEW, original website inspired by that structure.
 
-CRITICAL RULES — follow these exactly:
-1. PRESERVE the entire page structure — every section, every nav item, every footer, every image, every CSS class
-2. Make ONLY the specific changes the user asks for — nothing else
-3. Keep ALL existing images with their exact src URLs unless the user asks to change an image
-4. Keep ALL existing CSS, fonts, colors, and layout unless the user asks to change them
-5. If the user asks to change text/copy — rewrite just the text content, keep all HTML tags and classes
-6. If the user asks to change a color — update only those color values in the CSS
-7. If the user asks to change a logo/image — update only that src attribute
-8. Never simplify, never remove sections, never restructure — treat this like a surgical edit
-9. Output ONLY the raw HTML starting with <!DOCTYPE html> — no markdown, no code fences, no explanation
-10. NEVER use markdown formatting (like **bold** or *italic*) inside HTML — use proper HTML tags like <strong> and <em>`
+CRITICAL RULES:
+1. Use the provided HTML skeleton as a LAYOUT TEMPLATE ONLY — keep the same sections, navigation pattern, and overall structure
+2. Replace ALL original text, images, colors, and branding with fresh content based on the user's instructions
+3. Remove every trace of the original site — different brand name, different copy, different color scheme
+4. Write clean, modern HTML with all CSS in a <style> tag — no external CDN links, no scripts that reference the original site
+5. Make it fully responsive for mobile and desktop
+6. Output ONLY the complete HTML document starting with <!DOCTYPE html> — no markdown, no code fences, no explanation
+7. Never use markdown syntax like **text** inside HTML — use proper tags like <strong>`
 
-  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Here is the complete current HTML of the website:
+  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Here is the layout structure of the cloned website to use as a template:
 
-${cleanHtml}
+${structureHtml}
 
-User request: ${userMessage}
+User's brand/content instructions: ${userMessage}
 
-Return the complete modified HTML with ONLY the requested changes applied. Keep everything else exactly the same.`
+Build a completely new, original website using this layout as a template. Replace all content with fresh original content. Output the complete HTML document.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
