@@ -83,7 +83,6 @@ export function SplitView({
   const rebuildHtmlRef = useRef('')
   const [imageGenStatus, setImageGenStatus] = useState<{ current: number; total: number } | null>(null)
   const [showBrandBanner, setShowBrandBanner] = useState(false)
-  const brandBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isGenerating = isStreamingProp || chatGenerating
   const prevStatusRef = useRef(project.status)
   const router = useRouter()
@@ -102,20 +101,12 @@ export function SplitView({
     }
     if (curr === 'complete' && (prev === 'processing' || prev === 'pending')) {
       setRightTab('preview')
-      // Show brand rebuild prompt after first clone completes
+      // Show brand rebuild prompt after clone completes
       setShowBrandBanner(true)
-      if (brandBannerTimerRef.current) clearTimeout(brandBannerTimerRef.current)
-      brandBannerTimerRef.current = setTimeout(() => setShowBrandBanner(false), 15000)
     }
     prevStatusRef.current = curr
   }, [project.status])
 
-  // Cleanup banner timer on unmount
-  useEffect(() => {
-    return () => {
-      if (brandBannerTimerRef.current) clearTimeout(brandBannerTimerRef.current)
-    }
-  }, [])
 
   // Also switch tabs immediately when the stream activates/deactivates
   useEffect(() => {
@@ -134,6 +125,7 @@ export function SplitView({
     if (generating) {
       setRightTab('code')
       setMobileTab('preview')
+      setShowBrandBanner(false) // user is using AI editor, dismiss the prompt
     } else {
       setRightTab('preview')
     }
