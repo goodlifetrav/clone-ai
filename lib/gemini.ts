@@ -148,8 +148,8 @@ export async function generateText(
 }
 
 /**
- * Chat-edit: asks Gemini to produce a JS DOM script + explanation (JSON).
- * Injects the script into the HTML and returns the updated page.
+ * Chat-edit: asks Gemini to return a fully modified HTML document.
+ * Streams the response chunk-by-chunk so the editor updates in real time.
  */
 export async function chatWithProjectStreamingGemini(
   currentHtml: string,
@@ -164,90 +164,66 @@ export async function chatWithProjectStreamingGemini(
     ? `${lastUserMessage.content}\n\nUploaded image URLs available to use: ${uploadedImageUrls!.join(', ')}`
     : lastUserMessage.content
 
-  const bodyIdx = currentHtml.search(/<body|<main/i)
-  const startIdx = bodyIdx !== -1 ? bodyIdx : 0
-  const htmlSnippet = currentHtml.slice(startIdx, startIdx + 3000)
+  // Build conversation history for context (last 6 turns max)
+  const historyContext = messages.slice(-7, -1)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n')
 
-  const systemPrompt = `You are a website editor. The user will describe a change they want to make to a website. Return ONLY a valid JSON object with no explanation, no markdown, no code blocks:
-{
-  "explanation": "brief description of what you changed",
-  "script": "javascript code that manipulates the DOM to make the change"
-}
+  // Strip previous chat-edit scripts so Gemini gets clean HTML
+  const cleanHtml = currentHtml.replace(/<script data-chat-edit>[\s\S]*?<\/script>\n?/g, '')
 
-Rules for the script:
-- For background color changes: ONLY target high-level container elements using document.querySelectorAll('html, body, #__next, #root, main, .main, [class*="container"], [class*="wrapper"], [class*="layout"]') — never use * or target every element
-- For text color changes: target text elements specifically: document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, a, li, td, th, label, button')
-- Always use element.style.setProperty('property', 'value', 'important')
-- For text content changes: find elements by checking element.textContent.trim() === 'exact text' then change element.textContent
-- For image changes: find img elements and change their src attribute
-- Never target '*' for background or color changes as it breaks the page
-- Keep scripts concise and under 500 characters
-- When you can see class names in the HTML snippet, target those specific classes in your script`
+  const systemPrompt = `You are an expert web developer editing a website's HTML. The user will request changes. You MUST return the complete modified HTML document — no explanations, no markdown, no code fences. Start your response with <!DOCTYPE html> or <html and end with </html>.
 
-  const prompt = `Here is a snippet of the website HTML structure (CSS removed for brevity):
-${htmlSnippet}
+Rules:
+- Preserve all existing styles, images, and structure unless the user asks to change them
+- Make ONLY the changes the user requests
+- For color changes: update the CSS in the <style> tag and/or inline styles
+- For text changes: update the text content directly in the HTML
+- For image changes: update the src attributes
+- Keep all existing scripts and functionality intact
+- Output the complete HTML — never truncate or abbreviate`
 
-User request: ${userMessage}`
+  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Current HTML:
+\`\`\`html
+${cleanHtml.slice(0, 20000)}
+\`\`\`
 
-  const { text: raw, tokensUsed } = await generateText(prompt, {
+User request: ${userMessage}
+
+Return the complete modified HTML document only.`
+
+  let fullHtml = ''
+  const { tokensUsed } = await generateTextStreaming(prompt, {
     systemPrompt,
-    maxTokens: 1000,
+    maxTokens: 16000,
+    onChunk: (chunk) => {
+      fullHtml += chunk
+      // Strip any markdown fences from partial output before sending to editor
+      const partial = fullHtml
+        .replace(/^```html\n?/i, '')
+        .replace(/^```\n?/, '')
+      onPartialHtml(partial)
+    },
   })
 
-  let explanation = 'Changes applied.'
-  let script = ''
-  try {
-    let jsonText = raw
-      .replace(/^```(?:json|JSON)?\s*/m, '')
-      .replace(/```\s*$/m, '')
-      .trim()
-    const start = jsonText.indexOf('{')
-    const end = jsonText.lastIndexOf('}')
-    if (start !== -1 && end !== -1 && end > start) {
-      jsonText = jsonText.slice(start, end + 1)
-    }
-    const parsed = JSON.parse(jsonText)
-    explanation = parsed.explanation ?? explanation
-    script = parsed.script ?? ''
-  } catch {
+  // Clean up markdown fences from final output
+  fullHtml = fullHtml
+    .replace(/^```html\n?/i, '')
+    .replace(/^```\n?/, '')
+    .replace(/\n?```$/, '')
+    .trim()
+
+  if (!fullHtml || !/<html/i.test(fullHtml)) {
     return {
       html: currentHtml,
-      message: 'Could not parse the changes. Please try again.',
+      message: 'Could not apply the changes. Please try again.',
       tokensUsed,
     }
   }
-
-  if (!script.trim()) {
-    return {
-      html: currentHtml,
-      message: 'That change could not be made. Please try a different request.',
-      tokensUsed,
-    }
-  }
-
-  // Collect all previous chat-edit scripts and combine with new one
-  const previousScripts: string[] = []
-  const prevRe = /<script data-chat-edit>([\s\S]*?)<\/script>/g
-  let prevMatch: RegExpExecArray | null
-  while ((prevMatch = prevRe.exec(currentHtml)) !== null) {
-    if (prevMatch[1].trim()) previousScripts.push(prevMatch[1].trim())
-  }
-  const combinedScript = [...previousScripts, script].join('\n')
-
-  let updatedHtml = currentHtml.replace(/<script data-chat-edit>[\s\S]*?<\/script>\n?/g, '')
-
-  const scriptBlock = `<script data-chat-edit>${combinedScript}</script>`
-  if (/<\/body>/i.test(updatedHtml)) {
-    updatedHtml = updatedHtml.replace(/<\/body>/i, `${scriptBlock}\n</body>`)
-  } else {
-    updatedHtml = updatedHtml + '\n' + scriptBlock
-  }
-
-  onPartialHtml(updatedHtml)
 
   return {
-    html: updatedHtml,
-    message: explanation,
+    html: fullHtml,
+    message: 'Done.',
     tokensUsed,
   }
 }
