@@ -189,13 +189,14 @@ export function ChatPanel({
       // Pre-stream JSON errors (limit reached etc.) come back as non-SSE JSON
       const contentType = res.headers.get('content-type') ?? ''
       if (!contentType.includes('text/event-stream')) {
-        const data = await res.json()
+        let data: Record<string, unknown> = {}
+        try { data = await res.json() } catch { /* response was HTML/non-JSON */ }
         if (data.chatLimitReached) {
           setShowUpgradeModal(true)
           onMessagesChange(messages)
           return
         }
-        throw new Error(data.error || 'Chat failed')
+        throw new Error((data.error as string) || `Server error (${res.status})`)
       }
 
       // Read the SSE stream

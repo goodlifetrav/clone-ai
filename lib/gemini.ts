@@ -73,46 +73,68 @@ export async function generateImage(prompt: string): Promise<GeneratedImage> {
 }
 
 /**
- * Generate text using Gemini 2.0 Flash with streaming.
- * onChunk is called for each streaming delta.
- * Returns { text, tokensUsed }.
+ * Generate text using Gemini with streaming.
+ * Retries with fallback model if primary is overloaded.
+ * onChunk receives delta text; on retry the caller's onReset is called
+ * so callers can reset any accumulated state before the retry begins.
  */
 export async function generateTextStreaming(
   prompt: string,
   options: {
     systemPrompt?: string
     onChunk?: (chunk: string) => void
+    onReset?: () => void   // called before each retry so callers can reset buffers
     maxTokens?: number
   } = {}
 ): Promise<{ text: string; tokensUsed: number }> {
-  return withRetry(async (modelName) => {
-    const client = getClient()
-    const model = client.getGenerativeModel({
-      model: modelName,
-      ...(options.systemPrompt ? { systemInstruction: options.systemPrompt } : {}),
-    })
+  const models = [PRIMARY_MODEL, FALLBACK_MODEL]
 
-    const result = await model.generateContentStream({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: options.maxTokens ?? 16000 },
-    })
+  for (let mi = 0; mi < models.length; mi++) {
+    const modelName = models[mi]
 
-    let fullText = ''
-    for await (const chunk of result.stream) {
-      const text = chunk.text()
-      if (text) {
-        fullText += text
-        options.onChunk?.(text)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // Reset caller's accumulated state before every attempt
+      if (mi > 0 || attempt > 0) options.onReset?.()
+
+      try {
+        const client = getClient()
+        const model = client.getGenerativeModel({
+          model: modelName,
+          ...(options.systemPrompt ? { systemInstruction: options.systemPrompt } : {}),
+        })
+
+        const result = await model.generateContentStream({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: options.maxTokens ?? 16000 },
+        })
+
+        let fullText = ''
+        for await (const chunk of result.stream) {
+          const text = chunk.text()
+          if (text) {
+            fullText += text
+            options.onChunk?.(text)
+          }
+        }
+
+        const response = await result.response
+        const tokensUsed =
+          (response.usageMetadata?.promptTokenCount ?? 0) +
+          (response.usageMetadata?.candidatesTokenCount ?? 0)
+
+        return { text: fullText, tokensUsed }
+      } catch (err) {
+        const isLast = mi === models.length - 1 && attempt === 2
+        if (!isRetryable(err) || isLast) {
+          if (mi < models.length - 1) break // try next model
+          throw err
+        }
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
       }
     }
+  }
 
-    const response = await result.response
-    const tokensUsed =
-      (response.usageMetadata?.promptTokenCount ?? 0) +
-      (response.usageMetadata?.candidatesTokenCount ?? 0)
-
-    return { text: fullText, tokensUsed }
-  })
+  throw new Error('All Gemini models unavailable')
 }
 
 /**
@@ -196,6 +218,7 @@ Return the complete modified HTML document only.`
   const { tokensUsed } = await generateTextStreaming(prompt, {
     systemPrompt,
     maxTokens: 16000,
+    onReset: () => { fullHtml = '' }, // clear on retry so no partial HTML bleeds through
     onChunk: (chunk) => {
       fullHtml += chunk
       // Strip any markdown fences from partial output before sending to editor
