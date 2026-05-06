@@ -228,6 +228,9 @@ export async function chatWithProjectStreamingGemini(
   // Use the structural skeleton as a layout template — this keeps token count
   // manageable and lets Gemini generate fresh original content (no copyright issues)
   const structureHtml = extractHtmlStructure(currentHtml)
+  console.log('[chat] currentHtml length:', currentHtml.length)
+  console.log('[chat] structureHtml length:', structureHtml.length)
+  console.log('[chat] structureHtml preview:', structureHtml.slice(0, 500))
 
   const systemPrompt = `You are an expert web designer. You will receive the structural skeleton of a cloned website and the user's brand/content instructions. Your job is to build a completely NEW, original website inspired by that structure.
 
@@ -266,6 +269,8 @@ Build a completely new, original website using this layout as a template. Replac
   })
 
   // Extract just the HTML portion — drop preamble text and trailing code fences
+  console.log('[chat] fullHtml length after stream:', fullHtml.length)
+  console.log('[chat] fullHtml first 300 chars:', fullHtml.slice(0, 300))
   const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
     ? fullHtml.search(/<!DOCTYPE html/i)
     : fullHtml.search(/<html/i)
