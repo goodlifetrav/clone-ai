@@ -1,8 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-// Primary model, with a lighter fallback for when primary is overloaded
+// Primary model, with a fallback for when primary is overloaded
 const PRIMARY_MODEL = 'gemini-2.5-flash'
-const FALLBACK_MODEL = 'gemini-2.0-flash-lite'
+const FALLBACK_MODEL = 'gemini-2.5-pro'
 
 let _client: GoogleGenerativeAI | null = null
 
