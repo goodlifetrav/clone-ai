@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
 import { isAdminEmail } from '@/lib/admin'
-import { anthropic, preprocessHtmlForClone } from '@/lib/anthropic'
+import { preprocessHtmlForClone } from '@/lib/anthropic'
 import { injectBrandImages } from '@/lib/image-injection'
-import { isGeminiConfigured } from '@/lib/gemini'
+import { generateTextStreaming } from '@/lib/gemini'
 
 export async function POST(
   request: NextRequest,
@@ -84,19 +84,13 @@ OUTPUT: Complete redesigned HTML document only.`
       try {
         let fullHtml = ''
 
-        const stream = await anthropic.messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 16000,
-          stream: true,
-          messages: [{ role: 'user', content: prompt }],
+        await generateTextStreaming(prompt, {
+          maxTokens: 16000,
+          onChunk: (chunk) => {
+            fullHtml += chunk
+            send({ htmlChunk: chunk })
+          },
         })
-
-        for await (const event of stream) {
-          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-            fullHtml += event.delta.text
-            send({ htmlChunk: event.delta.text })
-          }
-        }
 
         // Clean up any markdown code fences
         fullHtml = fullHtml
@@ -105,16 +99,14 @@ OUTPUT: Complete redesigned HTML document only.`
           .replace(/\n?```$/, '')
           .trim()
 
-        // ── Image generation (if Gemini is configured) ───────────────────
-        if (isGeminiConfigured()) {
-          send({ status: 'generating_images' })
-          fullHtml = await injectBrandImages(
-            fullHtml,
-            { brandName, brandDescription, primaryColor, secondaryColor, tagline },
-            id,
-            (current, total) => send({ status: 'generating_images', current, total })
-          )
-        }
+        // ── Image generation ─────────────────────────────────────────────────
+        send({ status: 'generating_images' })
+        fullHtml = await injectBrandImages(
+          fullHtml,
+          { brandName, brandDescription, primaryColor, secondaryColor, tagline },
+          id,
+          (current, total) => send({ status: 'generating_images', current, total })
+        )
 
         // Save to DB
         await supabase

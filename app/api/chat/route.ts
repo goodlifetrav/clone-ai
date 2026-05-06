@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
-import { chatWithProjectStreaming } from '@/lib/anthropic'
+import { chatWithProjectStreamingGemini } from '@/lib/gemini'
 import { isAdminEmail } from '@/lib/admin'
 import { reportError } from '@/lib/error-report'
 
@@ -129,12 +129,10 @@ export async function POST(request: NextRequest) {
         let tokensUsed = 0
 
         ;({ html: finalHtml, message: finalMessage, tokensUsed } =
-          await chatWithProjectStreaming(
+          await chatWithProjectStreamingGemini(
             currentHtml,
             chatMessages,
             (partialHtml) => send({ htmlChunk: partialHtml }),
-            imageBase64,
-            imageMimeType,
             uploadedImageUrls
           ))
 
