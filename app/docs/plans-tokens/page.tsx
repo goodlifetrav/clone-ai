@@ -21,7 +21,7 @@ export default function PlansTokensPage() {
       <Section title="What are tokens?">
         <p>
           Tokens are the AI's unit of work. Every time you use the AI editor, IgualAI sends your
-          request (including the full page HTML) to Claude. The number of tokens consumed depends
+          request (including the full page HTML) to the AI. The number of tokens consumed depends
           on the size of your page and the length of the AI's response.
         </p>
         <p>

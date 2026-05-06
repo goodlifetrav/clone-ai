@@ -25,7 +25,7 @@ export default function GettingStartedPage() {
         </p>
         <p>
           IgualAI uses headless Chromium to visit the page, take a full-page screenshot, and
-          extract the HTML. Claude AI then reconstructs it as a clean, self-contained HTML file
+          extract the HTML. IgualAI then reconstructs it as a clean, self-contained HTML file
           with all styles inlined — no external dependencies.
         </p>
       </Section>

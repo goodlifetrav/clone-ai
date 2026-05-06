@@ -17,7 +17,7 @@ export default function AiEditorPage() {
       <Section title="How it works">
         <p>
           The editor splits into two panels: the AI chat on the left and a live preview on the
-          right. When you send a message, Claude reads the full HTML of your page, applies your
+          right. When you send a message, IgualAI reads the full HTML of your page, applies your
           requested change, and streams the updated page back in real time.
         </p>
         <p>

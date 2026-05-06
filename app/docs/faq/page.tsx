@@ -45,7 +45,7 @@ const FAQS = [
   },
   {
     q: 'What AI model does IgualAI use?',
-    a: 'IgualAI uses Claude (by Anthropic) for both the initial clone reconstruction and the AI chat editor.',
+    a: 'IgualAI uses a proprietary AI model for both the initial clone reconstruction and the AI chat editor.',
   },
 ]
 

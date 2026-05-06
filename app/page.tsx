@@ -37,7 +37,7 @@ const jsonLd = {
           name: 'What is IgualAI?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'IgualAI is an AI-powered website cloning tool. Paste any URL and Claude AI instantly reconstructs it as a clean, editable HTML/CSS page you can customize with chat and deploy anywhere.',
+            text: 'IgualAI is an AI-powered website cloning tool. Paste any URL and our AI instantly reconstructs it as a clean, editable HTML/CSS page you can customize with chat and deploy anywhere.',
           },
         },
         {
@@ -45,7 +45,7 @@ const jsonLd = {
           name: 'How does website cloning work?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'IgualAI uses headless Chromium to visit the page, take a full-page screenshot, and extract its HTML. Claude AI then rebuilds the site as self-contained HTML with inlined CSS — no dependencies, no frameworks.',
+            text: 'IgualAI uses headless Chromium to visit the page, take a full-page screenshot, and extract its HTML. Our AI then rebuilds the site as self-contained HTML with inlined CSS — no dependencies, no frameworks.',
           },
         },
         {
@@ -80,11 +80,11 @@ const jsonLd = {
 const FAQS = [
   {
     q: 'What is IgualAI?',
-    a: 'IgualAI is an AI-powered website cloning tool. Paste any URL and Claude AI instantly reconstructs it as a clean, editable HTML/CSS page you can customize with chat and deploy anywhere.',
+    a: 'IgualAI is an AI-powered website cloning tool. Paste any URL and our AI instantly reconstructs it as a clean, editable HTML/CSS page you can customize with chat and deploy anywhere.',
   },
   {
     q: 'How does website cloning work?',
-    a: 'IgualAI uses headless Chromium to visit the page, take a full-page screenshot, and extract its HTML. Claude AI then rebuilds the site as self-contained HTML with inlined CSS — no dependencies, no frameworks.',
+    a: 'IgualAI uses headless Chromium to visit the page, take a full-page screenshot, and extract its HTML. Our AI then rebuilds the site as self-contained HTML with inlined CSS — no dependencies, no frameworks.',
   },
   {
     q: 'Is IgualAI free?',
@@ -145,7 +145,7 @@ export default function Home() {
                 icon: <Sparkles className="w-5 h-5" />,
                 title: 'AI Reconstruction',
                 description:
-                  'Claude AI rebuilds the site as clean, self-contained HTML with inline CSS.',
+                  'Our AI rebuilds the site as clean, self-contained HTML with inline CSS.',
               },
               {
                 icon: <Code2 className="w-5 h-5" />,
