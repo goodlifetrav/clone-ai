@@ -1,5 +1,13 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+
+const APP_HOSTS = ['igualai.com', 'www.igualai.com', 'localhost']
+
+function isAppHost(host: string): boolean {
+  const hostname = host.split(':')[0]
+  return APP_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`))
+}
 
 const isPublicRoute = createRouteMatcher([
   '/',
@@ -16,7 +24,15 @@ const BLOCKED_COUNTRIES = new Set([
   'EG', 'KE', 'MM', 'KH', 'LA', 'NP', 'YE', 'SD', 'SO', 'AF',
 ])
 
-export default clerkMiddleware(async (auth, request) => {
+export default clerkMiddleware(async (auth, request: NextRequest) => {
+  const host = request.headers.get('host') ?? ''
+
+  if (!isAppHost(host)) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/api/serve-domain'
+    return NextResponse.rewrite(url)
+  }
+
   const { pathname } = request.nextUrl
 
   // Country check — skip for exempt paths
