@@ -180,10 +180,16 @@ export async function generateText(
  */
 function extractHtmlStructure(html: string, maxChars = 25000): string {
   let result = html
+  // Strip scripts — use greedy inner match to handle </script> inside string literals
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+  // Strip styles (not needed in a structural skeleton)
+  result = result.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
   result = result.replace(/<!--[\s\S]*?-->/g, '')
   result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
   result = result.replace(/<svg\b(?![^>]*\b(?:title|aria-label)\b)[^>]*>[\s\S]*?<\/svg>/gi, '')
+  // Remove long orphaned text nodes — these are usually JS code that leaked through
+  // script stripping (e.g. when a script contained </script> in a string literal)
+  result = result.replace(/>([^<]{150,})</g, '><')
   // Keep only layout-relevant attributes
   const ALLOWED = new Set(['class', 'id', 'style', 'src', 'href', 'rel', 'type'])
   result = result.replace(/<([a-z][a-z0-9-]*)(\s[^>]*)?(\/?)>/gi, (_m, tag: string, attrStr: string | undefined, sc: string) => {
