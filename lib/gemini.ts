@@ -227,20 +227,22 @@ Return the complete modified HTML with ONLY the requested changes applied. Keep 
     onReset: () => { fullHtml = '' }, // clear on retry so no partial HTML bleeds through
     onChunk: (chunk) => {
       fullHtml += chunk
-      // Strip any markdown fences from partial output before sending to editor
-      const partial = fullHtml
-        .replace(/^```html\n?/i, '')
-        .replace(/^```\n?/, '')
-      onPartialHtml(partial)
+      // Only stream once we've received the actual HTML start — discard any preamble Gemini added
+      const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
+        ? fullHtml.search(/<!DOCTYPE html/i)
+        : fullHtml.search(/<html/i)
+      if (htmlStart >= 0) {
+        onPartialHtml(fullHtml.slice(htmlStart))
+      }
     },
   })
 
-  // Clean up markdown fences from final output
-  fullHtml = fullHtml
-    .replace(/^```html\n?/i, '')
-    .replace(/^```\n?/, '')
-    .replace(/\n?```$/, '')
-    .trim()
+  // Extract just the HTML portion — drop preamble text and trailing code fences
+  const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
+    ? fullHtml.search(/<!DOCTYPE html/i)
+    : fullHtml.search(/<html/i)
+  if (htmlStart > 0) fullHtml = fullHtml.slice(htmlStart)
+  fullHtml = fullHtml.replace(/\n?```\s*$/, '').trim()
 
   if (!fullHtml || !/<html/i.test(fullHtml)) {
     return {
