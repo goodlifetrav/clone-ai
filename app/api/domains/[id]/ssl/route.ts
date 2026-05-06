@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
-import { exec } from 'child_process'
-import { promisify } from 'util'
-
-const execAsync = promisify(exec)
 
 export async function POST(
   _request: NextRequest,
@@ -35,20 +31,23 @@ export async function POST(
     if (!record) return NextResponse.json({ error: 'Domain not found' }, { status: 404 })
 
     if (!record.verified) {
-      return NextResponse.json({ error: 'Domain must be verified before provisioning SSL' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Domain must be verified before provisioning SSL' },
+        { status: 400 }
+      )
     }
 
-    const domain = record.domain
-    const cmd = `certbot certonly --nginx -d ${domain} --non-interactive --agree-tos -m admin@igualai.com`
+    if (record.ssl_provisioned) {
+      return NextResponse.json({ ssl_provisioned: true, queued: false })
+    }
 
-    await execAsync(cmd)
-
-    await supabase
-      .from('custom_domains')
-      .update({ ssl_provisioned: true })
-      .eq('id', id)
-
-    return NextResponse.json({ ssl_provisioned: true })
+    // SSL is provisioned by a host-side cron job (/usr/local/bin/provision-ssl.sh)
+    // that runs every minute and handles certbot + nginx config for all verified domains.
+    // This endpoint just validates the request and signals readiness.
+    return NextResponse.json({
+      queued: true,
+      message: 'SSL provisioning started — your certificate will be ready within 1–2 minutes.',
+    })
   } catch (err) {
     console.error('SSL provision error:', err)
     return NextResponse.json({ error: 'SSL provisioning failed' }, { status: 500 })

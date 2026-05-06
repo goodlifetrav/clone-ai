@@ -166,7 +166,13 @@ export default function SettingsPage() {
       const res = await fetch(`/api/domains/${id}/ssl`, { method: 'POST' })
       const data = await res.json()
       if (res.ok) {
-        setDomains((prev) => prev.map((d) => d.id === id ? { ...d, ssl_provisioned: true } : d))
+        if (data.ssl_provisioned) {
+          // Already done
+          setDomains((prev) => prev.map((d) => d.id === id ? { ...d, ssl_provisioned: true } : d))
+        } else {
+          // Queued — cron provisions within ~1 minute
+          setSuccessMessage('SSL provisioning started — certificate will be ready within 1–2 minutes. Refresh to see the badge.')
+        }
       } else {
         alert(data.error || 'SSL provisioning failed')
       }
