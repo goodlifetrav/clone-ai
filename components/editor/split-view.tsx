@@ -80,6 +80,7 @@ export function SplitView({
   const [showMoreSheet, setShowMoreSheet] = useState(false)
   const [moreContent, setMoreContent] = useState<'visual' | 'history' | null>(null)
   const rebuildHtmlRef = useRef('')
+  const [imageGenStatus, setImageGenStatus] = useState<{ current: number; total: number } | null>(null)
   const isGenerating = isStreamingProp || chatGenerating
   const prevStatusRef = useRef(project.status)
   const router = useRouter()
@@ -218,7 +219,9 @@ export function SplitView({
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex-shrink-0">
             <Sparkles className="w-3 h-3 text-amber-500 dark:text-amber-400 animate-pulse" />
             <span className="text-xs text-amber-600 dark:text-amber-400 hidden sm:inline">
-              {project.status === 'processing' ? 'Generating…' : 'Writing…'}
+              {imageGenStatus
+                ? `Generating images… (${imageGenStatus.current}/${imageGenStatus.total})`
+                : project.status === 'processing' ? 'Generating…' : 'Writing…'}
             </span>
           </div>
         )}
@@ -524,6 +527,7 @@ export function SplitView({
           onRebuildError={() => {
             setChatGenerating(false)
           }}
+          onImageGenStatus={(status) => setImageGenStatus(status)}
         />
       )}
 

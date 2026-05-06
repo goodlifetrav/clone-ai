@@ -27,6 +27,7 @@ interface BrandWizardProps {
   onHtmlChunk: (chunk: string) => void
   onRebuildComplete: (html: string) => void
   onRebuildError: (err: string) => void
+  onImageGenStatus?: (status: { current: number; total: number } | null) => void
 }
 
 const STEPS = [
@@ -55,6 +56,7 @@ export function BrandWizard({
   onHtmlChunk,
   onRebuildComplete,
   onRebuildError,
+  onImageGenStatus,
 }: BrandWizardProps) {
   const [step, setStep] = useState(1)
   const [brand, setBrand] = useState<BrandData>(DEFAULT_BRAND)
@@ -107,10 +109,18 @@ export function BrandWizard({
             if (parsed.htmlChunk) {
               onHtmlChunk(parsed.htmlChunk)
             }
+            if (parsed.status === 'generating_images') {
+              onImageGenStatus?.({
+                current: parsed.current ?? 1,
+                total: parsed.total ?? 3,
+              })
+            }
             if (parsed.done && parsed.html) {
+              onImageGenStatus?.(null)
               onRebuildComplete(parsed.html)
             }
             if (parsed.error) {
+              onImageGenStatus?.(null)
               onRebuildError(parsed.error)
             }
           } catch { /* skip */ }

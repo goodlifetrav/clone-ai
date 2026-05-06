@@ -3,6 +3,8 @@ import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
 import { isAdminEmail } from '@/lib/admin'
 import { anthropic, preprocessHtmlForClone } from '@/lib/anthropic'
+import { injectBrandImages } from '@/lib/image-injection'
+import { isGeminiConfigured } from '@/lib/gemini'
 
 export async function POST(
   request: NextRequest,
@@ -102,6 +104,17 @@ OUTPUT: Complete redesigned HTML document only.`
           .replace(/^```\n?/, '')
           .replace(/\n?```$/, '')
           .trim()
+
+        // ── Image generation (if Gemini is configured) ───────────────────
+        if (isGeminiConfigured()) {
+          send({ status: 'generating_images' })
+          fullHtml = await injectBrandImages(
+            fullHtml,
+            { brandName, brandDescription, primaryColor, secondaryColor, tagline },
+            id,
+            (current, total) => send({ status: 'generating_images', current, total })
+          )
+        }
 
         // Save to DB
         await supabase
