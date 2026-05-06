@@ -6,7 +6,6 @@ import { CodeEditor } from './code-editor'
 import { ChatPanel } from './chat-panel'
 import { VisualEditor } from './visual-editor'
 import { BrandWizard } from './brand-wizard'
-import { TerminalPanel } from './terminal-panel'
 import { VersionHistory } from './version-history'
 import { ConnectIntegrationModal } from './connect-integration-modal'
 import { Button } from '@/components/ui/button'
@@ -14,7 +13,6 @@ import {
   Eye,
   Code2,
   Paintbrush,
-  Terminal,
   History,
   Download,
   HelpCircle,
@@ -43,7 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
-type RightTab = 'preview' | 'code' | 'visual' | 'terminal' | 'versions'
+type RightTab = 'preview' | 'code' | 'visual' | 'versions'
 type MobileTab = 'preview' | 'chat' | 'code' | 'more'
 
 interface SplitViewProps {
@@ -170,7 +168,6 @@ export function SplitView({
     { id: 'code', label: 'Code', icon: <Code2 className="w-3.5 h-3.5" /> },
     { id: 'visual', label: 'Visual', icon: <Paintbrush className="w-3.5 h-3.5" /> },
     { id: 'versions', label: 'History', icon: <History className="w-3.5 h-3.5" /> },
-    { id: 'terminal', label: 'Terminal', icon: <Terminal className="w-3.5 h-3.5" /> },
   ]
 
   return (
@@ -414,9 +411,6 @@ export function SplitView({
                   onOpenRebuild={() => setShowBrandWizard(true)}
                   className="h-full"
                 />
-              )}
-              {rightTab === 'terminal' && (
-                <TerminalPanel html={html} />
               )}
               {rightTab === 'versions' && (
                 <VersionHistory
