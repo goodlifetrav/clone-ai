@@ -1,5 +1,9 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
+// Primary model, with a lighter fallback for when primary is overloaded
+const PRIMARY_MODEL = 'gemini-2.5-flash'
+const FALLBACK_MODEL = 'gemini-2.0-flash-lite'
+
 let _client: GoogleGenerativeAI | null = null
 
 function getClient(): GoogleGenerativeAI {
@@ -9,6 +13,27 @@ function getClient(): GoogleGenerativeAI {
     _client = new GoogleGenerativeAI(key)
   }
   return _client
+}
+
+function isRetryable(err: unknown): boolean {
+  const msg = (err as Error)?.message ?? ''
+  return msg.includes('503') || msg.includes('529') || msg.includes('overloaded') || msg.includes('high demand')
+}
+
+async function withRetry<T>(fn: (model: string) => Promise<T>): Promise<T> {
+  const models = [PRIMARY_MODEL, FALLBACK_MODEL]
+  for (const model of models) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await fn(model)
+      } catch (err) {
+        const isLast = model === models[models.length - 1] && attempt === 2
+        if (!isRetryable(err) || isLast) throw err
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
+      }
+    }
+  }
+  throw new Error('All Gemini models unavailable')
 }
 
 export interface GeneratedImage {
@@ -60,32 +85,34 @@ export async function generateTextStreaming(
     maxTokens?: number
   } = {}
 ): Promise<{ text: string; tokensUsed: number }> {
-  const client = getClient()
-  const model = client.getGenerativeModel({
-    model: 'gemini-2.5-flash',
-    ...(options.systemPrompt ? { systemInstruction: options.systemPrompt } : {}),
-  })
+  return withRetry(async (modelName) => {
+    const client = getClient()
+    const model = client.getGenerativeModel({
+      model: modelName,
+      ...(options.systemPrompt ? { systemInstruction: options.systemPrompt } : {}),
+    })
 
-  const result = await model.generateContentStream({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: options.maxTokens ?? 16000 },
-  })
+    const result = await model.generateContentStream({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: options.maxTokens ?? 16000 },
+    })
 
-  let fullText = ''
-  for await (const chunk of result.stream) {
-    const text = chunk.text()
-    if (text) {
-      fullText += text
-      options.onChunk?.(text)
+    let fullText = ''
+    for await (const chunk of result.stream) {
+      const text = chunk.text()
+      if (text) {
+        fullText += text
+        options.onChunk?.(text)
+      }
     }
-  }
 
-  const response = await result.response
-  const tokensUsed =
-    (response.usageMetadata?.promptTokenCount ?? 0) +
-    (response.usageMetadata?.candidatesTokenCount ?? 0)
+    const response = await result.response
+    const tokensUsed =
+      (response.usageMetadata?.promptTokenCount ?? 0) +
+      (response.usageMetadata?.candidatesTokenCount ?? 0)
 
-  return { text: fullText, tokensUsed }
+    return { text: fullText, tokensUsed }
+  })
 }
 
 /**
@@ -99,23 +126,25 @@ export async function generateText(
     maxTokens?: number
   } = {}
 ): Promise<{ text: string; tokensUsed: number }> {
-  const client = getClient()
-  const model = client.getGenerativeModel({
-    model: 'gemini-2.5-flash',
-    ...(options.systemPrompt ? { systemInstruction: options.systemPrompt } : {}),
+  return withRetry(async (modelName) => {
+    const client = getClient()
+    const model = client.getGenerativeModel({
+      model: modelName,
+      ...(options.systemPrompt ? { systemInstruction: options.systemPrompt } : {}),
+    })
+
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: options.maxTokens ?? 1000 },
+    })
+
+    const text = result.response.text()
+    const tokensUsed =
+      (result.response.usageMetadata?.promptTokenCount ?? 0) +
+      (result.response.usageMetadata?.candidatesTokenCount ?? 0)
+
+    return { text, tokensUsed }
   })
-
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: options.maxTokens ?? 1000 },
-  })
-
-  const text = result.response.text()
-  const tokensUsed =
-    (result.response.usageMetadata?.promptTokenCount ?? 0) +
-    (result.response.usageMetadata?.candidatesTokenCount ?? 0)
-
-  return { text, tokensUsed }
 }
 
 /**
