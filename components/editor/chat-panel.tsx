@@ -222,6 +222,10 @@ export function ChatPanel({
           let event: Record<string, unknown>
           try { event = JSON.parse(text) } catch { continue }
 
+          if (event._debug) {
+            console.log('[chat debug]', event._debug)
+          }
+
           if (event.htmlChunk) {
             // Stream partial HTML into the editor in real time
             onHtmlChange(event.htmlChunk as string)

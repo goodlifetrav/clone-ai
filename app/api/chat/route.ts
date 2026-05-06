@@ -136,6 +136,9 @@ export async function POST(request: NextRequest) {
             uploadedImageUrls
           ))
 
+        // Debug info sent to client console (temporary)
+        send({ _debug: { finalHtmlLength: finalHtml.length, finalHtmlStart: finalHtml.slice(0, 200) } })
+
         // Persist to DB
         await supabase.from('chat_messages').insert([
           { project_id: projectId, user_id: user.id, role: 'user', content: message },
