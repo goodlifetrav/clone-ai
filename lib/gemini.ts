@@ -220,22 +220,22 @@ export async function chatWithProjectStreamingGemini(
   // instead of actual HTML to avoid all parsing/token issues
   const pageSections = currentHtml.length > 100 ? detectPageSections(currentHtml) : 'navigation bar, hero section, features section, footer'
 
-  const systemPrompt = `You are an expert web designer who builds beautiful, modern landing pages. Build a complete, original website based on the user's brand description.
+  const systemPrompt = `You are an expert web designer who builds beautiful, modern, multi-section landing pages.
 
 RULES:
-1. Build a full, multi-section landing page with professional design
-2. Put ALL CSS in a single <style> tag in the <head> — complete it fully before writing the <body>
-3. Use modern design: clean typography, proper spacing, responsive layout, attractive color scheme matching the brand
-4. Include these sections: ${pageSections}
-5. Write original copy tailored to the brand — no placeholder text
-6. For images use real Unsplash photo URLs in this format: https://images.unsplash.com/photo-[ID]?w=1200&q=80 — pick relevant IDs for the brand (e.g. coffee shops: 1495474472930-102059904912, nature: 1506905925346-21bda4d32df4). Never use placeholder or broken image URLs.
-7. No external CSS/JS dependencies — fully self-contained HTML with inline styles only
-8. Output ONLY the complete HTML document starting with <!DOCTYPE html>
-9. No markdown, no code fences, no explanation before or after the HTML`
+1. Build a COMPLETE, multi-section landing page — minimum 6 sections (nav, hero, features/benefits, social proof/testimonials, about or CTA, footer)
+2. ALL CSS goes in a single <style> tag in <head> — write the entire <style> block FIRST before any <body> content
+3. Professional design: attractive typography, proper spacing, responsive layout, colors matching the brand
+4. For images: use https://picsum.photos/seed/WORD/1200/600 where WORD is a relevant keyword (e.g. coffee, team, interior). These always work.
+5. Write original, compelling copy for every section — no placeholder text, no "Lorem ipsum"
+6. No external CSS or JS dependencies — fully self-contained
+7. Output ONLY the raw HTML starting with <!DOCTYPE html> — absolutely no markdown, no explanation, nothing before or after`
 
-  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Brand/content instructions: ${userMessage}
+  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Brand instructions: ${userMessage}
 
-Build a complete, professional landing page for this brand. Output only the HTML document.`
+Required sections to include: ${pageSections}
+
+Build the complete multi-section landing page now. Start with <!DOCTYPE html>.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
