@@ -276,6 +276,134 @@ function extractPageStructure(html: string): string {
   return stripped
 }
 
+/**
+ * Analyze each section of the cloned page and return a structured plain-English
+ * description of layout patterns, image counts, and heading text.
+ * This is far more useful than an HTML skeleton when the original site uses
+ * compiled/minified CSS class names that Gemini cannot interpret.
+ */
+function describeSiteStructure(html: string): string {
+  const parts: string[] = []
+
+  const cleaned = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+
+  // Helper: extract visible text from an HTML snippet (strip tags, collapse whitespace)
+  const getText = (s: string) =>
+    s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)
+
+  // ── NAV ──────────────────────────────────────────────────────────────────
+  const navHtml = cleaned.match(/<nav\b[^>]*>[\s\S]*?<\/nav>/i)?.[0] ?? ''
+  if (navHtml) {
+    const links = (navHtml.match(/<a\b/gi) ?? []).length
+    const hasBtn = /button|btn/i.test(navHtml)
+    parts.push(`• NAV: logo + ${links} links${hasBtn ? ' + CTA button' : ''}`)
+  }
+
+  // ── HERO (first major block) ─────────────────────────────────────────────
+  // Grab the first large block that contains an h1 or very large text
+  const heroMatch = cleaned.match(/<(?:header|section|div)\b[^>]*>[\s\S]{100,}/i)
+  if (heroMatch) {
+    const heroSlice = heroMatch[0].slice(0, 6000)
+    const h1 = heroSlice.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? ''
+    const h1Text = getText(h1).slice(0, 60)
+    const imgCount = (heroSlice.match(/<img\b/gi) ?? []).length
+    const hasBgImg = /background-image/i.test(heroSlice.slice(0, 2000))
+    const hasGrid = /grid|columns/i.test(heroSlice)
+
+    let heroDesc = `HERO: full-width`
+    if (hasBgImg) heroDesc += ', background image'
+    if (h1Text) heroDesc += `, large heading ("${h1Text}")`
+    if (imgCount >= 6 && hasGrid) heroDesc += `, IMAGE MOSAIC GRID (${imgCount} images in multi-column grid)`
+    else if (imgCount >= 3) heroDesc += `, ${imgCount} embedded images in grid`
+    else if (imgCount > 0) heroDesc += `, ${imgCount} image(s)`
+    heroDesc += ', CTA buttons'
+    parts.push(`• ${heroDesc}`)
+  }
+
+  // ── INTERIOR SECTIONS ────────────────────────────────────────────────────
+  // Match <section> tags; fall back to large top-level divs if no <section> tags found
+  const sectionMatches: string[] = []
+  const secRegex = /<section\b[^>]*>([\s\S]*?)<\/section>/gi
+  let m: RegExpExecArray | null
+  while ((m = secRegex.exec(cleaned)) !== null) sectionMatches.push(m[0])
+
+  // Framer and many modern sites don't use <section> — detect large div blocks instead
+  if (sectionMatches.length < 2) {
+    // Split body content into large chunks by double-div patterns at reasonable depth
+    const bodyContent = cleaned.replace(/[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*/i, '')
+    const chunks = bodyContent.split(/(?=<div\b[^>]{0,200}>(?:<div\b|<section\b|<header\b|<footer\b))/i)
+    for (const chunk of chunks) {
+      if (chunk.length > 400) sectionMatches.push(chunk.slice(0, 8000))
+    }
+  }
+
+  let secNum = 1
+  for (const sec of sectionMatches.slice(0, 12)) {
+    const imgCount = (sec.match(/<img\b/gi) ?? []).length
+    const bgImgCount = (sec.match(/background-image/gi) ?? []).length
+    const totalImgs = imgCount + bgImgCount
+    const videoCount = (sec.match(/<video\b/gi) ?? []).length
+
+    // Heading text
+    const headingMatch = sec.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i)
+    const headingText = headingMatch ? getText(headingMatch[1]).slice(0, 60) : ''
+
+    // Detect layout type
+    const hasFlex = /flex/i.test(sec)
+    const hasGrid = /grid/i.test(sec)
+    const listItemCount = (sec.match(/<li\b/gi) ?? []).length
+    const cardPatterns = (sec.match(/<(?:article|figure)\b|class="[^"]*card/gi) ?? []).length
+    const isQuote = /blockquote|testimonial|review|"[^"]{20,}"/i.test(sec)
+    const isLogoBar = totalImgs >= 4 && sec.length < 2000
+    const isCta = totalImgs === 0 && sec.length < 800 && /button|btn|get.{0,10}start|sign.{0,5}up|try.{0,5}free/i.test(sec)
+    const isPricingGrid = /price|\$\d|\bplan\b|\bmonthly\b/i.test(sec)
+    const isSplit = hasFlex && totalImgs >= 1
+
+    let layout: string
+    if (isLogoBar) {
+      layout = `LOGO BAR — ${totalImgs} brand logos in a horizontal row (social proof / trusted-by strip)`
+    } else if (isCta) {
+      layout = `CTA SECTION — centered heading, 1-2 buttons, no images`
+    } else if (isPricingGrid) {
+      layout = `PRICING SECTION — 2-3 plan cards with price, features list, CTA button`
+    } else if (isQuote) {
+      layout = `TESTIMONIALS — ${Math.max(1, Math.round(sec.length / 400))} quote cards with author name and role`
+    } else if (isSplit && totalImgs >= 1) {
+      const side = secNum % 2 === 0 ? 'RIGHT text, LEFT image' : 'LEFT text, RIGHT image'
+      layout = `SPLIT LAYOUT — 50/50 flex row: ${side}. LARGE heading (text-5xl+), paragraph, optional button. ${totalImgs > 1 ? totalImgs + ' images' : '1 large image or UI screenshot'} on image side.`
+      if (videoCount > 0) layout += ` + ${videoCount} video`
+    } else if (totalImgs >= 5 || (totalImgs >= 3 && hasGrid)) {
+      layout = `IMAGE GRID — ${totalImgs} images in a ${Math.ceil(totalImgs / 2)}-column mosaic or gallery grid`
+    } else if ((listItemCount >= 3 || cardPatterns >= 2) && hasGrid) {
+      layout = `CARD GRID — ${Math.max(listItemCount, cardPatterns, 3)} cards in a ${Math.min(4, Math.ceil(listItemCount / 2))}-column grid. Each card: icon/image, heading, short text`
+    } else if (totalImgs >= 1) {
+      layout = `CONTENT SECTION with ${totalImgs} image(s) — mixed text and images`
+    } else {
+      layout = `TEXT SECTION — heading, paragraph, optional button`
+    }
+
+    parts.push(`• SECTION ${secNum}: ${layout}${headingText ? ` — heading: "${headingText}"` : ''}`)
+    secNum++
+  }
+
+  // ── FOOTER ───────────────────────────────────────────────────────────────
+  const footerHtml = cleaned.match(/<footer\b[^>]*>[\s\S]*?<\/footer>/i)?.[0] ?? ''
+  if (footerHtml) {
+    const links = (footerHtml.match(/<a\b/gi) ?? []).length
+    const cols = Math.min(5, Math.max(2, Math.round(links / 5)))
+    parts.push(`• FOOTER: ${cols}-column link grid, logo, social icons, copyright`)
+  }
+
+  if (parts.length === 0) {
+    return 'Standard multi-section landing page: nav, hero with CTA, 4-6 feature sections, footer'
+  }
+
+  return parts.join('\n')
+}
+
 export async function chatWithProjectStreamingGemini(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -298,71 +426,91 @@ export async function chatWithProjectStreamingGemini(
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n')
 
-  const systemPrompt = `You are an elite web designer. Your job is to take a cloned website's structure and rebuild it as a brand-new, launch-ready website for a different brand.
+  const systemPrompt = `You are an elite web designer rebuilding a cloned site for a new brand with HIGH VISUAL FIDELITY to the original's design language.
 
-Your goal is HIGH VISUAL FIDELITY to the original site's design language — same layout complexity, same visual weight, same aesthetic feel — applied to a completely new brand.
-
-REQUIRED <head> setup:
+REQUIRED <head> — always include exactly:
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {
   theme: { extend: {
     colors: { brand: { 50:'#f0f9ff', 100:'#e0f2fe', 300:'#7dd3fc', 500:'#0ea5e9', 700:'#0369a1', 900:'#0c4a6e' } },
-    fontFamily: { sans:['Inter','sans-serif'], display:['Inter','sans-serif'] }
+    fontFamily: { sans:['Inter','sans-serif'] }
   }}
 }
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
-STYLE SIGNALS (FOLLOW THESE EXACTLY — they describe the original site's visual style):
-These rules override your defaults. Read them carefully and honour them.
+Override brand colors to match the user's palette. Keep Inter font throughout.
 
-SECTION RULES:
-- Count every distinct section in the cloned HTML structure provided
-- Build EVERY one of them — do not skip, merge, or drop any section
-- Match the section ORDER from the original
-- Match the layout pattern of each section (grid, split, full-width banner, cards, etc.)
-- Replace ALL content with new brand content — zero original text, logos, or images
+━━━ LAYOUT RULES BY SECTION TYPE ━━━
 
-IMAGE RULES (only use images if the original was image-heavy — see STYLE SIGNALS):
-- Background images: style="background-image:url('https://picsum.photos/seed/WORD/1920/1080')"
-- Content images: <img src="https://picsum.photos/seed/WORD/800/500" ...>
-- WORD must be a SINGLE lowercase English word — e.g.: tech, software, team, office, city, product, code, design, startup
-- Use a DIFFERENT word for every image
-- Never use broken paths, data URIs, or empty src attributes
+SPLIT LAYOUT sections (text + image side by side):
+- Use: <div class="flex flex-col lg:flex-row items-center gap-16 py-24 px-8 max-w-7xl mx-auto">
+- Text side (lg:w-1/2): heading in text-5xl lg:text-6xl font-bold, paragraph, optional button
+- Image side (lg:w-1/2): <img src="https://picsum.photos/seed/WORD/900/600" class="w-full rounded-2xl shadow-2xl">
+- Alternate which side text appears on (left for odd sections, right for even)
 
-QUALITY RULES:
-- Nav links: flex gap-8 — never let them run together without spacing
-- Cards/sections: proper padding, consistent spacing
-- Buttons: transition-all duration-300 hover:opacity-90
-- Font Awesome icons where the original had icons
-- Original, compelling marketing copy — no Lorem ipsum
-- Fully mobile responsive with sm: md: lg: breakpoints
+IMAGE MOSAIC GRID sections (hero or gallery):
+- Use: <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+- Fill with: <img src="https://picsum.photos/seed/WORD/600/400" class="w-full h-48 object-cover rounded-xl">
+- Use 6-12 images with DIFFERENT seed words
+
+CARD GRID sections:
+- Use: <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+- Each card: <div class="bg-white/5 rounded-2xl p-6 border border-white/10">
+- Card contains: icon (Font Awesome), heading (text-xl font-semibold), description
+
+LOGO BAR sections (social proof):
+- Horizontal flex row of 5-7 brand/company names in text-xl font-semibold opacity-40
+
+TESTIMONIAL sections:
+- Grid of 2-3 quote cards; each has blockquote text, author name, role, company
+
+CTA SECTION:
+- Centered, py-32, large heading (text-5xl font-bold), subtext, 2 buttons
+
+━━━ TYPOGRAPHY RULES ━━━
+- Hero heading: text-6xl lg:text-7xl xl:text-8xl font-black tracking-tighter (if original has massive type)
+- Feature section headings: text-4xl lg:text-5xl font-bold (NOT text-2xl — make them BIG)
+- Body text: text-lg leading-relaxed
+- Small labels above headings: text-sm font-semibold uppercase tracking-widest opacity-60
+
+━━━ IMAGE RULES ━━━
+- ALWAYS use: https://picsum.photos/seed/WORD/WIDTH/HEIGHT
+- WORD = single lowercase English word, different for every image
+- Good seed words: dashboard, interface, analytics, workflow, team, office, product, design, code, city, launch, scale, growth, connect, build
+- Hero images: /seed/WORD/1920/1080
+- Split section images: /seed/WORD/900/600
+- Card/grid images: /seed/WORD/600/400
+
+━━━ GENERAL RULES ━━━
+- Nav: logo text + flex gap-8 nav links + CTA button — no wrapping
+- All buttons: px-6 py-3 rounded-full font-semibold transition-all duration-300
+- Fully mobile responsive — sm: md: lg: breakpoints on every section
+- Original compelling copy — no Lorem ipsum
+- Build EVERY section listed in SITE STRUCTURE — do not skip any
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
-  // Use the actual HTML structure as the blueprint — this is what drives section count
-  const pageStructure = currentHtml.length > 200
-    ? extractPageStructure(currentHtml)
+  const siteStructure = currentHtml.length > 200
+    ? describeSiteStructure(currentHtml)
     : 'No cloned HTML available — build a standard full-page landing site.'
 
   const styleSignals = currentHtml.length > 200
     ? extractStyleSignals(currentHtml)
     : ''
 
-  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND TO BUILD FOR: ${userMessage}
+  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND: ${userMessage}
 
-STYLE SIGNALS — Original site's visual characteristics (follow these precisely):
-${styleSignals || 'No style data available — use your best judgment.'}
+━━━ ORIGINAL SITE STYLE ━━━
+${styleSignals || 'No style data — use your best judgment.'}
 
-CLONED SITE STRUCTURE (use this as your section blueprint — replicate every section and layout pattern):
-${pageStructure}
+━━━ ORIGINAL SITE STRUCTURE ━━━
+Build every section below in order. Match each layout type precisely using the rules in your instructions.
+${siteStructure}
 
-Analyze the structure above, identify every section, then build the complete new website that:
-1. Matches the visual style described in STYLE SIGNALS (dark/light theme, image density, typography scale)
-2. Replicates every section with identical layout patterns
-3. Uses entirely new brand content appropriate for: ${userMessage}`
+Build the complete site now. Match the visual complexity of the original — if it had SPLIT LAYOUT sections, build split layouts. If it had IMAGE MOSAIC, build image mosaics. Do NOT simplify sections into plain text cards.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
@@ -436,70 +584,92 @@ export async function chatWithProjectGemini(
 
   if (isFirstMessage) {
     // ── FULL BRAND REBUILD ────────────────────────────────────────────────────
-    const systemPrompt = `You are an elite web designer. Your job is to take a cloned website's structure and rebuild it as a brand-new, launch-ready website for a different brand.
+    const systemPrompt = `You are an elite web designer rebuilding a cloned site for a new brand with HIGH VISUAL FIDELITY to the original's design language.
 
-Your goal is HIGH VISUAL FIDELITY to the original site's design language — same layout complexity, same visual weight, same aesthetic feel — applied to a completely new brand.
-
-REQUIRED <head> setup:
+REQUIRED <head> — always include exactly:
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {
   theme: { extend: {
     colors: { brand: { 50:'#f0f9ff', 100:'#e0f2fe', 300:'#7dd3fc', 500:'#0ea5e9', 700:'#0369a1', 900:'#0c4a6e' } },
-    fontFamily: { sans:['Inter','sans-serif'], display:['Inter','sans-serif'] }
+    fontFamily: { sans:['Inter','sans-serif'] }
   }}
 }
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
-STYLE SIGNALS (FOLLOW THESE EXACTLY — they describe the original site's visual style):
-These rules override your defaults. Read them carefully and honour them.
+Override brand colors to match the user's palette. Keep Inter font throughout.
 
-SECTION RULES:
-- Count every distinct section in the cloned HTML structure provided
-- Build EVERY one of them — do not skip, merge, or drop any section
-- Match the section ORDER from the original
-- Match the layout pattern of each section (grid, split, full-width banner, cards, etc.)
-- Replace ALL content with new brand content — zero original text, logos, or images
+━━━ LAYOUT RULES BY SECTION TYPE ━━━
 
-IMAGE RULES (only use images if the original was image-heavy — see STYLE SIGNALS):
-- Background images: style="background-image:url('https://picsum.photos/seed/WORD/1920/1080')"
-- Content images: <img src="https://picsum.photos/seed/WORD/800/500" ...>
-- WORD must be a SINGLE lowercase English word — e.g.: tech, software, team, office, city, product, code, design, startup
-- Use a DIFFERENT word for every image
-- Never use broken paths, data URIs, or empty src attributes
+SPLIT LAYOUT sections (text + image side by side):
+- Use: <div class="flex flex-col lg:flex-row items-center gap-16 py-24 px-8 max-w-7xl mx-auto">
+- Text side (lg:w-1/2): heading in text-5xl lg:text-6xl font-bold, paragraph, optional button
+- Image side (lg:w-1/2): <img src="https://picsum.photos/seed/WORD/900/600" class="w-full rounded-2xl shadow-2xl">
+- Alternate which side text appears on (left for odd sections, right for even)
 
-QUALITY RULES:
-- Nav links: flex gap-8 — never let them run together without spacing
-- Cards/sections: proper padding, consistent spacing
-- Buttons: transition-all duration-300 hover:opacity-90
-- Font Awesome icons where the original had icons
-- Original, compelling marketing copy — no Lorem ipsum
-- Fully mobile responsive with sm: md: lg: breakpoints
+IMAGE MOSAIC GRID sections (hero or gallery):
+- Use: <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+- Fill with: <img src="https://picsum.photos/seed/WORD/600/400" class="w-full h-48 object-cover rounded-xl">
+- Use 6-12 images with DIFFERENT seed words
+
+CARD GRID sections:
+- Use: <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+- Each card: <div class="bg-white/5 rounded-2xl p-6 border border-white/10">
+- Card contains: icon (Font Awesome), heading (text-xl font-semibold), description
+
+LOGO BAR sections (social proof):
+- Horizontal flex row of 5-7 brand/company names in text-xl font-semibold opacity-40
+
+TESTIMONIAL sections:
+- Grid of 2-3 quote cards; each has blockquote text, author name, role, company
+
+CTA SECTION:
+- Centered, py-32, large heading (text-5xl font-bold), subtext, 2 buttons
+
+━━━ TYPOGRAPHY RULES ━━━
+- Hero heading: text-6xl lg:text-7xl xl:text-8xl font-black tracking-tighter (if original has massive type)
+- Feature section headings: text-4xl lg:text-5xl font-bold (NOT text-2xl — make them BIG)
+- Body text: text-lg leading-relaxed
+- Small labels above headings: text-sm font-semibold uppercase tracking-widest opacity-60
+
+━━━ IMAGE RULES ━━━
+- ALWAYS use: https://picsum.photos/seed/WORD/WIDTH/HEIGHT
+- WORD = single lowercase English word, different for every image
+- Good seed words: dashboard, interface, analytics, workflow, team, office, product, design, code, city, launch, scale, growth, connect, build
+- Hero images: /seed/WORD/1920/1080
+- Split section images: /seed/WORD/900/600
+- Card/grid images: /seed/WORD/600/400
+- Square images: /seed/WORD/600/600
+
+━━━ GENERAL RULES ━━━
+- Nav: logo text + flex gap-8 nav links + CTA button — no wrapping
+- All buttons: px-6 py-3 rounded-full font-semibold transition-all duration-300
+- Fully mobile responsive — sm: md: lg: breakpoints on every section
+- Original compelling copy — no Lorem ipsum
+- Build EVERY section listed in SITE STRUCTURE — do not skip any
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
-    const pageStructure = currentHtml.length > 200
-      ? extractPageStructure(currentHtml)
+    const siteStructure = currentHtml.length > 200
+      ? describeSiteStructure(currentHtml)
       : 'No cloned HTML available — build a standard full-page landing site.'
 
     const styleSignals = currentHtml.length > 200
       ? extractStyleSignals(currentHtml)
       : ''
 
-    const prompt = `BRAND TO BUILD FOR: ${userMessage}
+    const prompt = `BRAND: ${userMessage}
 
-STYLE SIGNALS — Original site's visual characteristics (follow these precisely):
-${styleSignals || 'No style data available — use your best judgment.'}
+━━━ ORIGINAL SITE STYLE ━━━
+${styleSignals || 'No style data — use your best judgment.'}
 
-CLONED SITE STRUCTURE (use this as your section blueprint — replicate every section and layout pattern):
-${pageStructure}
+━━━ ORIGINAL SITE STRUCTURE ━━━
+Build every section below in order. Match each layout type precisely using the rules in your instructions.
+${siteStructure}
 
-Analyze the structure above, identify every section, then build the complete new website that:
-1. Matches the visual style described in STYLE SIGNALS (dark/light theme, image density, typography scale)
-2. Replicates every section with identical layout patterns
-3. Uses entirely new brand content appropriate for: ${userMessage}`
+Build the complete site now. Match the visual complexity of the original — if it had SPLIT LAYOUT sections, build split layouts. If it had IMAGE MOSAIC, build image mosaics. Do NOT simplify sections into plain text cards.`
 
     const { text: fullHtml, tokensUsed } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
 
