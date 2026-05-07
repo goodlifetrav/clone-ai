@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef, useState } from 'react'
 import { Wand2, MousePointer2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -260,7 +260,27 @@ export function VisualEditor({
     )
   }
 
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(1)
+  const DESKTOP_WIDTH = 1280
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const update = () => {
+      const w = el.clientWidth
+      setScale(w >= DESKTOP_WIDTH ? 1 : w / DESKTOP_WIDTH)
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const editableHtml = html ? injectEditScript(html) : ''
+  // When scaled down, the iframe still occupies DESKTOP_WIDTH px but is visually
+  // shrunk. The outer container needs explicit height so it doesn't collapse.
+  const scaledHeight = `calc(100vh / ${scale})`
 
   return (
     <div className={`flex flex-col h-full ${className}`}>
@@ -274,13 +294,20 @@ export function VisualEditor({
           {' '}to save.
         </span>
       </div>
-      {/* Outer div scrolls; inner div forces desktop width so responsive nav stays visible */}
-      <div className="flex-1 min-h-0 overflow-auto">
-        <div style={{ minWidth: 1280 }}>
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <div
+          style={{
+            width: DESKTOP_WIDTH,
+            transformOrigin: 'top left',
+            transform: `scale(${scale})`,
+            // Compensate container height so scroll works correctly
+            height: scale < 1 ? `${scale * 100}%` : undefined,
+          }}
+        >
           <iframe
             srcDoc={editableHtml}
             className="border-0"
-            style={{ width: '1280px', height: '100%', minHeight: '100vh' }}
+            style={{ width: DESKTOP_WIDTH, height: scaledHeight, minHeight: '100vh' }}
             sandbox="allow-scripts allow-same-origin"
             title="Visual Editor"
           />
