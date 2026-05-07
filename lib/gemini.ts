@@ -220,27 +220,27 @@ export async function chatWithProjectStreamingGemini(
   // instead of actual HTML to avoid all parsing/token issues
   const pageSections = currentHtml.length > 100 ? detectPageSections(currentHtml) : 'navigation bar, hero section, features section, footer'
 
-  const systemPrompt = `You are an expert web designer who builds beautiful, modern, multi-section landing pages.
+  const systemPrompt = `You are an expert web designer. Build a complete multi-section landing page.
 
 RULES:
-1. Build a COMPLETE, multi-section landing page — minimum 6 sections (nav, hero, features/benefits, social proof/testimonials, about or CTA, footer)
-2. ALL CSS goes in a single <style> tag in <head> — write the entire <style> block FIRST before any <body> content
-3. Professional design: attractive typography, proper spacing, responsive layout, colors matching the brand
-4. For images: use https://picsum.photos/seed/WORD/1200/600 where WORD is a relevant keyword (e.g. coffee, team, interior). These always work.
-5. Write original, compelling copy for every section — no placeholder text, no "Lorem ipsum"
-6. No external CSS or JS dependencies — fully self-contained
-7. Output ONLY the raw HTML starting with <!DOCTYPE html> — absolutely no markdown, no explanation, nothing before or after`
+1. MUST include ALL of these sections: nav, hero, features/benefits, testimonials or social proof, CTA or about, footer — minimum 6 sections
+2. Write the <style> block FIRST and keep it COMPACT — no animations, no keyframes, no overly complex selectors. Clean layout only.
+3. Professional design matching the brand colors and tone
+4. Images: use https://picsum.photos/seed/KEYWORD/1200/600 (replace KEYWORD with a relevant word)
+5. Real copy for every section — no placeholder text
+6. No external dependencies
+7. Output ONLY raw HTML starting with <!DOCTYPE html> — no markdown, no explanation`
 
-  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Brand instructions: ${userMessage}
+  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Brand: ${userMessage}
 
-Required sections to include: ${pageSections}
+Sections detected from cloned site: ${pageSections}
 
-Build the complete multi-section landing page now. Start with <!DOCTYPE html>.`
+IMPORTANT: Write compact CSS, then build ALL sections completely. Do not stop early.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
     systemPrompt,
-    maxTokens: 32000,
+    maxTokens: 65536,
     onReset: () => { fullHtml = '' }, // clear on retry so no partial HTML bleeds through
     onChunk: (chunk) => {
       fullHtml += chunk

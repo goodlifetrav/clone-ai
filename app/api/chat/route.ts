@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
 
       // Send keepalive pings every 5 s so nginx doesn't 504 while waiting
       // for Gemini's first token (same pattern streaming services use)
-      const keepalive = setInterval(() => send({ status: 'thinking' }), 5000)
+      const keepalive = setInterval(() => send({ status: 'thinking' }), 3000)
 
       try {
         send({ status: 'thinking' })
