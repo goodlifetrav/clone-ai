@@ -174,6 +174,76 @@ export async function generateText(
  * Streams the response chunk-by-chunk so the editor updates in real time.
  */
 /**
+ * Detect visual style signals from the cloned page HTML.
+ * Returns a plain-English style description Gemini can use to match the feel.
+ */
+function extractStyleSignals(html: string): string {
+  const signals: string[] = []
+
+  // ── Dark vs light theme ──────────────────────────────────────────────────
+  const bodyMatch = html.match(/<body[^>]*>/i)?.[0] ?? ''
+  const htmlTagMatch = html.match(/<html[^>]*>/i)?.[0] ?? ''
+  const headStyles = html.match(/<style[^>]*>([\s\S]*?)<\/style>/gi)?.join('') ?? ''
+
+  const darkIndicators = [
+    /class="[^"]*bg-(?:black|gray-900|gray-950|neutral-900|neutral-950|slate-900|zinc-900)/i,
+    /background(?:-color)?:\s*(?:#0[0-9a-f]{5}|#1[0-9a-f]{5}|rgb\(\s*[0-2]\d,)/i,
+    /class="[^"]*dark(?:\s|")/i,
+  ]
+  const looksLightBg = html.match(/class="[^"]*bg-white/i) || html.match(/background(?:-color)?:\s*(?:#fff|white|#f[0-9a-f]{5})/i)
+  const looksLikeDark = darkIndicators.some((re) => re.test(bodyMatch + htmlTagMatch + headStyles + html.slice(0, 4000)))
+
+  if (looksLikeDark && !looksLightBg) {
+    signals.push('DARK THEME: The original site uses a dark background (near-black or very dark). Your rebuild MUST use a dark theme — dark body/sections, light text.')
+  } else {
+    signals.push('LIGHT THEME: The original site uses a light background. Your rebuild should use a light theme.')
+  }
+
+  // ── Image density ────────────────────────────────────────────────────────
+  const imgCount = (html.match(/<img\b/gi) ?? []).length
+  const bgImgCount = (html.match(/background-image/gi) ?? []).length
+  const totalImages = imgCount + bgImgCount
+
+  if (totalImages >= 8) {
+    signals.push('IMAGE-HEAVY: The original has many images/background images. Your rebuild should be visually dense with images — hero background images, product shots, lifestyle photography in multiple sections.')
+  } else if (totalImages >= 3) {
+    signals.push('MODERATE IMAGES: The original uses some images. Include hero background and a few content images.')
+  } else {
+    signals.push('MINIMAL IMAGES: The original is text/UI focused. Use minimal images — rely on color, typography, and UI elements instead.')
+  }
+
+  // ── Typography scale ─────────────────────────────────────────────────────
+  const hasXLType = /text-(?:7xl|8xl|9xl|\[(?:7|8|9|10|11|12|14|16|18|20)rem)/i.test(html)
+  const hasLargeType = /text-(?:5xl|6xl)/i.test(html)
+  const hasInlineH1Size = /font-size:\s*(?:[5-9]\d|[1-9]\d{2})px/i.test(html)
+
+  if (hasXLType || hasInlineH1Size) {
+    signals.push('MASSIVE TYPOGRAPHY: The original uses very large display text (7xl+). Use huge, bold headlines — text-7xl or larger for hero headings, text-5xl for section headings.')
+  } else if (hasLargeType) {
+    signals.push('LARGE TYPOGRAPHY: The original uses large display text. Use text-5xl to text-6xl for hero headings, text-3xl to text-4xl for sections.')
+  } else {
+    signals.push('STANDARD TYPOGRAPHY: Use text-4xl for hero, text-2xl for sections.')
+  }
+
+  // ── Layout complexity ────────────────────────────────────────────────────
+  const gridColMatches = html.match(/grid-cols-(?:[3-9]|1[0-2])|columns-(?:[3-9])|md:grid-cols-[3-9]/gi) ?? []
+  const sideBySlide = (html.match(/flex(?:\s+\w+)*\s+(?:items|justify)|md:flex|lg:flex/gi) ?? []).length
+
+  if (gridColMatches.length >= 3 || sideBySlide >= 6) {
+    signals.push('COMPLEX LAYOUTS: The original uses multi-column grids, side-by-side panels, and overlapping sections. Replicate this visual complexity — avoid simple stacked single-column sections.')
+  } else {
+    signals.push('STANDARD LAYOUTS: The original uses clean, structured layouts.')
+  }
+
+  // ── Glassmorphism / overlays ─────────────────────────────────────────────
+  if (/backdrop-blur|bg-(?:white|black)\/(?:[1-9]\d)|rgba\(\d+,\s*\d+,\s*\d+,\s*0\.\d/i.test(html)) {
+    signals.push('GLASS/TRANSPARENCY: The original uses glass-effect cards or semi-transparent overlays. Use backdrop-blur and bg-opacity utilities in your rebuild.')
+  }
+
+  return signals.join('\n')
+}
+
+/**
  * Strip a cloned page down to its structural skeleton.
  * Removes all content, scripts, styles, and attributes — keeps only
  * the tag hierarchy and class names so Gemini can see the exact layout.
@@ -228,22 +298,25 @@ export async function chatWithProjectStreamingGemini(
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n')
 
-  const systemPrompt = `You are an elite web designer. Your job is to take a cloned website's structure and rebuild it as a brand-new, launch-ready website for a different brand — same number of sections, same layout patterns, completely new content and styling.
+  const systemPrompt = `You are an elite web designer. Your job is to take a cloned website's structure and rebuild it as a brand-new, launch-ready website for a different brand.
+
+Your goal is HIGH VISUAL FIDELITY to the original site's design language — same layout complexity, same visual weight, same aesthetic feel — applied to a completely new brand.
 
 REQUIRED <head> setup:
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {
   theme: { extend: {
-    colors: { brand: { 50:'#fdf8f0', 100:'#f5e6c8', 300:'#c8956c', 500:'#8B5E3C', 700:'#5C3A1E', 900:'#2C1810' } },
-    fontFamily: { sans:['Inter','sans-serif'], display:['Playfair Display','serif'] }
+    colors: { brand: { 50:'#f0f9ff', 100:'#e0f2fe', 300:'#7dd3fc', 500:'#0ea5e9', 700:'#0369a1', 900:'#0c4a6e' } },
+    fontFamily: { sans:['Inter','sans-serif'], display:['Inter','sans-serif'] }
   }}
 }
 </script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
-Override the tailwind.config brand colors to match the requested brand palette.
+STYLE SIGNALS (FOLLOW THESE EXACTLY — they describe the original site's visual style):
+These rules override your defaults. Read them carefully and honour them.
 
 SECTION RULES:
 - Count every distinct section in the cloned HTML structure provided
@@ -252,21 +325,19 @@ SECTION RULES:
 - Match the layout pattern of each section (grid, split, full-width banner, cards, etc.)
 - Replace ALL content with new brand content — zero original text, logos, or images
 
-IMAGE RULES:
+IMAGE RULES (only use images if the original was image-heavy — see STYLE SIGNALS):
 - Background images: style="background-image:url('https://picsum.photos/seed/WORD/1920/1080')"
 - Content images: <img src="https://picsum.photos/seed/WORD/800/500" ...>
-- WORD must be a SINGLE lowercase English word with NO spaces — e.g.: coffee, espresso, barista, latte, cafe, beans, pastry, interior, workspace, team, product, city, people, office
+- WORD must be a SINGLE lowercase English word — e.g.: tech, software, team, office, city, product, code, design, startup
 - Use a DIFFERENT word for every image
 - Never use broken paths, data URIs, or empty src attributes
 
 QUALITY RULES:
 - Nav links: flex gap-8 — never let them run together without spacing
-- Hero: min-h-screen background image with overlay, font-display headline, two CTA buttons
-- Cards/sections: shadow-lg rounded-2xl, proper padding
+- Cards/sections: proper padding, consistent spacing
 - Buttons: transition-all duration-300 hover:opacity-90
-- Use brand-500/brand-700 for primary colors throughout
-- Font Awesome icons (fa-solid, fa-brands) where the original had icons
-- Original, compelling marketing copy — no Lorem ipsum, no placeholder text
+- Font Awesome icons where the original had icons
+- Original, compelling marketing copy — no Lorem ipsum
 - Fully mobile responsive with sm: md: lg: breakpoints
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
@@ -276,12 +347,22 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
     ? extractPageStructure(currentHtml)
     : 'No cloned HTML available — build a standard full-page landing site.'
 
+  const styleSignals = currentHtml.length > 200
+    ? extractStyleSignals(currentHtml)
+    : ''
+
   const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND TO BUILD FOR: ${userMessage}
 
-CLONED SITE STRUCTURE (use this as your section blueprint — replicate every section you see here):
+STYLE SIGNALS — Original site's visual characteristics (follow these precisely):
+${styleSignals || 'No style data available — use your best judgment.'}
+
+CLONED SITE STRUCTURE (use this as your section blueprint — replicate every section and layout pattern):
 ${pageStructure}
 
-Analyze the structure above, identify every section, then build the complete new website with identical section count and layout patterns but entirely new brand content.`
+Analyze the structure above, identify every section, then build the complete new website that:
+1. Matches the visual style described in STYLE SIGNALS (dark/light theme, image density, typography scale)
+2. Replicates every section with identical layout patterns
+3. Uses entirely new brand content appropriate for: ${userMessage}`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
@@ -355,22 +436,25 @@ export async function chatWithProjectGemini(
 
   if (isFirstMessage) {
     // ── FULL BRAND REBUILD ────────────────────────────────────────────────────
-    const systemPrompt = `You are an elite web designer. Your job is to take a cloned website's structure and rebuild it as a brand-new, launch-ready website for a different brand — same number of sections, same layout patterns, completely new content and styling.
+    const systemPrompt = `You are an elite web designer. Your job is to take a cloned website's structure and rebuild it as a brand-new, launch-ready website for a different brand.
+
+Your goal is HIGH VISUAL FIDELITY to the original site's design language — same layout complexity, same visual weight, same aesthetic feel — applied to a completely new brand.
 
 REQUIRED <head> setup:
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {
   theme: { extend: {
-    colors: { brand: { 50:'#fdf8f0', 100:'#f5e6c8', 300:'#c8956c', 500:'#8B5E3C', 700:'#5C3A1E', 900:'#2C1810' } },
-    fontFamily: { sans:['Inter','sans-serif'], display:['Playfair Display','serif'] }
+    colors: { brand: { 50:'#f0f9ff', 100:'#e0f2fe', 300:'#7dd3fc', 500:'#0ea5e9', 700:'#0369a1', 900:'#0c4a6e' } },
+    fontFamily: { sans:['Inter','sans-serif'], display:['Inter','sans-serif'] }
   }}
 }
 </script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
-Set tailwind.config brand colors to match the requested brand palette.
+STYLE SIGNALS (FOLLOW THESE EXACTLY — they describe the original site's visual style):
+These rules override your defaults. Read them carefully and honour them.
 
 SECTION RULES:
 - Count every distinct section in the cloned HTML structure provided
@@ -379,21 +463,19 @@ SECTION RULES:
 - Match the layout pattern of each section (grid, split, full-width banner, cards, etc.)
 - Replace ALL content with new brand content — zero original text, logos, or images
 
-IMAGE RULES:
+IMAGE RULES (only use images if the original was image-heavy — see STYLE SIGNALS):
 - Background images: style="background-image:url('https://picsum.photos/seed/WORD/1920/1080')"
 - Content images: <img src="https://picsum.photos/seed/WORD/800/500" ...>
-- WORD must be a SINGLE lowercase English word with NO spaces — e.g.: coffee, espresso, barista, latte, cafe, beans, pastry, interior, workspace, team, product, city, people, office
+- WORD must be a SINGLE lowercase English word — e.g.: tech, software, team, office, city, product, code, design, startup
 - Use a DIFFERENT word for every image
 - Never use broken paths, data URIs, or empty src attributes
 
 QUALITY RULES:
 - Nav links: flex gap-8 — never let them run together without spacing
-- Hero: min-h-screen background image with overlay, font-display headline, two CTA buttons
-- Cards/sections: shadow-lg rounded-2xl, proper padding
+- Cards/sections: proper padding, consistent spacing
 - Buttons: transition-all duration-300 hover:opacity-90
-- Use brand-500/brand-700 for primary colors throughout
-- Font Awesome icons (fa-solid, fa-brands) where the original had icons
-- Original, compelling marketing copy — no Lorem ipsum, no placeholder text
+- Font Awesome icons where the original had icons
+- Original, compelling marketing copy — no Lorem ipsum
 - Fully mobile responsive with sm: md: lg: breakpoints
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
@@ -402,12 +484,22 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
       ? extractPageStructure(currentHtml)
       : 'No cloned HTML available — build a standard full-page landing site.'
 
+    const styleSignals = currentHtml.length > 200
+      ? extractStyleSignals(currentHtml)
+      : ''
+
     const prompt = `BRAND TO BUILD FOR: ${userMessage}
 
-CLONED SITE STRUCTURE (use this as your section blueprint — replicate every section you see here):
+STYLE SIGNALS — Original site's visual characteristics (follow these precisely):
+${styleSignals || 'No style data available — use your best judgment.'}
+
+CLONED SITE STRUCTURE (use this as your section blueprint — replicate every section and layout pattern):
 ${pageStructure}
 
-Analyze the structure above, identify every section, then build the complete new website with identical section count and layout patterns but entirely new brand content.`
+Analyze the structure above, identify every section, then build the complete new website that:
+1. Matches the visual style described in STYLE SIGNALS (dark/light theme, image density, typography scale)
+2. Replicates every section with identical layout patterns
+3. Uses entirely new brand content appropriate for: ${userMessage}`
 
     const { text: fullHtml, tokensUsed } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
 

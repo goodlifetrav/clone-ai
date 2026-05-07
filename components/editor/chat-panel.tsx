@@ -200,16 +200,44 @@ export function ChatPanel({
 
       const { jobId } = await res.json() as { jobId: string }
 
-      // Poll /api/chat/status every 2 seconds until done or error
+      // Poll /api/chat/status every 2 seconds until done or error.
+      // Transient 5xx errors (502/503/504) are retried — only give up after
+      // 3 consecutive failures or a hard 4xx error.
       const aiMessage = await new Promise<{ text: string; messagesUsed: number }>((resolve, reject) => {
+        let consecutiveErrors = 0
+        const MAX_ERRORS = 5
+        const MAX_POLLS = 180 // 6 minutes max
+        let pollCount = 0
+
         const interval = setInterval(async () => {
+          pollCount++
+          if (pollCount > MAX_POLLS) {
+            clearInterval(interval)
+            reject(new Error('Generation timed out. Please try again.'))
+            return
+          }
+
           try {
             const poll = await fetch(`/api/chat/status?jobId=${jobId}`)
+
+            // Transient server errors — retry instead of immediately failing
+            if (poll.status >= 500) {
+              consecutiveErrors++
+              if (consecutiveErrors >= MAX_ERRORS) {
+                clearInterval(interval)
+                reject(new Error(`Server error (${poll.status}). Please try again.`))
+              }
+              return // keep polling
+            }
+
+            consecutiveErrors = 0 // reset on any non-5xx response
+
             if (!poll.ok) {
               clearInterval(interval)
               reject(new Error(`Status check failed (${poll.status})`))
               return
             }
+
             const data = await poll.json() as {
               status: string
               html?: string
@@ -234,8 +262,12 @@ export function ChatPanel({
             }
             resolve({ text: data.message || 'Done.', messagesUsed: data.messagesUsed ?? 0 })
           } catch (err) {
-            clearInterval(interval)
-            reject(err)
+            consecutiveErrors++
+            if (consecutiveErrors >= MAX_ERRORS) {
+              clearInterval(interval)
+              reject(err)
+            }
+            // else keep polling — network blip
           }
         }, 2000)
       })
