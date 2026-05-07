@@ -254,7 +254,7 @@ Build a completely new, original website using this layout as a template. Replac
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
     systemPrompt,
-    maxTokens: 65536,
+    maxTokens: 16000,
     onReset: () => { fullHtml = '' }, // clear on retry so no partial HTML bleeds through
     onChunk: (chunk) => {
       fullHtml += chunk

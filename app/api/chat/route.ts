@@ -116,6 +116,10 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        // Send an immediate keepalive so the proxy doesn't time out while
+        // we wait for Gemini to start streaming its first token
+        send({ status: 'thinking' })
+
         const { data: project } = await supabase
           .from('projects')
           .select('html_content')
