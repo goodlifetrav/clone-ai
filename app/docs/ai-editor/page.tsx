@@ -129,3 +129,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </section>
   )
 }
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="inline-flex items-center px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-xs font-mono text-neutral-700 dark:text-neutral-300">
+      {children}
+    </kbd>
+  )
+}
