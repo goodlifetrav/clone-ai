@@ -115,9 +115,11 @@ export async function POST(request: NextRequest) {
         } catch { /* client disconnected */ }
       }
 
+      // Send keepalive pings every 5 s so nginx doesn't 504 while waiting
+      // for Gemini's first token (same pattern streaming services use)
+      const keepalive = setInterval(() => send({ status: 'thinking' }), 5000)
+
       try {
-        // Send an immediate keepalive so the proxy doesn't time out while
-        // we wait for Gemini to start streaming its first token
         send({ status: 'thinking' })
 
         const { data: project } = await supabase
@@ -170,6 +172,7 @@ export async function POST(request: NextRequest) {
         reportError(err, 'POST /api/chat', { projectId })
         send({ error: error.message || 'Internal server error' })
       } finally {
+        clearInterval(keepalive)
         try { controller.close() } catch { /* already closed */ }
       }
     },

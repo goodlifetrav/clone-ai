@@ -81,11 +81,14 @@ OUTPUT: Complete redesigned HTML document only.`
         } catch { /* client disconnected */ }
       }
 
+      const keepalive = setInterval(() => send({ status: 'thinking' }), 5000)
+
       try {
+        send({ status: 'thinking' })
         let fullHtml = ''
 
         await generateTextStreaming(prompt, {
-          maxTokens: 65536,
+          maxTokens: 16000,
           onChunk: (chunk) => {
             fullHtml += chunk
             send({ htmlChunk: chunk })
@@ -120,6 +123,7 @@ OUTPUT: Complete redesigned HTML document only.`
         console.error('Rebuild error:', error)
         send({ error: error.message || 'Rebuild failed' })
       } finally {
+        clearInterval(keepalive)
         try { controller.close() } catch { /* already closed */ }
       }
     },
