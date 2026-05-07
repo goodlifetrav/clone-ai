@@ -220,27 +220,26 @@ export async function chatWithProjectStreamingGemini(
   // instead of actual HTML to avoid all parsing/token issues
   const pageSections = currentHtml.length > 100 ? detectPageSections(currentHtml) : 'navigation bar, hero section, features section, footer'
 
-  const systemPrompt = `You are an expert web designer. Build a complete multi-section landing page.
+  const systemPrompt = `You are an expert web designer. Build a complete, professional multi-section landing page using Tailwind CSS.
 
 RULES:
-1. MUST include ALL of these sections: nav, hero, features/benefits, testimonials or social proof, CTA or about, footer — minimum 6 sections
-2. Write the <style> block FIRST and keep it COMPACT — no animations, no keyframes, no overly complex selectors. Clean layout only.
-3. Professional design matching the brand colors and tone
-4. Images: use https://picsum.photos/seed/KEYWORD/1200/600 (replace KEYWORD with a relevant word)
-5. Real copy for every section — no placeholder text
-6. No external dependencies
-7. Output ONLY raw HTML starting with <!DOCTYPE html> — no markdown, no explanation`
+1. Use Tailwind CSS via CDN: <script src="https://cdn.tailwindcss.com"></script> in <head> — this handles ALL styling, write NO custom CSS
+2. MUST include ALL sections: sticky nav with logo, hero with headline + CTA, features/benefits grid, testimonials, about or CTA banner, footer
+3. Use Tailwind classes directly on elements for all styling — colors, spacing, typography, layout
+4. Images: use https://picsum.photos/seed/KEYWORD/1200/600 (replace KEYWORD with a relevant word like "coffee" or "interior")
+5. Write compelling original copy for every section — no placeholder text
+6. Output ONLY raw HTML starting with <!DOCTYPE html> and ending with </html> — no markdown, no explanation`
 
   const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Brand: ${userMessage}
 
-Sections detected from cloned site: ${pageSections}
+Page sections to include: ${pageSections}
 
-IMPORTANT: Write compact CSS, then build ALL sections completely. Do not stop early.`
+Build the complete page now using Tailwind CSS classes for all styling.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
     systemPrompt,
-    maxTokens: 65536,
+    maxTokens: 16000,
     onReset: () => { fullHtml = '' }, // clear on retry so no partial HTML bleeds through
     onChunk: (chunk) => {
       fullHtml += chunk

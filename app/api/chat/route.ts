@@ -142,8 +142,11 @@ export async function POST(request: NextRequest) {
             uploadedImageUrls
           ))
 
-        // Only persist to DB if we got a real HTML page back (guard against blank overwrites)
-        const isValidHtml = finalHtml.length > 500 && /<html/i.test(finalHtml)
+        // Only persist if we got a complete HTML document (not truncated CSS-only output)
+        const isValidHtml = finalHtml.length > 2000
+          && /<html/i.test(finalHtml)
+          && /<body/i.test(finalHtml)
+          && /<\/html>/i.test(finalHtml)
 
         await supabase.from('chat_messages').insert([
           { project_id: projectId, user_id: user.id, role: 'user', content: message },
