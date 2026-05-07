@@ -244,34 +244,35 @@ function extractStyleSignals(html: string): string {
 }
 
 /**
- * Strip a cloned page down to its structural skeleton.
- * Removes all content, scripts, styles, and attributes — keeps only
- * the tag hierarchy and class names so Gemini can see the exact layout.
+ * Produce a readable version of the cloned page for Gemini to analyze.
+ * Keeps ALL text content and headings (so Gemini can identify sections),
+ * keeps img alt text (describes what images show), strips scripts/styles/
+ * compiled class names and event handlers (they add noise, not signal).
+ *
+ * This is fundamentally different from the old skeleton approach:
+ * the old version stripped ALL text, leaving only meaningless compiled
+ * class names. Now Gemini reads the actual page content and does its own
+ * section identification — far more accurate than our regex heuristics.
  */
-function extractPageStructure(html: string): string {
-  let stripped = html
-    // Remove everything that isn't structure
+function extractContentHtml(html: string): string {
+  return html
+    // Remove noise — keep structure and text
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '<svg/>')
-    .replace(/<img\b[^>]*\/?>/gi, '<img/>')
     .replace(/<video\b[^>]*>[\s\S]*?<\/video>/gi, '<video/>')
     .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '<iframe/>')
     .replace(/<canvas\b[^>]*>[\s\S]*?<\/canvas>/gi, '<canvas/>')
     .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '')
-    // Strip non-class attributes (keep class so Gemini sees layout patterns)
-    .replace(/\s+(style|data-[a-z-]+|on\w+|aria-[a-z-]+|tabindex|id|name|value|placeholder|type|rel|target|href|src|alt|srcset|sizes|loading|decoding|fetchpriority|crossorigin|integrity|nonce)="[^"]*"/gi, '')
-    // Replace long text nodes with a marker
-    .replace(/>[^<]{25,}</g, '>[…]')
-    .replace(/<!--[\s\S]*?-->/g, '')
+    // Strip attributes that add noise but keep src/href/alt so Gemini
+    // knows where images are and what they show
+    .replace(/\s+(?:class|style|id|data-[a-z-]+|on\w+|aria-[a-z-]+|tabindex|name|value|type|rel|target|srcset|sizes|loading|decoding|fetchpriority|crossorigin|integrity|nonce)="[^"]*"/gi, '')
+    // Collapse whitespace
     .replace(/\s+/g, ' ')
     .trim()
-
-  // No artificial cap — send the full skeleton so Gemini sees every section.
-  // Gemini 2.5 Flash has a 1M token context window; even a 500KB skeleton
-  // is well within budget. Truncating was causing missed sections.
-  return stripped
+  // No size limit — Gemini 2.5 Flash has 1M token context.
+  // Truncating caused missed sections; send the full content.
 }
 
 /**
@@ -505,12 +506,8 @@ CTA SECTION:
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
-  const siteStructure = currentHtml.length > 200
-    ? describeSiteStructure(currentHtml)
-    : ''
-
-  const htmlSkeleton = currentHtml.length > 200
-    ? extractPageStructure(currentHtml)
+  const contentHtml = currentHtml.length > 200
+    ? extractContentHtml(currentHtml)
     : ''
 
   const styleSignals = currentHtml.length > 200
@@ -522,15 +519,17 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 ━━━ ORIGINAL SITE STYLE ━━━
 ${styleSignals || 'No style data — use your best judgment.'}
 
-━━━ SECTION LAYOUT ANALYSIS ━━━
-These are the detected sections and their layout types. Build every one in this order.
-${siteStructure || 'Could not detect sections — infer from HTML skeleton below.'}
+━━━ ORIGINAL SITE HTML ━━━
+The HTML below is the actual rendered content of the cloned site with scripts, styles, and noise removed. Read it carefully and:
+1. Identify EVERY section by its heading or content block
+2. Note the layout type of each (split text+image, image grid/mosaic, card grid, centered CTA, logo bar, testimonials, pricing, FAQ, etc.)
+3. Note whether the original is dark or light themed, image-heavy or text-heavy
+4. Build every single one — no skipping, no merging, no stopping early
 
-━━━ HTML SKELETON (section count reference) ━━━
-The skeleton below shows the exact tag hierarchy of the original. Count every distinct section and build all of them. Class names may be compiled/minified — use the SECTION LAYOUT ANALYSIS above to determine layout type for each.
-${htmlSkeleton || 'No HTML available.'}
+${contentHtml || 'No HTML available — build a full-featured landing page for the brand described.'}
 
-Build every single section listed above — no exceptions, no merging, no skipping. Long-form pages may have 20, 30, or more sections; build all of them. For SPLIT LAYOUT sections use flex rows with text and image side by side. For IMAGE MOSAIC build an actual image grid. Never substitute a simpler layout than what is specified.`
+━━━ REBUILD INSTRUCTIONS ━━━
+Now rebuild the complete site for the brand above. Match the exact section count, layout types, and visual complexity of the original. Long-form pages with 20-40 sections must have all 20-40 sections built. Do not stop early.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
@@ -674,12 +673,8 @@ CTA SECTION:
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
-    const siteStructure = currentHtml.length > 200
-      ? describeSiteStructure(currentHtml)
-      : ''
-
-    const htmlSkeleton = currentHtml.length > 200
-      ? extractPageStructure(currentHtml)
+    const contentHtml = currentHtml.length > 200
+      ? extractContentHtml(currentHtml)
       : ''
 
     const styleSignals = currentHtml.length > 200
@@ -691,15 +686,17 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 ━━━ ORIGINAL SITE STYLE ━━━
 ${styleSignals || 'No style data — use your best judgment.'}
 
-━━━ SECTION LAYOUT ANALYSIS ━━━
-These are the detected sections and their layout types. Build every one in this order.
-${siteStructure || 'Could not detect sections — infer from HTML skeleton below.'}
+━━━ ORIGINAL SITE HTML ━━━
+The HTML below is the actual rendered content of the cloned site with scripts, styles, and noise removed. Read it carefully and:
+1. Identify EVERY section by its heading or content block
+2. Note the layout type of each (split text+image, image grid/mosaic, card grid, centered CTA, logo bar, testimonials, pricing, FAQ, etc.)
+3. Note whether the original is dark or light themed, image-heavy or text-heavy
+4. Build every single one — no skipping, no merging, no stopping early
 
-━━━ HTML SKELETON (section count reference) ━━━
-The skeleton below shows the exact tag hierarchy of the original. Count every distinct section and build all of them. Class names may be compiled/minified — use the SECTION LAYOUT ANALYSIS above to determine layout type for each.
-${htmlSkeleton || 'No HTML available.'}
+${contentHtml || 'No HTML available — build a full-featured landing page for the brand described.'}
 
-Build every single section listed above — no exceptions, no merging, no skipping. Long-form pages may have 20, 30, or more sections; build all of them. For SPLIT LAYOUT sections use flex rows with text and image side by side. For IMAGE MOSAIC build an actual image grid. Never substitute a simpler layout than what is specified.`
+━━━ REBUILD INSTRUCTIONS ━━━
+Now rebuild the complete site for the brand above. Match the exact section count, layout types, and visual complexity of the original. Long-form pages with 20-40 sections must have all 20-40 sections built. Do not stop early.`
 
     const { text: fullHtml, tokensUsed } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
 
