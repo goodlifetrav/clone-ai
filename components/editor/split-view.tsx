@@ -415,7 +415,13 @@ export function SplitView({
                 <CodeEditor value={html} onChange={onHtmlChange} className="h-full" isStreaming={isGenerating} />
               )}
               {mobileTab === 'more' && moreContent === 'visual' && (
-                <VisualEditor onOpenRebuild={() => setShowBrandWizard(true)} className="h-full" />
+                <VisualEditor
+                  html={html ?? ''}
+                  hasBeenAiRebuilt={messages.length > 0}
+                  onHtmlChange={onHtmlChange}
+                  onOpenRebuild={() => setShowBrandWizard(true)}
+                  className="h-full"
+                />
               )}
               {mobileTab === 'more' && moreContent === 'history' && (
                 <VersionHistory
@@ -445,6 +451,9 @@ export function SplitView({
               )}
               {rightTab === 'visual' && (
                 <VisualEditor
+                  html={html ?? ''}
+                  hasBeenAiRebuilt={messages.length > 0}
+                  onHtmlChange={onHtmlChange}
                   onOpenRebuild={() => setShowBrandWizard(true)}
                   className="h-full"
                 />
