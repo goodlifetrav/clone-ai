@@ -81,7 +81,7 @@ OUTPUT: Complete redesigned HTML document only.`
         } catch { /* client disconnected */ }
       }
 
-      const keepalive = setInterval(() => send({ status: 'thinking' }), 5000)
+      const keepalive = setInterval(() => send({ status: 'thinking' }), 3000)
 
       try {
         send({ status: 'thinking' })
@@ -133,7 +133,8 @@ OUTPUT: Complete redesigned HTML document only.`
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
     },
   })
 }

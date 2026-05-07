@@ -186,11 +186,10 @@ export function ChatPanel({
         }),
       })
 
-      // Pre-stream JSON errors (limit reached etc.) come back as non-SSE JSON
-      const contentType = res.headers.get('content-type') ?? ''
-      if (!contentType.includes('text/event-stream')) {
+      // Handle pre-flight JSON errors (limit reached, auth, etc.)
+      if (!res.ok) {
         let data: Record<string, unknown> = {}
-        try { data = await res.json() } catch { /* response was HTML/non-JSON */ }
+        try { data = await res.json() } catch { /* ignore */ }
         if (data.chatLimitReached) {
           setShowUpgradeModal(true)
           onMessagesChange(messages)
@@ -199,73 +198,60 @@ export function ChatPanel({
         throw new Error((data.error as string) || `Server error (${res.status})`)
       }
 
-      // Read the SSE stream
-      const reader = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let aiMessage = ''
-      let newMessagesUsed: number | null = null
+      const { jobId } = await res.json() as { jobId: string }
 
-      outer: while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const text = line.slice(6).trim()
-          if (!text) continue
-
-          let event: Record<string, unknown>
-          try { event = JSON.parse(text) } catch { continue }
-
-          if (event._debug) {
-            console.log('[chat debug]', event._debug)
-          }
-
-          if (event.htmlChunk) {
-            // Stream partial HTML into the editor in real time
-            onHtmlChange(event.htmlChunk as string)
-          }
-
-          if (event.done) {
-            aiMessage = event.message as string
-            newMessagesUsed = event.messagesUsed as number
-            // Final HTML (fully parsed and cleaned) replaces the partial
-            if (event.html) {
-              onHtmlChange(event.html as string)
-              onSaveVersion?.(event.html as string)
+      // Poll /api/chat/status every 2 seconds until done or error
+      const aiMessage = await new Promise<{ text: string; messagesUsed: number }>((resolve, reject) => {
+        const interval = setInterval(async () => {
+          try {
+            const poll = await fetch(`/api/chat/status?jobId=${jobId}`)
+            if (!poll.ok) {
+              clearInterval(interval)
+              reject(new Error(`Status check failed (${poll.status})`))
+              return
             }
-            break outer
-          }
+            const data = await poll.json() as {
+              status: string
+              html?: string
+              message?: string
+              messagesUsed?: number
+              error?: string
+            }
 
-          if (event.chatLimitReached) {
-            setShowUpgradeModal(true)
-            onMessagesChange(messages)
-            return
-          }
+            if (data.status === 'pending') return // still generating — keep polling
 
-          if (event.error) {
-            throw new Error(event.error as string)
+            clearInterval(interval)
+
+            if (data.status === 'error') {
+              reject(new Error(data.error || 'Generation failed'))
+              return
+            }
+
+            // status === 'done'
+            if (data.html) {
+              onHtmlChange(data.html)
+              onSaveVersion?.(data.html)
+            }
+            resolve({ text: data.message || 'Done.', messagesUsed: data.messagesUsed ?? 0 })
+          } catch (err) {
+            clearInterval(interval)
+            reject(err)
           }
-        }
-      }
+        }, 2000)
+      })
 
       const assistantMessage: ChatMessage = {
         id: crypto.randomUUID(),
         project_id: projectId,
         user_id: '',
         role: 'assistant',
-        content: aiMessage || 'Done.',
+        content: aiMessage.text,
         created_at: new Date().toISOString(),
       }
       onMessagesChange([...newMessages, assistantMessage])
 
-      if (newMessagesUsed !== null && chatLimit !== null) {
-        setMessagesUsed(newMessagesUsed)
+      if (chatLimit !== null) {
+        setMessagesUsed(aiMessage.messagesUsed)
       }
     } catch (err) {
       const errorMessage: ChatMessage = {

@@ -11,7 +11,8 @@ import { reportError } from '@/lib/error-report'
 const SSE_HEADERS = {
   'Content-Type': 'text/event-stream',
   'Cache-Control': 'no-cache',
-  Connection: 'keep-alive',
+  'Connection': 'keep-alive',
+  'X-Accel-Buffering': 'no',
 }
 
 export async function GET(

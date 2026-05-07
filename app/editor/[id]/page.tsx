@@ -26,6 +26,7 @@ export default function EditorPage() {
     updateHtml,
     saveVersion,
     restoreVersion,
+    refetchVersions,
   } = useProject(id)
 
   useEffect(() => {
@@ -99,6 +100,7 @@ export default function EditorPage() {
       onMessagesChange={setMessages}
       onSaveVersion={saveVersion}
       onRestoreVersion={restoreVersion}
+      onRefetchVersions={refetchVersions}
     />
   )
 }

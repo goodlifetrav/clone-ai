@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
-import { chatWithProjectStreamingGemini } from '@/lib/gemini'
+import { chatWithProjectGemini } from '@/lib/gemini'
 import { isAdminEmail } from '@/lib/admin'
 import { reportError } from '@/lib/error-report'
+import { createJob, completeJob, failJob } from '@/lib/chat-jobs'
 
 const FREE_CHAT_LIMIT = 2
 
@@ -39,15 +40,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const encoder = new TextEncoder()
-
-  // All pre-checks run before the stream opens so we can still return JSON
-  // errors for limit-reached cases (the client handles those specially).
+  // ── Auth & input validation ──────────────────────────────────────────────
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { projectId, message, imageBase64, imageMimeType, uploadedImageUrls } = body
+  const { projectId, message, uploadedImageUrls } = body
 
   if (!projectId || !message) {
     return NextResponse.json({ error: 'projectId and message are required' }, { status: 400 })
@@ -65,6 +63,7 @@ export async function POST(request: NextRequest) {
 
   const adminOverride = user.is_admin || isAdminEmail(user.email)
 
+  // ── Usage limit checks ───────────────────────────────────────────────────
   if (user.plan === 'free' && !adminOverride) {
     if ((user.free_chats_used ?? 0) >= FREE_CHAT_LIMIT) {
       return NextResponse.json(
@@ -91,13 +90,20 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const { data: chatHistory } = await supabase
-    .from('chat_messages')
-    .select('role, content')
-    .eq('project_id', projectId)
-    .order('created_at', { ascending: true })
-    .limit(20)
+  // ── Fetch current state ──────────────────────────────────────────────────
+  const [{ data: project }, { data: chatHistory }] = await Promise.all([
+    supabase.from('projects').select('html_content').eq('id', projectId).single(),
+    supabase
+      .from('chat_messages')
+      .select('role, content')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true })
+      .limit(20),
+  ])
 
+  // Only use stored HTML as blueprint if it's a real HTML document — not garbage from a failed generation
+  const raw = project?.html_content ?? ''
+  const currentHtml = raw.length > 500 && /<html/i.test(raw) ? raw : ''
   const chatMessages = [
     ...(chatHistory || []).map((m) => ({
       role: m.role as 'user' | 'assistant',
@@ -106,87 +112,75 @@ export async function POST(request: NextRequest) {
     { role: 'user' as const, content: message },
   ]
 
-  // ── Streaming SSE response ───────────────────────────────────────────────
-  const stream = new ReadableStream({
-    async start(controller) {
-      function send(data: Record<string, unknown>) {
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-        } catch { /* client disconnected */ }
-      }
+  // ── Create job and start background generation ───────────────────────────
+  // Return the jobId immediately — no nginx timeout risk.
+  // The generation continues in the background on the Node.js event loop.
+  const jobId = crypto.randomUUID()
+  createJob(jobId, projectId)
 
-      // Send keepalive pings every 5 s so nginx doesn't 504 while waiting
-      // for Gemini's first token (same pattern streaming services use)
-      const keepalive = setInterval(() => send({ status: 'thinking' }), 3000)
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+  runChatJob(jobId, projectId, currentHtml, chatMessages, uploadedImageUrls, user, adminOverride, message)
 
-      try {
-        send({ status: 'thinking' })
+  return NextResponse.json({ jobId })
+}
 
-        const { data: project } = await supabase
-          .from('projects')
-          .select('html_content')
-          .eq('id', projectId)
-          .single()
+// ── Background job ───────────────────────────────────────────────────────────
+async function runChatJob(
+  jobId: string,
+  projectId: string,
+  currentHtml: string,
+  chatMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  uploadedImageUrls: string[] | undefined,
+  user: { id: string; plan: string; tokens_used: number; free_chats_used: number | null },
+  adminOverride: boolean,
+  originalMessage: string
+) {
+  const supabase = createServiceClient()
 
-        const currentHtml = project?.html_content ?? ''
+  try {
+    const { html: finalHtml, message: finalMessage, tokensUsed } =
+      await chatWithProjectGemini(currentHtml, chatMessages, uploadedImageUrls)
 
-        let finalHtml = currentHtml
-        let finalMessage = ''
-        let tokensUsed = 0
+    const isValidHtml =
+      finalHtml.length > 2000 &&
+      /<html/i.test(finalHtml) &&
+      /<body/i.test(finalHtml) &&
+      /<\/html>/i.test(finalHtml)
 
-        ;({ html: finalHtml, message: finalMessage, tokensUsed } =
-          await chatWithProjectStreamingGemini(
-            currentHtml,
-            chatMessages,
-            (partialHtml) => send({ htmlChunk: partialHtml }),
-            uploadedImageUrls
-          ))
+    // Persist chat messages
+    await supabase.from('chat_messages').insert([
+      { project_id: projectId, user_id: user.id, role: 'user', content: originalMessage },
+      { project_id: projectId, user_id: user.id, role: 'assistant', content: finalMessage },
+    ])
 
-        // Only persist if we got a complete HTML document (not truncated CSS-only output)
-        const isValidHtml = finalHtml.length > 2000
-          && /<html/i.test(finalHtml)
-          && /<body/i.test(finalHtml)
-          && /<\/html>/i.test(finalHtml)
+    // Only save HTML to DB if it's a complete valid document
+    if (isValidHtml) {
+      await supabase
+        .from('projects')
+        .update({ html_content: finalHtml, updated_at: new Date().toISOString() })
+        .eq('id', projectId)
+    }
 
-        await supabase.from('chat_messages').insert([
-          { project_id: projectId, user_id: user.id, role: 'user', content: message },
-          { project_id: projectId, user_id: user.id, role: 'assistant', content: finalMessage },
-        ])
+    // Update token usage
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const userUpdate: Record<string, any> = { tokens_used: user.tokens_used + tokensUsed }
+    let newFreeChatsUsed = user.free_chats_used ?? 0
+    if (user.plan === 'free' && !adminOverride) {
+      newFreeChatsUsed += 1
+      userUpdate.free_chats_used = newFreeChatsUsed
+    }
+    await supabase.from('users').update(userUpdate).eq('id', user.id)
 
-        if (isValidHtml) {
-          await supabase
-            .from('projects')
-            .update({ html_content: finalHtml, updated_at: new Date().toISOString() })
-            .eq('id', projectId)
-        }
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const userUpdate: Record<string, any> = { tokens_used: user.tokens_used + tokensUsed }
-        let newFreeChatsUsed = user.free_chats_used ?? 0
-        if (user.plan === 'free' && !adminOverride) {
-          newFreeChatsUsed += 1
-          userUpdate.free_chats_used = newFreeChatsUsed
-        }
-        await supabase.from('users').update(userUpdate).eq('id', user.id)
-
-        send({ done: true, html: finalHtml, message: finalMessage, messagesUsed: newFreeChatsUsed })
-      } catch (err) {
-        const error = err as Error
-        console.error('Chat stream error:', error)
-        reportError(err, 'POST /api/chat', { projectId })
-        send({ error: error.message || 'Internal server error' })
-      } finally {
-        clearInterval(keepalive)
-        try { controller.close() } catch { /* already closed */ }
-      }
-    },
-  })
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    },
-  })
+    completeJob(
+      jobId,
+      isValidHtml ? finalHtml : currentHtml,
+      isValidHtml ? finalMessage : 'Could not generate a complete page. Please try again.',
+      newFreeChatsUsed
+    )
+  } catch (err) {
+    const error = err as Error
+    console.error('[chat job error]', error)
+    reportError(err, 'POST /api/chat background job', { projectId })
+    failJob(jobId, error.message || 'Generation failed. Please try again.')
+  }
 }

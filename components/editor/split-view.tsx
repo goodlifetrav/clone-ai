@@ -55,6 +55,7 @@ interface SplitViewProps {
   onMessagesChange: (messages: ChatMessage[]) => void
   onSaveVersion: (html?: string) => void
   onRestoreVersion: (version: ProjectVersion) => void
+  onRefetchVersions?: () => void
 }
 
 export function SplitView({
@@ -66,6 +67,7 @@ export function SplitView({
   onMessagesChange,
   onSaveVersion,
   onRestoreVersion,
+  onRefetchVersions,
 }: SplitViewProps) {
   const [rightTab, setRightTab] = useState<RightTab>('preview')
   const [mobileTab, setMobileTab] = useState<MobileTab>('preview')
@@ -355,7 +357,7 @@ export function SplitView({
             {rightTabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setRightTab(tab.id)}
+                onClick={() => { setRightTab(tab.id); if (tab.id === 'versions') onRefetchVersions?.() }}
                 className={cn(
                   'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors flex-shrink-0',
                   rightTab === tab.id
@@ -525,6 +527,7 @@ export function SplitView({
                   setMoreContent('history')
                   setRightTab('versions')
                   setShowMoreSheet(false)
+                  onRefetchVersions?.()
                 }}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
               >

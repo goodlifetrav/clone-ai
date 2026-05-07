@@ -144,8 +144,15 @@ function injectLinkInterceptor(html: string): string {
   return baseTag + html + script
 }
 
+function isValidHtmlDocument(html: string): boolean {
+  if (!html || html.length < 100) return false
+  const trimmed = html.trimStart()
+  return /^<!doctype\s+html/i.test(trimmed) || /^<html/i.test(trimmed)
+}
+
 export function PreviewPane({ projectId, html, className = '' }: PreviewPaneProps) {
-  const safeHtml = html ? injectLinkInterceptor(html) : html
+  const valid = isValidHtmlDocument(html)
+  const safeHtml = valid ? injectLinkInterceptor(html) : html
 
   return (
     <div className={`relative flex flex-col h-full ${className}`}>
@@ -172,12 +179,24 @@ export function PreviewPane({ projectId, html, className = '' }: PreviewPaneProp
 
       {/* Preview iframe */}
       <div className="flex-1 min-h-0">
-        <iframe
-          srcDoc={safeHtml}
-          className="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin"
-          title="Preview"
-        />
+        {valid ? (
+          <iframe
+            srcDoc={safeHtml}
+            className="w-full h-full border-0"
+            sandbox="allow-scripts allow-same-origin"
+            title="Preview"
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-center px-6 gap-3">
+            <div className="w-12 h-12 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+              <ExternalLink className="w-5 h-5 text-neutral-400" />
+            </div>
+            <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">Preview not available</p>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 max-w-xs">
+              The last AI generation didn&apos;t produce valid HTML. Use the AI chat to generate a new version.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -174,24 +174,36 @@ export async function generateText(
  * Streams the response chunk-by-chunk so the editor updates in real time.
  */
 /**
- * Detect the rough section structure of a cloned page so we can tell Gemini
- * what kind of layout to produce — without sending any actual HTML content.
+ * Strip a cloned page down to its structural skeleton.
+ * Removes all content, scripts, styles, and attributes — keeps only
+ * the tag hierarchy and class names so Gemini can see the exact layout.
  */
-function detectPageSections(html: string): string {
-  const lower = html.toLowerCase()
-  const sections: string[] = ['navigation bar']
+function extractPageStructure(html: string): string {
+  let stripped = html
+    // Remove everything that isn't structure
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '<svg/>')
+    .replace(/<img\b[^>]*\/?>/gi, '<img/>')
+    .replace(/<video\b[^>]*>[\s\S]*?<\/video>/gi, '<video/>')
+    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '<iframe/>')
+    .replace(/<canvas\b[^>]*>[\s\S]*?<\/canvas>/gi, '<canvas/>')
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    // Strip non-class attributes (keep class so Gemini sees layout patterns)
+    .replace(/\s+(style|data-[a-z-]+|on\w+|aria-[a-z-]+|tabindex|id|name|value|placeholder|type|rel|target|href|src|alt|srcset|sizes|loading|decoding|fetchpriority|crossorigin|integrity|nonce)="[^"]*"/gi, '')
+    // Replace long text nodes with a marker
+    .replace(/>[^<]{25,}</g, '>[…]')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 
-  if (/hero|banner|jumbotron|headline/.test(lower)) sections.push('hero section with headline and CTA button')
-  if (/feature|benefit|why us|how it works/.test(lower)) sections.push('features or benefits section')
-  if (/testimonial|review|customer|quote/.test(lower)) sections.push('testimonials or social proof section')
-  if (/pricing|plan|tier|subscription/.test(lower)) sections.push('pricing section')
-  if (/faq|frequently asked|question/.test(lower)) sections.push('FAQ section')
-  if (/team|about|our story|who we are/.test(lower)) sections.push('about or team section')
-  if (/blog|article|post|news/.test(lower)) sections.push('blog or news section')
-  if (/contact|get in touch|reach us/.test(lower)) sections.push('contact section')
-  if (/footer/.test(lower)) sections.push('footer with links and copyright')
+  // Cap at 24KB to stay well inside the input token budget
+  if (stripped.length > 24000) {
+    stripped = stripped.slice(0, 24000) + '\n[…structure truncated…]'
+  }
 
-  return sections.join(', ')
+  return stripped
 }
 
 export async function chatWithProjectStreamingGemini(
@@ -211,35 +223,70 @@ export async function chatWithProjectStreamingGemini(
   const historyContext = messages.slice(-7, -1)
     .filter((m) => {
       const c = m.content.toLowerCase()
-      return !c.startsWith('error:') && !c.includes('could not parse') && !c.includes('could not apply')
+      return !c.startsWith('error:') && !c.includes('could not parse') && !c.includes('could not apply') && !c.includes('could not generate')
     })
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n')
 
-  // Detect what sections the cloned page had — send a plain-text description
-  // instead of actual HTML to avoid all parsing/token issues
-  const pageSections = currentHtml.length > 100 ? detectPageSections(currentHtml) : 'navigation bar, hero section, features section, footer'
+  const systemPrompt = `You are an elite web designer. Your job is to take a cloned website's structure and rebuild it as a brand-new, launch-ready website for a different brand — same number of sections, same layout patterns, completely new content and styling.
 
-  const systemPrompt = `You are an expert web designer. Build a complete, professional multi-section landing page using Tailwind CSS.
+REQUIRED <head> setup:
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: { extend: {
+    colors: { brand: { 50:'#fdf8f0', 100:'#f5e6c8', 300:'#c8956c', 500:'#8B5E3C', 700:'#5C3A1E', 900:'#2C1810' } },
+    fontFamily: { sans:['Inter','sans-serif'], display:['Playfair Display','serif'] }
+  }}
+}
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
-RULES:
-1. Use Tailwind CSS via CDN: <script src="https://cdn.tailwindcss.com"></script> in <head> — this handles ALL styling, write NO custom CSS
-2. MUST include ALL sections: sticky nav with logo, hero with headline + CTA, features/benefits grid, testimonials, about or CTA banner, footer
-3. Use Tailwind classes directly on elements for all styling — colors, spacing, typography, layout
-4. Images: use https://picsum.photos/seed/KEYWORD/1200/600 (replace KEYWORD with a relevant word like "coffee" or "interior")
-5. Write compelling original copy for every section — no placeholder text
-6. Output ONLY raw HTML starting with <!DOCTYPE html> and ending with </html> — no markdown, no explanation`
+Override the tailwind.config brand colors to match the requested brand palette.
 
-  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Brand: ${userMessage}
+SECTION RULES:
+- Count every distinct section in the cloned HTML structure provided
+- Build EVERY one of them — do not skip, merge, or drop any section
+- Match the section ORDER from the original
+- Match the layout pattern of each section (grid, split, full-width banner, cards, etc.)
+- Replace ALL content with new brand content — zero original text, logos, or images
 
-Page sections to include: ${pageSections}
+IMAGE RULES:
+- Background images: style="background-image:url('https://picsum.photos/seed/WORD/1920/1080')"
+- Content images: <img src="https://picsum.photos/seed/WORD/800/500" ...>
+- WORD must be a SINGLE lowercase English word with NO spaces — e.g.: coffee, espresso, barista, latte, cafe, beans, pastry, interior, workspace, team, product, city, people, office
+- Use a DIFFERENT word for every image
+- Never use broken paths, data URIs, or empty src attributes
 
-Build the complete page now using Tailwind CSS classes for all styling.`
+QUALITY RULES:
+- Nav links: flex gap-8 — never let them run together without spacing
+- Hero: min-h-screen background image with overlay, font-display headline, two CTA buttons
+- Cards/sections: shadow-lg rounded-2xl, proper padding
+- Buttons: transition-all duration-300 hover:opacity-90
+- Use brand-500/brand-700 for primary colors throughout
+- Font Awesome icons (fa-solid, fa-brands) where the original had icons
+- Original, compelling marketing copy — no Lorem ipsum, no placeholder text
+- Fully mobile responsive with sm: md: lg: breakpoints
+
+Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
+
+  // Use the actual HTML structure as the blueprint — this is what drives section count
+  const pageStructure = currentHtml.length > 200
+    ? extractPageStructure(currentHtml)
+    : 'No cloned HTML available — build a standard full-page landing site.'
+
+  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND TO BUILD FOR: ${userMessage}
+
+CLONED SITE STRUCTURE (use this as your section blueprint — replicate every section you see here):
+${pageStructure}
+
+Analyze the structure above, identify every section, then build the complete new website with identical section count and layout patterns but entirely new brand content.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
     systemPrompt,
-    maxTokens: 16000,
+    maxTokens: 65536,
     onReset: () => { fullHtml = '' }, // clear on retry so no partial HTML bleeds through
     onChunk: (chunk) => {
       fullHtml += chunk
@@ -262,10 +309,10 @@ Build the complete page now using Tailwind CSS classes for all styling.`
   if (htmlStart > 0) fullHtml = fullHtml.slice(htmlStart)
   fullHtml = fullHtml.replace(/\n?```\s*$/, '').trim()
 
-  if (!fullHtml || !/<html/i.test(fullHtml)) {
+  if (!fullHtml || !/<html/i.test(fullHtml) || !/<\/html>/i.test(fullHtml)) {
     return {
       html: currentHtml,
-      message: 'Could not apply the changes. Please try again.',
+      message: 'Could not generate a complete page. Please try again.',
       tokensUsed,
     }
   }
@@ -275,6 +322,105 @@ Build the complete page now using Tailwind CSS classes for all styling.`
     message: 'Done.',
     tokensUsed,
   }
+}
+
+/**
+ * Non-streaming brand rebuild — used by the background job pattern.
+ * Waits for the full Gemini response before returning, so there are no
+ * streaming timeouts or partial-HTML issues.
+ */
+export async function chatWithProjectGemini(
+  currentHtml: string,
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  uploadedImageUrls?: string[]
+): Promise<{ html: string; message: string; tokensUsed: number }> {
+  const lastUserMessage = messages[messages.length - 1]
+
+  const hasUploadedImages = uploadedImageUrls && uploadedImageUrls.length > 0
+  const userMessage = hasUploadedImages
+    ? `${lastUserMessage.content}\n\nUploaded image URLs: ${uploadedImageUrls!.join(', ')}`
+    : lastUserMessage.content
+
+  const historyContext = messages.slice(-7, -1)
+    .filter((m) => {
+      const c = m.content.toLowerCase()
+      return !c.startsWith('error:') && !c.includes('could not parse') && !c.includes('could not apply') && !c.includes('could not generate')
+    })
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n')
+
+  const systemPrompt = `You are an elite web designer. Your job is to take a cloned website's structure and rebuild it as a brand-new, launch-ready website for a different brand — same number of sections, same layout patterns, completely new content and styling.
+
+REQUIRED <head> setup:
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: { extend: {
+    colors: { brand: { 50:'#fdf8f0', 100:'#f5e6c8', 300:'#c8956c', 500:'#8B5E3C', 700:'#5C3A1E', 900:'#2C1810' } },
+    fontFamily: { sans:['Inter','sans-serif'], display:['Playfair Display','serif'] }
+  }}
+}
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+Set tailwind.config brand colors to match the requested brand palette.
+
+SECTION RULES:
+- Count every distinct section in the cloned HTML structure provided
+- Build EVERY one of them — do not skip, merge, or drop any section
+- Match the section ORDER from the original
+- Match the layout pattern of each section (grid, split, full-width banner, cards, etc.)
+- Replace ALL content with new brand content — zero original text, logos, or images
+
+IMAGE RULES:
+- Background images: style="background-image:url('https://picsum.photos/seed/WORD/1920/1080')"
+- Content images: <img src="https://picsum.photos/seed/WORD/800/500" ...>
+- WORD must be a SINGLE lowercase English word with NO spaces — e.g.: coffee, espresso, barista, latte, cafe, beans, pastry, interior, workspace, team, product, city, people, office
+- Use a DIFFERENT word for every image
+- Never use broken paths, data URIs, or empty src attributes
+
+QUALITY RULES:
+- Nav links: flex gap-8 — never let them run together without spacing
+- Hero: min-h-screen background image with overlay, font-display headline, two CTA buttons
+- Cards/sections: shadow-lg rounded-2xl, proper padding
+- Buttons: transition-all duration-300 hover:opacity-90
+- Use brand-500/brand-700 for primary colors throughout
+- Font Awesome icons (fa-solid, fa-brands) where the original had icons
+- Original, compelling marketing copy — no Lorem ipsum, no placeholder text
+- Fully mobile responsive with sm: md: lg: breakpoints
+
+Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
+
+  const pageStructure = currentHtml.length > 200
+    ? extractPageStructure(currentHtml)
+    : 'No cloned HTML available — build a standard full-page landing site.'
+
+  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND TO BUILD FOR: ${userMessage}
+
+CLONED SITE STRUCTURE (use this as your section blueprint — replicate every section you see here):
+${pageStructure}
+
+Analyze the structure above, identify every section, then build the complete new website with identical section count and layout patterns but entirely new brand content.`
+
+  const { text: fullHtml, tokensUsed } = await generateText(prompt, {
+    systemPrompt,
+    maxTokens: 65536,
+  })
+
+  const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
+    ? fullHtml.search(/<!DOCTYPE html/i)
+    : fullHtml.search(/<html/i)
+
+  const cleaned = htmlStart >= 0
+    ? fullHtml.slice(htmlStart).replace(/\n?```\s*$/, '').trim()
+    : fullHtml.replace(/\n?```\s*$/, '').trim()
+
+  if (!cleaned || !/<html/i.test(cleaned) || !/<\/html>/i.test(cleaned)) {
+    return { html: currentHtml, message: 'Could not generate a complete page. Please try again.', tokensUsed }
+  }
+
+  return { html: cleaned, message: 'Done.', tokensUsed }
 }
 
 export function isGeminiConfigured(): boolean {

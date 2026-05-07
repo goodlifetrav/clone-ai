@@ -63,17 +63,20 @@ export default function DashboardPage() {
 
   const fetchAll = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 12000)
     try {
       const [projRes, folderRes] = await Promise.all([
-        fetch('/api/projects'),
-        fetch('/api/folders'),
+        fetch('/api/projects', { signal: controller.signal }),
+        fetch('/api/folders', { signal: controller.signal }),
       ])
       const [projData, folderData] = await Promise.all([projRes.json(), folderRes.json()])
       setProjects(projData.projects || [])
       setFolders(folderData.folders || [])
     } catch {
-      // silently fail
+      // silently fail — loading will still be cleared in finally
     } finally {
+      clearTimeout(timeout)
       if (!silent) setLoading(false)
     }
   }, [])

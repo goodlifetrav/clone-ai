@@ -238,5 +238,6 @@ export function useProject(projectId: string) {
     saveVersion,
     restoreVersion,
     refetch: fetchProject,
+    refetchVersions: fetchVersions,
   }
 }
