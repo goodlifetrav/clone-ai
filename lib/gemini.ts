@@ -238,10 +238,11 @@ CRITICAL RULES:
 1. Use the provided HTML skeleton as a LAYOUT TEMPLATE ONLY — keep the same sections, navigation pattern, and overall structure
 2. Replace ALL original text, images, colors, and branding with fresh content based on the user's instructions
 3. Remove every trace of the original site — different brand name, different copy, different color scheme
-4. Write clean, modern HTML with all CSS in a <style> tag — no external CDN links, no scripts that reference the original site
-5. Make it fully responsive for mobile and desktop
-6. Output ONLY the complete HTML document starting with <!DOCTYPE html> — no markdown, no code fences, no explanation
-7. Never use markdown syntax like **text** inside HTML — use proper tags like <strong>`
+4. Write clean, modern HTML — put ALL CSS inside a single <style> tag in the <head>, BEFORE the <body> tag
+5. The <style> tag must be complete and closed before writing any <body> content
+6. Make it fully responsive for mobile and desktop with good visual design — colors, fonts, spacing, layout
+7. Output ONLY the complete HTML document starting with <!DOCTYPE html> — no markdown, no code fences, no explanation
+8. Never use markdown syntax like **text** inside HTML — use proper HTML tags like <strong>`
 
   const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Here is the layout structure of the cloned website to use as a template:
 
@@ -254,7 +255,7 @@ Build a completely new, original website using this layout as a template. Replac
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
     systemPrompt,
-    maxTokens: 16000,
+    maxTokens: 24000,
     onReset: () => { fullHtml = '' }, // clear on retry so no partial HTML bleeds through
     onChunk: (chunk) => {
       fullHtml += chunk
