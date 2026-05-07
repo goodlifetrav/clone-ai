@@ -145,16 +145,20 @@ export async function POST(request: NextRequest) {
         // Debug info sent to client console (temporary)
         send({ _debug: { finalHtmlLength: finalHtml.length, finalHtmlStart: finalHtml.slice(0, 200) } })
 
-        // Persist to DB
+        // Only persist to DB if we got a real HTML page back (guard against blank overwrites)
+        const isValidHtml = finalHtml.length > 500 && /<html/i.test(finalHtml)
+
         await supabase.from('chat_messages').insert([
           { project_id: projectId, user_id: user.id, role: 'user', content: message },
           { project_id: projectId, user_id: user.id, role: 'assistant', content: finalMessage },
         ])
 
-        await supabase
-          .from('projects')
-          .update({ html_content: finalHtml, updated_at: new Date().toISOString() })
-          .eq('id', projectId)
+        if (isValidHtml) {
+          await supabase
+            .from('projects')
+            .update({ html_content: finalHtml, updated_at: new Date().toISOString() })
+            .eq('id', projectId)
+        }
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userUpdate: Record<string, any> = { tokens_used: user.tokens_used + tokensUsed }
