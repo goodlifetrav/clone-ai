@@ -66,6 +66,18 @@ function buildImagePrompt(brand: BrandContext, alt: string, index: number): stri
   ].join(' ')
 }
 
+/** Build a fallback Unsplash photo URL when AI image generation fails. */
+function buildFallbackUrl(brand: BrandContext, alt: string, index: number): string {
+  // Use alt text keywords, falling back to brand description
+  const keyword = (alt || brand.brandDescription || brand.brandName)
+    .split(/\s+/)
+    .slice(0, 3)
+    .join(',')
+  const sizes = ['1200x800', '1200x675', '800x600']
+  const size = sizes[index] ?? '1200x800'
+  return `https://picsum.photos/seed/${encodeURIComponent(keyword + index)}/${size.replace('x', '/')}`
+}
+
 /**
  * Generate brand images with Gemini and inject them into the HTML.
  * Uploads generated images to Supabase Storage and replaces <img> src attributes.
@@ -118,6 +130,9 @@ export async function injectBrandImages(
 
       if (uploadError) {
         console.error('[image-injection] upload error:', uploadError)
+        const fallback = buildFallbackUrl(brand, alt, i)
+        const newTag = fullTag.replace(src, fallback)
+        updatedHtml = updatedHtml.replace(fullTag, newTag)
         continue
       }
 
@@ -128,7 +143,10 @@ export async function injectBrandImages(
       updatedHtml = updatedHtml.replace(fullTag, newTag)
     } catch (err) {
       console.error(`[image-injection] failed for image ${i}:`, err)
-      // Continue — skip this image rather than failing the whole rebuild
+      // Fallback to a relevant stock photo so the page doesn't show broken images
+      const fallback = buildFallbackUrl(brand, alt, i)
+      const newTag = fullTag.replace(src, fallback)
+      updatedHtml = updatedHtml.replace(fullTag, newTag)
     }
   }
 

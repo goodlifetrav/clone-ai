@@ -239,7 +239,7 @@ Build a complete, professional landing page for this brand. Output only the HTML
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
     systemPrompt,
-    maxTokens: 24000,
+    maxTokens: 32000,
     onReset: () => { fullHtml = '' }, // clear on retry so no partial HTML bleeds through
     onChunk: (chunk) => {
       fullHtml += chunk
