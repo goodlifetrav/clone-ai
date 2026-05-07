@@ -330,13 +330,26 @@ function describeSiteStructure(html: string): string {
   let m: RegExpExecArray | null
   while ((m = secRegex.exec(cleaned)) !== null) sectionMatches.push(m[0])
 
-  // Framer and many modern sites don't use <section> — detect large div blocks instead
+  // Framer and many modern sites don't use <section> — detect by h2/h3 headings instead.
+  // Each major content section almost always has a heading, so split around them.
   if (sectionMatches.length < 2) {
-    // Split body content into large chunks by double-div patterns at reasonable depth
     const bodyContent = cleaned.replace(/[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*/i, '')
-    const chunks = bodyContent.split(/(?=<div\b[^>]{0,200}>(?:<div\b|<section\b|<header\b|<footer\b))/i)
-    for (const chunk of chunks) {
-      if (chunk.length > 400) sectionMatches.push(chunk.slice(0, 8000))
+    // Split around h2 or h3 tags — each heading marks a new section
+    const headingChunks = bodyContent.split(/(?=<h[23]\b)/i)
+    for (const chunk of headingChunks) {
+      if (chunk.length > 200) sectionMatches.push(chunk.slice(0, 8000))
+    }
+  }
+
+  // Last resort: split by large content blocks if still fewer than 3 sections
+  if (sectionMatches.length < 3) {
+    const bodyContent = cleaned.replace(/[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*/i, '')
+    // Every ~3000 chars is roughly one viewport section on a typical long page
+    for (let i = 0; i < bodyContent.length; i += 3000) {
+      const chunk = bodyContent.slice(i, i + 3000)
+      if (chunk.length > 500 && /<(?:h[1-6]|p|img|button)\b/i.test(chunk)) {
+        sectionMatches.push(chunk)
+      }
     }
   }
 
@@ -495,7 +508,11 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 
   const siteStructure = currentHtml.length > 200
     ? describeSiteStructure(currentHtml)
-    : 'No cloned HTML available — build a standard full-page landing site.'
+    : ''
+
+  const htmlSkeleton = currentHtml.length > 200
+    ? extractPageStructure(currentHtml)
+    : ''
 
   const styleSignals = currentHtml.length > 200
     ? extractStyleSignals(currentHtml)
@@ -506,11 +523,15 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 ━━━ ORIGINAL SITE STYLE ━━━
 ${styleSignals || 'No style data — use your best judgment.'}
 
-━━━ ORIGINAL SITE STRUCTURE ━━━
-Build every section below in order. Match each layout type precisely using the rules in your instructions.
-${siteStructure}
+━━━ SECTION LAYOUT ANALYSIS ━━━
+These are the detected sections and their layout types. Build every one in this order.
+${siteStructure || 'Could not detect sections — infer from HTML skeleton below.'}
 
-Build the complete site now. Match the visual complexity of the original — if it had SPLIT LAYOUT sections, build split layouts. If it had IMAGE MOSAIC, build image mosaics. Do NOT simplify sections into plain text cards.`
+━━━ HTML SKELETON (section count reference) ━━━
+The skeleton below shows the exact tag hierarchy of the original. Count every distinct section and build all of them. Class names may be compiled/minified — use the SECTION LAYOUT ANALYSIS above to determine layout type for each.
+${htmlSkeleton || 'No HTML available.'}
+
+CRITICAL: Build the site now with ALL sections. For every section marked SPLIT LAYOUT in the analysis above, you MUST build a flex row with large text one side and image the other — do NOT substitute a card grid. If IMAGE MOSAIC is listed, build a grid of images — do NOT substitute centered text.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
@@ -654,7 +675,11 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 
     const siteStructure = currentHtml.length > 200
       ? describeSiteStructure(currentHtml)
-      : 'No cloned HTML available — build a standard full-page landing site.'
+      : ''
+
+    const htmlSkeleton = currentHtml.length > 200
+      ? extractPageStructure(currentHtml)
+      : ''
 
     const styleSignals = currentHtml.length > 200
       ? extractStyleSignals(currentHtml)
@@ -665,11 +690,15 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 ━━━ ORIGINAL SITE STYLE ━━━
 ${styleSignals || 'No style data — use your best judgment.'}
 
-━━━ ORIGINAL SITE STRUCTURE ━━━
-Build every section below in order. Match each layout type precisely using the rules in your instructions.
-${siteStructure}
+━━━ SECTION LAYOUT ANALYSIS ━━━
+These are the detected sections and their layout types. Build every one in this order.
+${siteStructure || 'Could not detect sections — infer from HTML skeleton below.'}
 
-Build the complete site now. Match the visual complexity of the original — if it had SPLIT LAYOUT sections, build split layouts. If it had IMAGE MOSAIC, build image mosaics. Do NOT simplify sections into plain text cards.`
+━━━ HTML SKELETON (section count reference) ━━━
+The skeleton below shows the exact tag hierarchy of the original. Count every distinct section and build all of them. Class names may be compiled/minified — use the SECTION LAYOUT ANALYSIS above to determine layout type for each.
+${htmlSkeleton || 'No HTML available.'}
+
+CRITICAL: Build the site now with ALL sections. For every section marked SPLIT LAYOUT in the analysis above, you MUST build a flex row with large text one side and image the other — do NOT substitute a card grid. If IMAGE MOSAIC is listed, build a grid of images — do NOT substitute centered text.`
 
     const { text: fullHtml, tokensUsed } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
 
