@@ -174,33 +174,24 @@ export async function generateText(
  * Streams the response chunk-by-chunk so the editor updates in real time.
  */
 /**
- * Strip a cloned HTML page down to its structural skeleton so Gemini can use
- * it as a layout template without being constrained by the original content or
- * running into output-token limits trying to reproduce a massive site verbatim.
+ * Detect the rough section structure of a cloned page so we can tell Gemini
+ * what kind of layout to produce — without sending any actual HTML content.
  */
-function extractHtmlStructure(html: string, maxChars = 25000): string {
-  let result = html
-  // Strip scripts — use greedy inner match to handle </script> inside string literals
-  result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-  // Strip styles (not needed in a structural skeleton)
-  result = result.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-  result = result.replace(/<!--[\s\S]*?-->/g, '')
-  result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
-  result = result.replace(/<svg\b(?![^>]*\b(?:title|aria-label)\b)[^>]*>[\s\S]*?<\/svg>/gi, '')
-  // Remove long orphaned text nodes — these are usually JS code that leaked through
-  // script stripping (e.g. when a script contained </script> in a string literal)
-  result = result.replace(/>([^<]{150,})</g, '><')
-  // Keep only layout-relevant attributes
-  const ALLOWED = new Set(['class', 'id', 'style', 'src', 'href', 'rel', 'type'])
-  result = result.replace(/<([a-z][a-z0-9-]*)(\s[^>]*)?(\/?)>/gi, (_m, tag: string, attrStr: string | undefined, sc: string) => {
-    if (!attrStr) return `<${tag}${sc}>`
-    const kept = (attrStr.match(/\b([a-z][a-z0-9:-]*)=(?:"[^"]*"|'[^']*'|[^\s>/]+)/gi) ?? [])
-      .filter((a) => ALLOWED.has(a.split('=')[0].toLowerCase().trim()))
-    return `<${tag}${kept.length ? ' ' + kept.join(' ') : ''}${sc}>`
-  })
-  result = result.replace(/\s+/g, ' ').trim()
-  if (result.length > maxChars) result = result.slice(0, maxChars) + '…'
-  return result
+function detectPageSections(html: string): string {
+  const lower = html.toLowerCase()
+  const sections: string[] = ['navigation bar']
+
+  if (/hero|banner|jumbotron|headline/.test(lower)) sections.push('hero section with headline and CTA button')
+  if (/feature|benefit|why us|how it works/.test(lower)) sections.push('features or benefits section')
+  if (/testimonial|review|customer|quote/.test(lower)) sections.push('testimonials or social proof section')
+  if (/pricing|plan|tier|subscription/.test(lower)) sections.push('pricing section')
+  if (/faq|frequently asked|question/.test(lower)) sections.push('FAQ section')
+  if (/team|about|our story|who we are/.test(lower)) sections.push('about or team section')
+  if (/blog|article|post|news/.test(lower)) sections.push('blog or news section')
+  if (/contact|get in touch|reach us/.test(lower)) sections.push('contact section')
+  if (/footer/.test(lower)) sections.push('footer with links and copyright')
+
+  return sections.join(', ')
 }
 
 export async function chatWithProjectStreamingGemini(
@@ -225,32 +216,25 @@ export async function chatWithProjectStreamingGemini(
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n')
 
-  // Use the structural skeleton as a layout template — this keeps token count
-  // manageable and lets Gemini generate fresh original content (no copyright issues)
-  const structureHtml = extractHtmlStructure(currentHtml)
-  console.log('[chat] currentHtml length:', currentHtml.length)
-  console.log('[chat] structureHtml length:', structureHtml.length)
-  console.log('[chat] structureHtml preview:', structureHtml.slice(0, 500))
+  // Detect what sections the cloned page had — send a plain-text description
+  // instead of actual HTML to avoid all parsing/token issues
+  const pageSections = currentHtml.length > 100 ? detectPageSections(currentHtml) : 'navigation bar, hero section, features section, footer'
 
-  const systemPrompt = `You are an expert web designer. You will receive the structural skeleton of a cloned website and the user's brand/content instructions. Your job is to build a completely NEW, original website inspired by that structure.
+  const systemPrompt = `You are an expert web designer who builds beautiful, modern landing pages. Build a complete, original website based on the user's brand description.
 
-CRITICAL RULES:
-1. Use the provided HTML skeleton as a LAYOUT TEMPLATE ONLY — keep the same sections, navigation pattern, and overall structure
-2. Replace ALL original text, images, colors, and branding with fresh content based on the user's instructions
-3. Remove every trace of the original site — different brand name, different copy, different color scheme
-4. Write clean, modern HTML — put ALL CSS inside a single <style> tag in the <head>, BEFORE the <body> tag
-5. The <style> tag must be complete and closed before writing any <body> content
-6. Make it fully responsive for mobile and desktop with good visual design — colors, fonts, spacing, layout
-7. Output ONLY the complete HTML document starting with <!DOCTYPE html> — no markdown, no code fences, no explanation
-8. Never use markdown syntax like **text** inside HTML — use proper HTML tags like <strong>`
+RULES:
+1. Build a full, multi-section landing page with professional design
+2. Put ALL CSS in a single <style> tag in the <head> — complete it fully before writing the <body>
+3. Use modern design: clean typography, proper spacing, responsive layout, attractive color scheme matching the brand
+4. Include these sections: ${pageSections}
+5. Write original copy tailored to the brand — no placeholder text
+6. No external dependencies, no CDN links — fully self-contained HTML
+7. Output ONLY the complete HTML document starting with <!DOCTYPE html>
+8. No markdown, no code fences, no explanation before or after the HTML`
 
-  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Here is the layout structure of the cloned website to use as a template:
+  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Brand/content instructions: ${userMessage}
 
-${structureHtml}
-
-User's brand/content instructions: ${userMessage}
-
-Build a completely new, original website using this layout as a template. Replace all content with fresh original content. Output the complete HTML document.`
+Build a complete, professional landing page for this brand. Output only the HTML document.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
