@@ -80,6 +80,7 @@ export function SplitView({
   // isGenerating covers the chat streaming case managed locally.
   const [chatGenerating, setChatGenerating] = useState(false)
   const [showBrandWizard, setShowBrandWizard] = useState(false)
+  const [showBrandBanner, setShowBrandBanner] = useState(false)
   const [showMoreSheet, setShowMoreSheet] = useState(false)
   const [moreContent, setMoreContent] = useState<'visual' | 'history' | null>(null)
   const rebuildHtmlRef = useRef('')
@@ -101,8 +102,8 @@ export function SplitView({
       setMobileTab('preview')
     }
     if (curr === 'complete' && (prev === 'processing' || prev === 'pending')) {
-      setRightTab('visual')
-      setShowBrandWizard(true)
+      setRightTab('preview')
+      setShowBrandBanner(true)
     }
     prevStatusRef.current = curr
   }, [project.status])
@@ -369,6 +370,30 @@ export function SplitView({
           </div>
 
           {/* Brand Rebuild discovery banner — shown after clone completes */}
+          {showBrandBanner && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-4 py-3 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 w-[calc(100%-2rem)] max-w-sm">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center flex-shrink-0">
+                <Sparkles className="w-4 h-4 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-neutral-900 dark:text-white">Clone ready — now make it yours.</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">Rebuild with your brand colors, logo & copy</p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => { setShowBrandWizard(true); setShowBrandBanner(false) }}
+                className="text-xs h-7 px-3 bg-purple-600 hover:bg-purple-500 text-white border-0 flex-shrink-0"
+              >
+                Rebuild →
+              </Button>
+              <button
+                onClick={() => setShowBrandBanner(false)}
+                className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 flex-shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Right content — two stacked absolute layers:
               1. Mobile layer (sm:hidden): always shows PreviewPane, swaps to
