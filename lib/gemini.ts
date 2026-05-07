@@ -268,11 +268,9 @@ function extractPageStructure(html: string): string {
     .replace(/\s+/g, ' ')
     .trim()
 
-  // Cap at 24KB to stay well inside the input token budget
-  if (stripped.length > 24000) {
-    stripped = stripped.slice(0, 24000) + '\n[…structure truncated…]'
-  }
-
+  // No artificial cap — send the full skeleton so Gemini sees every section.
+  // Gemini 2.5 Flash has a 1M token context window; even a 500KB skeleton
+  // is well within budget. Truncating was causing missed sections.
   return stripped
 }
 
@@ -306,7 +304,7 @@ function describeSiteStructure(html: string): string {
   // Grab the first large block that contains an h1 or very large text
   const heroMatch = cleaned.match(/<(?:header|section|div)\b[^>]*>[\s\S]{100,}/i)
   if (heroMatch) {
-    const heroSlice = heroMatch[0].slice(0, 6000)
+    const heroSlice = heroMatch[0].slice(0, 15000)
     const h1 = heroSlice.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? ''
     const h1Text = getText(h1).slice(0, 60)
     const imgCount = (heroSlice.match(/<img\b/gi) ?? []).length
@@ -334,17 +332,15 @@ function describeSiteStructure(html: string): string {
   // Each major content section almost always has a heading, so split around them.
   if (sectionMatches.length < 2) {
     const bodyContent = cleaned.replace(/[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*/i, '')
-    // Split around h2 or h3 tags — each heading marks a new section
     const headingChunks = bodyContent.split(/(?=<h[23]\b)/i)
     for (const chunk of headingChunks) {
-      if (chunk.length > 200) sectionMatches.push(chunk.slice(0, 8000))
+      if (chunk.length > 200) sectionMatches.push(chunk) // no size cap — full section content
     }
   }
 
-  // Last resort: split by large content blocks if still fewer than 3 sections
+  // Last resort: split by content blocks if still fewer than 3 sections
   if (sectionMatches.length < 3) {
     const bodyContent = cleaned.replace(/[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*/i, '')
-    // Every ~3000 chars is roughly one viewport section on a typical long page
     for (let i = 0; i < bodyContent.length; i += 3000) {
       const chunk = bodyContent.slice(i, i + 3000)
       if (chunk.length > 500 && /<(?:h[1-6]|p|img|button)\b/i.test(chunk)) {
@@ -353,8 +349,9 @@ function describeSiteStructure(html: string): string {
     }
   }
 
+  // No section count cap — build every single section no matter how many
   let secNum = 1
-  for (const sec of sectionMatches.slice(0, 12)) {
+  for (const sec of sectionMatches) {
     const imgCount = (sec.match(/<img\b/gi) ?? []).length
     const bgImgCount = (sec.match(/background-image/gi) ?? []).length
     const totalImgs = imgCount + bgImgCount
@@ -502,7 +499,9 @@ CTA SECTION:
 - All buttons: px-6 py-3 rounded-full font-semibold transition-all duration-300
 - Fully mobile responsive — sm: md: lg: breakpoints on every section
 - Original compelling copy — no Lorem ipsum
-- Build EVERY section listed in SITE STRUCTURE — do not skip any
+- Build EVERY section listed in SITE STRUCTURE — all of them, no exceptions.
+  Long pages have 20-40 sections. Build all 20-40. Do not stop early.
+  Do not merge sections. Do not skip sections. Output the complete page.
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
@@ -531,7 +530,7 @@ ${siteStructure || 'Could not detect sections — infer from HTML skeleton below
 The skeleton below shows the exact tag hierarchy of the original. Count every distinct section and build all of them. Class names may be compiled/minified — use the SECTION LAYOUT ANALYSIS above to determine layout type for each.
 ${htmlSkeleton || 'No HTML available.'}
 
-CRITICAL: Build the site now with ALL sections. For every section marked SPLIT LAYOUT in the analysis above, you MUST build a flex row with large text one side and image the other — do NOT substitute a card grid. If IMAGE MOSAIC is listed, build a grid of images — do NOT substitute centered text.`
+Build every single section listed above — no exceptions, no merging, no skipping. Long-form pages may have 20, 30, or more sections; build all of them. For SPLIT LAYOUT sections use flex rows with text and image side by side. For IMAGE MOSAIC build an actual image grid. Never substitute a simpler layout than what is specified.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
@@ -669,7 +668,9 @@ CTA SECTION:
 - All buttons: px-6 py-3 rounded-full font-semibold transition-all duration-300
 - Fully mobile responsive — sm: md: lg: breakpoints on every section
 - Original compelling copy — no Lorem ipsum
-- Build EVERY section listed in SITE STRUCTURE — do not skip any
+- Build EVERY section listed in SITE STRUCTURE — all of them, no exceptions.
+  Long pages have 20-40 sections. Build all 20-40. Do not stop early.
+  Do not merge sections. Do not skip sections. Output the complete page.
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
@@ -698,7 +699,7 @@ ${siteStructure || 'Could not detect sections — infer from HTML skeleton below
 The skeleton below shows the exact tag hierarchy of the original. Count every distinct section and build all of them. Class names may be compiled/minified — use the SECTION LAYOUT ANALYSIS above to determine layout type for each.
 ${htmlSkeleton || 'No HTML available.'}
 
-CRITICAL: Build the site now with ALL sections. For every section marked SPLIT LAYOUT in the analysis above, you MUST build a flex row with large text one side and image the other — do NOT substitute a card grid. If IMAGE MOSAIC is listed, build a grid of images — do NOT substitute centered text.`
+Build every single section listed above — no exceptions, no merging, no skipping. Long-form pages may have 20, 30, or more sections; build all of them. For SPLIT LAYOUT sections use flex rows with text and image side by side. For IMAGE MOSAIC build an actual image grid. Never substitute a simpler layout than what is specified.`
 
     const { text: fullHtml, tokensUsed } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
 
