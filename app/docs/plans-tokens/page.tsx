@@ -28,9 +28,9 @@ export default function PlansTokensPage() {
           As a rough guide:
         </p>
         <ul>
-          <li>A simple text change on a small page: ~1,000–3,000 tokens</li>
-          <li>A layout change on a medium page: ~3,000–8,000 tokens</li>
-          <li>A full-page redesign or major restructure: ~10,000–20,000 tokens</li>
+          <li>A targeted follow-up edit (color change, text update, single section): ~5,000–15,000 tokens</li>
+          <li>A full AI Brand Rebuild or first-message generation: ~50,000–70,000 tokens</li>
+          <li>Visual Editor changes (inline text and image edits): 0 tokens — always free</li>
         </ul>
         <p>
           Token usage resets at the start of each billing period (monthly).
@@ -47,9 +47,9 @@ export default function PlansTokensPage() {
           :
         </p>
         <ul>
-          <li><strong>Small — $5</strong> — 30,000 tokens</li>
-          <li><strong>Medium — $10</strong> — 70,000 tokens</li>
-          <li><strong>Large — $25</strong> — 200,000 tokens</li>
+          <li><strong>Small — $5</strong> — 500,000 tokens (~7 full rebuilds)</li>
+          <li><strong>Medium — $10</strong> — 1,500,000 tokens (~21 full rebuilds)</li>
+          <li><strong>Large — $25</strong> — 4,000,000 tokens (~57 full rebuilds)</li>
         </ul>
         <p>
           Token packs are additive — they extend your current period's allowance and don't roll
@@ -105,9 +105,9 @@ export default function PlansTokensPage() {
 
 function PlanTable() {
   const plans = [
-    { name: 'Free', price: '$0', clones: '1 / mo', tokens: '10,000 / mo', domains: '—', packs: '—' },
-    { name: 'Pro', price: '$10 / mo', clones: '20 / mo', tokens: '100,000 / mo', domains: '✓', packs: '✓' },
-    { name: 'Agency', price: '$30 / mo', clones: '60 / mo', tokens: '300,000 / mo', domains: '✓', packs: '✓' },
+    { name: 'Free', price: '$0', clones: '1 / mo', tokens: '75,000 / mo', domains: '—', packs: '—' },
+    { name: 'Pro', price: '$19 / mo', clones: '20 / mo', tokens: '2,000,000 / mo', domains: '✓', packs: '✓' },
+    { name: 'Agency', price: '$49 / mo', clones: '60 / mo', tokens: '6,000,000 / mo', domains: '✓', packs: '✓' },
   ]
 
   return (

@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 
   if (!adminOverride) {
     const TOKEN_LIMITS: Record<string, number> = {
-      free: 10000, starter: 40000, pro: 100000, growth: 200000, max: 400000,
+      free: 75000, starter: 500000, pro: 2000000, growth: 5000000, max: 10000000, agency: 6000000,
     }
     const limit = TOKEN_LIMITS[user.plan] || 10000
     if (user.tokens_used >= limit) {

@@ -29,7 +29,7 @@ const PLANS: PricingPlan[] = [
     description: 'Get started for free',
     features: [
       '1 page clone',
-      '10K AI tokens',
+      '75K AI tokens',
       'Live preview',
       'Download ZIP',
       'Community support',
@@ -44,7 +44,7 @@ const PLANS: PricingPlan[] = [
     highlighted: true,
     features: [
       '20 page clones/month',
-      '100K AI tokens/month',
+      '2M AI tokens/month',
       'AI Brand Rebuild',
       'Version history',
       'Custom domain',
@@ -62,7 +62,7 @@ const PLANS: PricingPlan[] = [
     features: [
       'Everything in Pro',
       '60 page clones/month',
-      '300K AI tokens/month',
+      '6M AI tokens/month',
       'Priority support',
       'Buy extra tokens',
     ],
