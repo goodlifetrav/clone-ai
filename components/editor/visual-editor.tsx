@@ -168,9 +168,11 @@ const EDIT_SCRIPT = `<script id="__ve__">
 
   // ── Click ────────────────────────────────────────────────────────────────
   document.addEventListener('click',function(e){
+    // Always block navigation — nothing in the visual editor should navigate the iframe
+    e.preventDefault();
+    e.stopPropagation();
     // Image click → open image editor
     if(e.target.tagName==='IMG'){
-      e.preventDefault();e.stopPropagation();
       if(active)saveAndExit();
       showImageEditor(e.target);
       return;
@@ -182,7 +184,6 @@ const EDIT_SCRIPT = `<script id="__ve__">
     }
     var el=findTextEl(e.target);
     if(!el){saveAndExit();return;}
-    e.preventDefault();e.stopPropagation();
     if(active&&active!==el)saveAndExit();
     active=el;
     el.contentEditable='true';
@@ -273,13 +274,17 @@ export function VisualEditor({
           {' '}to save.
         </span>
       </div>
-      <div className="flex-1 min-h-0">
-        <iframe
-          srcDoc={editableHtml}
-          className="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin"
-          title="Visual Editor"
-        />
+      {/* Outer div scrolls; inner div forces desktop width so responsive nav stays visible */}
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div style={{ minWidth: 1280 }}>
+          <iframe
+            srcDoc={editableHtml}
+            className="border-0"
+            style={{ width: '1280px', height: '100%', minHeight: '100vh' }}
+            sandbox="allow-scripts allow-same-origin"
+            title="Visual Editor"
+          />
+        </div>
       </div>
     </div>
   )
