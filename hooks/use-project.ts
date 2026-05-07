@@ -61,9 +61,14 @@ export function useProject(projectId: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ html_content: content }),
       })
-      if (res.ok) await fetchVersions()
-    } catch {
-      // silently fail
+      if (res.ok) {
+        await fetchVersions()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        console.error('[saveVersion] failed', res.status, err)
+      }
+    } catch (err) {
+      console.error('[saveVersion] exception', err)
     }
   }, [project, projectId, fetchVersions])
 

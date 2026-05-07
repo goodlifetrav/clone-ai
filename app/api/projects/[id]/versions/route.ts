@@ -60,10 +60,14 @@ export async function POST(
       .select()
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      console.error('[versions POST] supabase error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
     return NextResponse.json({ version })
   } catch (err) {
+    console.error('[versions POST] exception:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
