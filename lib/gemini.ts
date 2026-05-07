@@ -341,15 +341,21 @@ export async function chatWithProjectGemini(
     ? `${lastUserMessage.content}\n\nUploaded image URLs: ${uploadedImageUrls!.join(', ')}`
     : lastUserMessage.content
 
-  const historyContext = messages.slice(-7, -1)
-    .filter((m) => {
-      const c = m.content.toLowerCase()
-      return !c.startsWith('error:') && !c.includes('could not parse') && !c.includes('could not apply') && !c.includes('could not generate')
-    })
+  const cleanHistory = messages.slice(-7, -1).filter((m) => {
+    const c = m.content.toLowerCase()
+    return !c.startsWith('error:') && !c.includes('could not parse') && !c.includes('could not apply') && !c.includes('could not generate')
+  })
+
+  const historyContext = cleanHistory
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n')
 
-  const systemPrompt = `You are an elite web designer. Your job is to take a cloned website's structure and rebuild it as a brand-new, launch-ready website for a different brand — same number of sections, same layout patterns, completely new content and styling.
+  // First message = full brand rebuild. Follow-up messages = surgical edits only.
+  const isFirstMessage = cleanHistory.length === 0
+
+  if (isFirstMessage) {
+    // ── FULL BRAND REBUILD ────────────────────────────────────────────────────
+    const systemPrompt = `You are an elite web designer. Your job is to take a cloned website's structure and rebuild it as a brand-new, launch-ready website for a different brand — same number of sections, same layout patterns, completely new content and styling.
 
 REQUIRED <head> setup:
 <script src="https://cdn.tailwindcss.com"></script>
@@ -392,35 +398,70 @@ QUALITY RULES:
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
-  const pageStructure = currentHtml.length > 200
-    ? extractPageStructure(currentHtml)
-    : 'No cloned HTML available — build a standard full-page landing site.'
+    const pageStructure = currentHtml.length > 200
+      ? extractPageStructure(currentHtml)
+      : 'No cloned HTML available — build a standard full-page landing site.'
 
-  const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND TO BUILD FOR: ${userMessage}
+    const prompt = `BRAND TO BUILD FOR: ${userMessage}
 
 CLONED SITE STRUCTURE (use this as your section blueprint — replicate every section you see here):
 ${pageStructure}
 
 Analyze the structure above, identify every section, then build the complete new website with identical section count and layout patterns but entirely new brand content.`
 
-  const { text: fullHtml, tokensUsed } = await generateText(prompt, {
-    systemPrompt,
-    maxTokens: 65536,
-  })
+    const { text: fullHtml, tokensUsed } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
 
-  const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
-    ? fullHtml.search(/<!DOCTYPE html/i)
-    : fullHtml.search(/<html/i)
+    const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
+      ? fullHtml.search(/<!DOCTYPE html/i)
+      : fullHtml.search(/<html/i)
 
-  const cleaned = htmlStart >= 0
-    ? fullHtml.slice(htmlStart).replace(/\n?```\s*$/, '').trim()
-    : fullHtml.replace(/\n?```\s*$/, '').trim()
+    const cleaned = htmlStart >= 0
+      ? fullHtml.slice(htmlStart).replace(/\n?```\s*$/, '').trim()
+      : fullHtml.replace(/\n?```\s*$/, '').trim()
 
-  if (!cleaned || !/<html/i.test(cleaned) || !/<\/html>/i.test(cleaned)) {
-    return { html: currentHtml, message: 'Could not generate a complete page. Please try again.', tokensUsed }
+    if (!cleaned || !/<html/i.test(cleaned) || !/<\/html>/i.test(cleaned)) {
+      return { html: currentHtml, message: 'Could not generate a complete page. Please try again.', tokensUsed }
+    }
+
+    return { html: cleaned, message: 'Done.', tokensUsed }
+
+  } else {
+    // ── SURGICAL EDIT ─────────────────────────────────────────────────────────
+    const systemPrompt = `You are a precise HTML editor. The user wants to make specific changes to an existing webpage.
+
+CRITICAL RULES:
+- Make ONLY the changes the user explicitly requests — nothing else
+- Do NOT change fonts, colors, layout, content, or anything not mentioned
+- Do NOT "improve" or "clean up" anything that wasn't asked about
+- Preserve every class, style, attribute, and element exactly as-is except where changed
+- If the user says "change X to Y", change only X — leave all other instances of similar things untouched unless they explicitly say "all"
+- If the user says "change all X to Y", change every instance of X
+
+Output ONLY the complete raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
+
+    const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}CURRENT HTML:
+${currentHtml}
+
+USER REQUEST: ${userMessage}
+
+Apply ONLY the requested change(s) to the HTML above and return the complete modified page.`
+
+    const { text: fullHtml, tokensUsed } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
+
+    const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
+      ? fullHtml.search(/<!DOCTYPE html/i)
+      : fullHtml.search(/<html/i)
+
+    const cleaned = htmlStart >= 0
+      ? fullHtml.slice(htmlStart).replace(/\n?```\s*$/, '').trim()
+      : fullHtml.replace(/\n?```\s*$/, '').trim()
+
+    if (!cleaned || !/<html/i.test(cleaned) || !/<\/html>/i.test(cleaned)) {
+      return { html: currentHtml, message: 'Could not apply the change. Please try again.', tokensUsed }
+    }
+
+    return { html: cleaned, message: 'Done.', tokensUsed }
   }
-
-  return { html: cleaned, message: 'Done.', tokensUsed }
 }
 
 export function isGeminiConfigured(): boolean {
