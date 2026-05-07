@@ -81,6 +81,8 @@ export function SplitView({
   const [chatGenerating, setChatGenerating] = useState(false)
   const [showBrandWizard, setShowBrandWizard] = useState(false)
   const [showBrandBanner, setShowBrandBanner] = useState(false)
+  // True once any AI rebuild (wizard or chat) has completed for this project
+  const [hasBeenRebuilt, setHasBeenRebuilt] = useState(messages.length > 0)
   const [showMoreSheet, setShowMoreSheet] = useState(false)
   const [moreContent, setMoreContent] = useState<'visual' | 'history' | null>(null)
   const rebuildHtmlRef = useRef('')
@@ -127,6 +129,7 @@ export function SplitView({
       setRightTab('code')
       setMobileTab('preview')
     } else {
+      setHasBeenRebuilt(true)
       setRightTab('preview')
     }
   }, [])
@@ -415,7 +418,7 @@ export function SplitView({
               {mobileTab === 'more' && moreContent === 'visual' && (
                 <VisualEditor
                   html={html ?? ''}
-                  hasBeenAiRebuilt={messages.length > 0}
+                  hasBeenAiRebuilt={hasBeenRebuilt}
                   onHtmlChange={onHtmlChange}
                   onOpenRebuild={() => setShowBrandWizard(true)}
                   className="h-full"
@@ -450,7 +453,7 @@ export function SplitView({
               {rightTab === 'visual' && (
                 <VisualEditor
                   html={html ?? ''}
-                  hasBeenAiRebuilt={messages.length > 0}
+                  hasBeenAiRebuilt={hasBeenRebuilt}
                   onHtmlChange={onHtmlChange}
                   onOpenRebuild={() => setShowBrandWizard(true)}
                   className="h-full"
@@ -563,6 +566,7 @@ export function SplitView({
           onRebuildComplete={(finalHtml) => {
             onHtmlChange(finalHtml)
             setChatGenerating(false)
+            setHasBeenRebuilt(true)
             setRightTab('preview')
             onSaveVersion(finalHtml)
           }}
