@@ -11,78 +11,93 @@ export default function AiEditorPage() {
     <article className="max-w-none">
       <h1 className="text-3xl font-bold text-neutral-900 dark:text-white mb-2">AI Editor</h1>
       <p className="text-neutral-500 dark:text-neutral-400 mt-0 mb-8 text-base">
-        Customize any part of your clone using plain English.
+        Three ways to customize your page — AI Chat, Visual Editor, and the Brand Wizard.
       </p>
 
-      <Section title="How it works">
+      <Section title="Brand Wizard">
         <p>
-          The editor splits into two panels: the AI chat on the left and a live preview on the
-          right. When you send a message, IgualAI uses the cloned page&apos;s layout as a structural
-          template and builds a completely new, original website based on your brand description —
-          streaming the result back in real time.
+          The Brand Wizard is the fastest way to go from a fresh clone to a launch-ready page.
+          It walks you through four inputs — brand identity, colors, content, and your logo —
+          then rebuilds the entire page in one shot.
         </p>
         <p>
-          Every edit produces a fresh, self-contained HTML file — no framework, no build step,
-          no trace of the original site&apos;s content or branding.
+          The Wizard opens automatically when a clone finishes. You can also re-open it anytime
+          by clicking the <strong>Visual</strong> tab before any AI edits have been made.
         </p>
       </Section>
 
-      <Section title="What the AI does">
+      <Section title="AI Chat">
         <p>
-          The AI uses the cloned site&apos;s layout structure (sections, navigation pattern, content
-          hierarchy) and replaces everything else with original content tailored to your brand:
+          The chat panel on the left handles two different modes depending on context:
         </p>
         <ul>
-          <li>Brand name, tagline, and all copy — written fresh for your business</li>
-          <li>Color scheme — matched to your brand colors</li>
-          <li>Typography — fonts and styles appropriate for your industry</li>
-          <li>Images — replaced with brand-appropriate placeholders or your uploaded images</li>
-          <li>Sections — same structure as the original (hero, features, testimonials, footer)</li>
+          <li>
+            <strong>First message</strong> — IgualAI reads the full structure of the cloned page
+            and rebuilds it section-by-section as a new brand. Every section from the original
+            is preserved; only the content changes.
+          </li>
+          <li>
+            <strong>Follow-up messages</strong> — targeted edits only. The AI touches
+            exactly what you ask about and leaves everything else untouched. Ask it to change
+            a color, rewrite a section, update the CTA — nothing else moves.
+          </li>
         </ul>
-      </Section>
-
-      <Section title="Prompt tips">
-        <p>Include as much brand context as possible for the best result:</p>
+        <p>Include specific brand detail for the best results:</p>
         <ul>
           <li>
             <strong>Great:</strong>{' '}
-            <em>"Build this for a coffee shop called Roast & Co. Warm brown tones, focus on quality and community. Located in Austin, TX."</em>
+            <em>&ldquo;Build this for a coffee shop called Roast &amp; Co. Warm brown tones, cozy and community-focused. Located in Austin, TX.&rdquo;</em>
           </li>
           <li>
-            <strong>Great:</strong>{' '}
-            <em>"Redesign for a B2B SaaS called Flowdesk. Navy and white, professional, targets HR teams."</em>
+            <strong>Great follow-up:</strong>{' '}
+            <em>&ldquo;Change the hero headline to &lsquo;Where Every Cup Tells a Story&rsquo;&rdquo;</em>
           </li>
           <li>
-            <strong>Too vague:</strong> <em>"Make it look nicer"</em>
+            <strong>Too vague:</strong> <em>&ldquo;Make it look nicer&rdquo;</em>
           </li>
         </ul>
+      </Section>
+
+      <Section title="Visual Editor">
         <p>
-          The more detail you give — industry, audience, colors, tone — the more accurate and
-          polished the output will be.
+          After an AI rebuild, the <strong>Visual</strong> tab becomes a live inline editor.
+          Click any text on the page to edit it directly — headlines, nav links, button labels,
+          paragraphs, anything. Click an image to replace it with a new URL or a seed word for
+          a stock photo.
+        </p>
+        <ul>
+          <li>Hover any element to see a highlight — click to start editing</li>
+          <li>Press <Kbd>Enter</Kbd> or <Kbd>Esc</Kbd> to save and exit the field</li>
+          <li>Click an image → enter a URL or a single word (e.g. <code>coffee</code>) to swap it</li>
+          <li>Changes save automatically to your project</li>
+        </ul>
+        <p>
+          The Visual Editor always renders at full desktop width so you see the same layout
+          your visitors will.
         </p>
       </Section>
 
-      <Section title="Versions">
+      <Section title="Version History">
         <p>
-          Every time you save or the AI makes a significant change, a version snapshot is created.
-          You can view and restore previous versions from the editor toolbar. This means you can
-          freely experiment without fear of losing your work.
+          Every AI rebuild and manual save creates a version snapshot. Open the{' '}
+          <strong>History</strong> tab to browse past versions and restore any of them with one
+          click. You can freely experiment without fear of losing your work.
         </p>
       </Section>
 
       <Section title="Tokens">
         <p>
-          Each AI edit consumes tokens. The token count depends on the size of your page and the
-          complexity of the change. Larger pages with many edits will use more tokens. You can see
-          your remaining tokens in{' '}
+          Each AI Chat or Brand Wizard generation consumes tokens based on page size and edit
+          complexity. Visual Editor changes do not consume tokens. You can check your remaining
+          balance in{' '}
           <Link href="/settings" className="text-neutral-900 dark:text-white underline underline-offset-2">
             Account Settings
           </Link>
           .
         </p>
         <p>
-          If you run out of tokens mid-month, you can buy a one-time token pack from the Settings
-          page (Pro and Agency plans only).
+          If you run out of tokens mid-month, you can purchase a one-time token pack from the
+          Settings page (Pro and Agency plans only).
         </p>
       </Section>
 

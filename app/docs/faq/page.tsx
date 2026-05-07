@@ -13,19 +13,35 @@ const FAQS = [
   },
   {
     q: 'Will the clone look exactly like the original?',
-    a: 'The initial clone is a faithful visual replica of the layout and design. However, the intended workflow is to then use the AI editor to transform it into a completely new, original website for your brand — replacing all content, colors, and copy while keeping the same page structure. This ensures your final site is 100% original and copyright-safe.',
+    a: 'The initial clone is a faithful visual replica of the layout and design. The intended workflow is to then use the Brand Wizard or AI Chat to transform it into a completely original website for your brand — replacing all content, colors, and copy while preserving the page structure. Your final site is 100% original and copyright-safe.',
   },
   {
     q: 'Is cloning websites legal?',
-    a: 'IgualAI is designed for brand transformation — you clone a site\'s layout and structure, then use the AI to rebuild it as something entirely new for your business. The output is an original website inspired by a layout, not a copy of someone else\'s content. You are responsible for your use of the tool. Do not republish copyrighted content as your own. See our Acceptable Use Policy for details.',
+    a: 'IgualAI is designed for brand transformation — you clone a layout and structure, then rebuild it as something entirely new for your business. The output is an original website inspired by a layout, not a copy of anyone\'s content. You are responsible for your use of the tool. Do not republish copyrighted content as your own. See our Acceptable Use Policy for details.',
   },
   {
     q: 'Can I clone a website I own?',
-    a: 'Yes — many users clone their own existing sites to rapidly prototype a redesign, create a landing page variant, or migrate content.',
+    a: 'Yes — many users clone their own existing sites to rapidly prototype a redesign, create a landing page variant, or migrate to a new brand identity.',
   },
   {
     q: 'Why did my clone fail or look broken?',
-    a: 'Some sites block headless browsers, use heavy client-side rendering that doesn\'t complete before the screenshot, or serve different content to automated clients. Try re-cloning. If it still fails, the site may be incompatible.',
+    a: 'Some sites block automated access, use heavy client-side rendering, or serve different content to non-human visitors. Try re-cloning. If it still fails, the site may be incompatible with our capture process.',
+  },
+  {
+    q: 'What is the Brand Wizard?',
+    a: 'The Brand Wizard is a guided setup that opens automatically after a clone finishes. It collects your brand name, colors, logo, tagline, and key copy — then rebuilds the entire page in one shot as a launch-ready site for your brand. You can also re-open it anytime from the Visual tab.',
+  },
+  {
+    q: 'What is the Visual Editor?',
+    a: 'After any AI rebuild, the Visual tab becomes a live editor. You can click directly on any text — headlines, nav links, buttons, paragraphs — to edit it inline without writing a prompt. You can also click any image to swap it with a new URL or a stock photo keyword. Changes save automatically.',
+  },
+  {
+    q: 'What\'s the difference between the first AI chat message and follow-up messages?',
+    a: 'The first message triggers a full brand rebuild — IgualAI reads the entire page structure and regenerates every section with your brand\'s content and styling. Follow-up messages are targeted edits: the AI changes only what you specifically ask for and leaves everything else exactly as it is.',
+  },
+  {
+    q: 'Do Visual Editor changes use tokens?',
+    a: 'No. Inline text and image edits in the Visual Editor are free and do not consume tokens. Only AI Chat and Brand Wizard generations use tokens.',
   },
   {
     q: 'What happens to my pages if I cancel my plan?',
@@ -33,7 +49,7 @@ const FAQS = [
   },
   {
     q: 'How do I get a refund?',
-    a: 'Email support@igualai.com within 7 days of your charge. We\'ll refund on a case-by-case basis.',
+    a: 'Email support@igualai.com within 7 days of your charge. We\'ll review on a case-by-case basis.',
   },
   {
     q: 'Can I use IgualAI for client work?',
@@ -41,11 +57,11 @@ const FAQS = [
   },
   {
     q: 'Does IgualAI support images from the original site?',
-    a: 'Background images and img tags from the original site are preserved as external URLs pointing to the original source. If the original site goes down or blocks hotlinking, images may break. For permanent hosting, download the page and re-host images yourself.',
+    a: 'Images from the cloned site are preserved as external references. If the original site blocks hotlinking, images may not display. For permanent hosting, download the page and re-host images on your own server.',
   },
   {
-    q: 'What AI model does IgualAI use?',
-    a: 'IgualAI uses a proprietary AI model for both the initial clone reconstruction and the AI chat editor.',
+    q: 'What technology powers IgualAI?',
+    a: 'IgualAI uses a proprietary capture and reconstruction pipeline to process cloned pages, and a custom AI layer for the Brand Wizard and chat editor. We don\'t share specifics about the stack.',
   },
 ]
 

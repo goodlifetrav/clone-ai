@@ -24,43 +24,46 @@ export default function GettingStartedPage() {
           <Kbd>Enter</Kbd> or click <strong>Clone</strong>.
         </p>
         <p>
-          IgualAI uses headless Chromium to visit the page, take a full-page screenshot, and
-          extract the HTML. IgualAI then reconstructs it as a clean, self-contained HTML file
-          with all styles inlined — no external dependencies.
+          IgualAI uses a proprietary pipeline to capture the page and reconstruct it as a
+          clean, self-contained HTML file. The process typically completes in 5–15 seconds.
         </p>
       </Section>
 
-      <Section title="2. Review the clone">
+      <Section title="2. The Brand Wizard opens automatically">
         <p>
-          Once processing finishes (usually 5–15 seconds), you'll be taken to the editor with a
-          live preview of your cloned page on the right and an AI chat panel on the left.
-        </p>
-        <p>
-          The clone is a faithful visual replica. Complex JavaScript interactions won't be
-          replicated, but the layout, colors, fonts, and content will be.
-        </p>
-      </Section>
-
-      <Section title="3. Transform with AI">
-        <p>
-          Describe your brand in the chat panel and the AI will rebuild the page as a completely
-          new, original website using the cloned layout as a template. For example:
+          The moment your clone finishes, the Brand Wizard launches. This is where you tell
+          IgualAI about your brand so it can rebuild the page as something entirely your own:
         </p>
         <ul>
-          <li><em>"Build this for a coffee shop called Roast & Co. Warm brown tones, cozy and community-focused."</em></li>
-          <li><em>"Redesign this for a fitness app called PeakFit. Bold, energetic, orange and black."</em></li>
-          <li><em>"Make this a landing page for a creative agency called Studio North. Minimal, dark, modern."</em></li>
+          <li><strong>Brand Identity</strong> — name, tagline, logo URL, and a short description of your business</li>
+          <li><strong>Colors</strong> — primary, secondary, and accent brand colors</li>
+          <li><strong>Content</strong> — hero headline, subheadline, and CTA button text</li>
         </ul>
         <p>
-          The more brand detail you provide — name, colors, tone, industry — the better the result.
-          The AI replaces all original content with fresh copy and styling while keeping the same
-          page structure and sections.
+          Hit <strong>Rebuild</strong> and IgualAI generates a fully original, launch-ready page
+          using the cloned site&apos;s layout as its structural blueprint.
         </p>
+      </Section>
+
+      <Section title="3. Fine-tune with AI Chat or Visual Editor">
+        <p>
+          After the initial rebuild, you have two ways to keep refining:
+        </p>
+        <ul>
+          <li>
+            <strong>AI Chat</strong> — describe what you want changed in plain English.
+            Follow-up messages make targeted edits without touching anything you didn&apos;t ask about.
+          </li>
+          <li>
+            <strong>Visual Editor</strong> — click directly on any text or image in the page to
+            edit it inline. No prompts needed — just click, type, and save.
+          </li>
+        </ul>
       </Section>
 
       <Section title="4. Download or deploy">
         <p>
-          When you're happy with the result, you can:
+          When you&apos;re happy with the result, you can:
         </p>
         <ul>
           <li><strong>Download</strong> — get a single <code>.html</code> file you can host anywhere</li>
