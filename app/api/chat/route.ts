@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServiceClient } from '@/lib/supabase'
 import { chatWithProjectStreamingGemini } from '@/lib/gemini'
-import { injectBrandImages } from '@/lib/image-injection'
 import { isAdminEmail } from '@/lib/admin'
 import { reportError } from '@/lib/error-report'
 
@@ -145,21 +144,6 @@ export async function POST(request: NextRequest) {
 
         // Only persist to DB if we got a real HTML page back (guard against blank overwrites)
         const isValidHtml = finalHtml.length > 500 && /<html/i.test(finalHtml)
-
-        // Generate brand images for the new page (replaces broken placeholder img tags)
-        if (isValidHtml) {
-          send({ status: 'generating_images' })
-          try {
-            finalHtml = await injectBrandImages(
-              finalHtml,
-              { brandName: message.slice(0, 60), brandDescription: message, primaryColor: '#000000', secondaryColor: '#ffffff', tagline: '' },
-              projectId,
-              (current, total) => send({ status: 'generating_images', current, total })
-            )
-          } catch {
-            // Image generation is best-effort — continue without images if it fails
-          }
-        }
 
         await supabase.from('chat_messages').insert([
           { project_id: projectId, user_id: user.id, role: 'user', content: message },

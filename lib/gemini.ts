@@ -228,9 +228,10 @@ RULES:
 3. Use modern design: clean typography, proper spacing, responsive layout, attractive color scheme matching the brand
 4. Include these sections: ${pageSections}
 5. Write original copy tailored to the brand — no placeholder text
-6. No external dependencies, no CDN links — fully self-contained HTML
-7. Output ONLY the complete HTML document starting with <!DOCTYPE html>
-8. No markdown, no code fences, no explanation before or after the HTML`
+6. For images use real Unsplash photo URLs in this format: https://images.unsplash.com/photo-[ID]?w=1200&q=80 — pick relevant IDs for the brand (e.g. coffee shops: 1495474472930-102059904912, nature: 1506905925346-21bda4d32df4). Never use placeholder or broken image URLs.
+7. No external CSS/JS dependencies — fully self-contained HTML with inline styles only
+8. Output ONLY the complete HTML document starting with <!DOCTYPE html>
+9. No markdown, no code fences, no explanation before or after the HTML`
 
   const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}Brand/content instructions: ${userMessage}
 
