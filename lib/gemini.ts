@@ -244,35 +244,94 @@ function extractStyleSignals(html: string): string {
 }
 
 /**
- * Produce a readable version of the cloned page for Gemini to analyze.
- * Keeps ALL text content and headings (so Gemini can identify sections),
- * keeps img alt text (describes what images show), strips scripts/styles/
- * compiled class names and event handlers (they add noise, not signal).
+ * Build a compact section map of the cloned page.
  *
- * This is fundamentally different from the old skeleton approach:
- * the old version stripped ALL text, leaving only meaningless compiled
- * class names. Now Gemini reads the actual page content and does its own
- * section identification — far more accurate than our regex heuristics.
+ * Sending the full HTML (300-500KB for complex sites) overwhelms Gemini and
+ * causes incomplete responses / fallbacks. Instead we extract:
+ *  1. Every heading (h1-h6) with the 400 chars of visible text that follow it
+ *     → gives Gemini the actual section titles and content descriptions
+ *  2. Image/video counts per section (so it knows which are image-heavy)
+ *  3. A lean tag skeleton (tags + structure, no text, no compiled classes)
+ *     → shows layout nesting and element counts
+ *
+ * This gives Gemini everything it needs to identify section count, section
+ * purpose, and layout complexity — in ~20-40KB instead of 300-500KB.
  */
-function extractContentHtml(html: string): string {
-  return html
-    // Remove noise — keep structure and text
+function buildPageBlueprint(html: string): string {
+  const noiseStripped = html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+
+  // ── PART 1: Section map (headings + surrounding context) ─────────────────
+  const sectionLines: string[] = []
+
+  // Find nav text
+  const navHtml = noiseStripped.match(/<nav\b[^>]*>[\s\S]*?<\/nav>/i)?.[0] ?? ''
+  if (navHtml) {
+    const navText = navHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+    sectionLines.push(`[NAV]: ${navText}`)
+  }
+
+  // Split around every heading to capture section context
+  const headingRegex = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi
+  let m: RegExpExecArray | null
+  let sectionNum = 1
+  while ((m = headingRegex.exec(noiseStripped)) !== null) {
+    const level = parseInt(m[1])
+    const headingText = m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+    if (!headingText || headingText.length < 2) continue
+
+    // Grab the 500 chars of HTML after this heading for context
+    const afterHeading = noiseStripped.slice(m.index + m[0].length, m.index + m[0].length + 500)
+    const afterText = afterHeading.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+
+    // Count images near this section
+    const nearbyHtml = noiseStripped.slice(m.index, m.index + 2000)
+    const imgCount = (nearbyHtml.match(/<img\b/gi) ?? []).length
+    const hasSvg = /<svg\b/i.test(nearbyHtml)
+    const hasVideo = /<video\b/i.test(nearbyHtml)
+    const buttonCount = (nearbyHtml.match(/<button\b|<a\b[^>]*(?:btn|button)/gi) ?? []).length
+    const listCount = (nearbyHtml.match(/<li\b/gi) ?? []).length
+
+    const prefix = '#'.repeat(Math.min(level, 3))
+    let meta = ''
+    if (imgCount > 0) meta += ` [${imgCount} image${imgCount > 1 ? 's' : ''}]`
+    if (hasVideo) meta += ' [video]'
+    if (hasSvg) meta += ' [icons/svg]'
+    if (buttonCount > 0) meta += ` [${buttonCount} button${buttonCount > 1 ? 's' : ''}]`
+    if (listCount > 3) meta += ` [list: ${listCount} items]`
+
+    sectionLines.push(`[SECTION ${sectionNum}] ${prefix} ${headingText}${meta}`)
+    if (afterText) sectionLines.push(`  Context: ${afterText}`)
+    sectionNum++
+  }
+
+  // Footer
+  const footerHtml = noiseStripped.match(/<footer\b[^>]*>[\s\S]*?<\/footer>/i)?.[0] ?? ''
+  if (footerHtml) {
+    const links = (footerHtml.match(/<a\b/gi) ?? []).length
+    sectionLines.push(`[FOOTER]: multi-column, ${links} links`)
+  }
+
+  // ── PART 2: Structural skeleton (layout nesting, no text) ────────────────
+  const skeleton = noiseStripped
     .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '<svg/>')
+    .replace(/<img\b[^>]*\/?>/gi, '<img/>')
     .replace(/<video\b[^>]*>[\s\S]*?<\/video>/gi, '<video/>')
     .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '<iframe/>')
     .replace(/<canvas\b[^>]*>[\s\S]*?<\/canvas>/gi, '<canvas/>')
-    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    // Strip attributes that add noise but keep src/href/alt so Gemini
-    // knows where images are and what they show
-    .replace(/\s+(?:class|style|id|data-[a-z-]+|on\w+|aria-[a-z-]+|tabindex|name|value|type|rel|target|srcset|sizes|loading|decoding|fetchpriority|crossorigin|integrity|nonce)="[^"]*"/gi, '')
-    // Collapse whitespace
+    // Strip all attributes — compiled class names add noise
+    .replace(/\s+[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?="[^"]*"/gi, '')
+    // Replace text nodes
+    .replace(/>[^<]{3,}</g, '>[…]')
     .replace(/\s+/g, ' ')
     .trim()
-  // No size limit — Gemini 2.5 Flash has 1M token context.
-  // Truncating caused missed sections; send the full content.
+    // Cap skeleton at 30KB — enough to show nesting depth without overwhelming
+    .slice(0, 30000)
+
+  return `━━━ SECTION MAP (every section in order) ━━━\n${sectionLines.join('\n')}\n\n━━━ STRUCTURAL SKELETON (layout nesting reference) ━━━\n${skeleton}`
 }
 
 /**
@@ -506,8 +565,8 @@ CTA SECTION:
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
-  const contentHtml = currentHtml.length > 200
-    ? extractContentHtml(currentHtml)
+  const blueprint = currentHtml.length > 200
+    ? buildPageBlueprint(currentHtml)
     : ''
 
   const styleSignals = currentHtml.length > 200
@@ -519,17 +578,23 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 ━━━ ORIGINAL SITE STYLE ━━━
 ${styleSignals || 'No style data — use your best judgment.'}
 
-━━━ ORIGINAL SITE HTML ━━━
-The HTML below is the actual rendered content of the cloned site with scripts, styles, and noise removed. Read it carefully and:
-1. Identify EVERY section by its heading or content block
-2. Note the layout type of each (split text+image, image grid/mosaic, card grid, centered CTA, logo bar, testimonials, pricing, FAQ, etc.)
-3. Note whether the original is dark or light themed, image-heavy or text-heavy
-4. Build every single one — no skipping, no merging, no stopping early
+━━━ ORIGINAL SITE BLUEPRINT ━━━
+The blueprint below maps every section of the cloned site. Each [SECTION N] entry shows:
+- The heading text (so you know what that section is about)
+- Image/video/icon counts (so you know if it needs visual content)
+- Context text (so you understand the section's purpose)
+- The structural skeleton shows nesting depth and layout patterns
 
-${contentHtml || 'No HTML available — build a full-featured landing page for the brand described.'}
+Use this to build every section in the same order, with the same layout complexity.
 
-━━━ REBUILD INSTRUCTIONS ━━━
-Now rebuild the complete site for the brand above. Match the exact section count, layout types, and visual complexity of the original. Long-form pages with 20-40 sections must have all 20-40 sections built. Do not stop early.`
+${blueprint || 'No blueprint — build a full-featured landing page for the brand described.'}
+
+━━━ BUILD INSTRUCTIONS ━━━
+Build every [SECTION N] listed above — all of them, in order, no exceptions.
+- Sections with images: use SPLIT LAYOUT (text one side, large image other side)
+- Sections with many list items: use CARD GRID
+- Sections with no images and short text: use CENTERED CTA layout
+- Match the section count exactly. Long-form pages have 15-30 sections — build all of them.`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
@@ -673,8 +738,8 @@ CTA SECTION:
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
-    const contentHtml = currentHtml.length > 200
-      ? extractContentHtml(currentHtml)
+    const blueprint = currentHtml.length > 200
+      ? buildPageBlueprint(currentHtml)
       : ''
 
     const styleSignals = currentHtml.length > 200
@@ -686,17 +751,23 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 ━━━ ORIGINAL SITE STYLE ━━━
 ${styleSignals || 'No style data — use your best judgment.'}
 
-━━━ ORIGINAL SITE HTML ━━━
-The HTML below is the actual rendered content of the cloned site with scripts, styles, and noise removed. Read it carefully and:
-1. Identify EVERY section by its heading or content block
-2. Note the layout type of each (split text+image, image grid/mosaic, card grid, centered CTA, logo bar, testimonials, pricing, FAQ, etc.)
-3. Note whether the original is dark or light themed, image-heavy or text-heavy
-4. Build every single one — no skipping, no merging, no stopping early
+━━━ ORIGINAL SITE BLUEPRINT ━━━
+The blueprint below maps every section of the cloned site. Each [SECTION N] entry shows:
+- The heading text (so you know what that section is about)
+- Image/video/icon counts (so you know if it needs visual content)
+- Context text (so you understand the section's purpose)
+- The structural skeleton shows nesting depth and layout patterns
 
-${contentHtml || 'No HTML available — build a full-featured landing page for the brand described.'}
+Use this to build every section in the same order, with the same layout complexity.
 
-━━━ REBUILD INSTRUCTIONS ━━━
-Now rebuild the complete site for the brand above. Match the exact section count, layout types, and visual complexity of the original. Long-form pages with 20-40 sections must have all 20-40 sections built. Do not stop early.`
+${blueprint || 'No blueprint — build a full-featured landing page for the brand described.'}
+
+━━━ BUILD INSTRUCTIONS ━━━
+Build every [SECTION N] listed above — all of them, in order, no exceptions.
+- Sections with images: use SPLIT LAYOUT (text one side, large image other side)
+- Sections with many list items: use CARD GRID
+- Sections with no images and short text: use CENTERED CTA layout
+- Match the section count exactly. Long-form pages have 15-30 sections — build all of them.`
 
     const { text: fullHtml, tokensUsed } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
 
