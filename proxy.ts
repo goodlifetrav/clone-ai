@@ -1,6 +1,7 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { getIronSession } from 'iron-session'
+import type { SessionData } from '@/lib/auth'
 
 const APP_HOSTS = ['igualai.com', 'www.igualai.com', 'localhost']
 
@@ -9,25 +10,23 @@ function isAppHost(host: string): boolean {
   return APP_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`))
 }
 
-const isPublicRoute = createRouteMatcher([
-  '/',
-  '/pricing',
-  '/docs(.*)',
-  '/preview(.*)',
-  '/api/stripe/webhook',
-  '/api/webhooks(.*)',
-  '/sign-in(.*)',
-  '/sign-up(.*)',
-])
+const sessionOptions = {
+  cookieName: 'igualai_session',
+  password: process.env.SESSION_SECRET ?? 'fallback-dev-secret-change-in-production-32chars',
+}
+
+const PROTECTED_PATHS = ['/dashboard', '/editor', '/settings']
+const AUTH_PATHS = ['/sign-in', '/sign-up']
 
 const BLOCKED_COUNTRIES = new Set([
   'NG', 'GH', 'BD', 'PK', 'ET', 'TZ', 'UG', 'CM', 'SN',
   'EG', 'KE', 'MM', 'KH', 'LA', 'NP', 'YE', 'SD', 'SO', 'AF',
 ])
 
-export default clerkMiddleware(async (auth, request: NextRequest) => {
+export default async function middleware(request: NextRequest) {
   const host = request.headers.get('host') ?? ''
 
+  // Custom domain proxying
   if (!isAppHost(host)) {
     const url = request.nextUrl.clone()
     url.pathname = '/api/serve-domain'
@@ -36,7 +35,7 @@ export default clerkMiddleware(async (auth, request: NextRequest) => {
 
   const { pathname } = request.nextUrl
 
-  // Country check — skip for exempt paths
+  // Country block — skip for exempt paths
   if (
     !pathname.startsWith('/not-available') &&
     !pathname.startsWith('/api') &&
@@ -64,16 +63,32 @@ export default clerkMiddleware(async (auth, request: NextRequest) => {
     }
   }
 
-  if (!isPublicRoute(request)) {
-    await auth.protect()
+  const isProtected = PROTECTED_PATHS.some((p) => pathname.startsWith(p))
+  const isAuthPage = AUTH_PATHS.some((p) => pathname.startsWith(p))
+
+  if (!isProtected && !isAuthPage) return NextResponse.next()
+
+  // Read session
+  const res = NextResponse.next()
+  const session = await getIronSession<SessionData>(request, res, sessionOptions)
+  const isLoggedIn = !!session.whopUserId
+
+  if (isProtected && !isLoggedIn) {
+    const loginUrl = new URL('/api/auth/whop/login', request.url)
+    loginUrl.searchParams.set('next', pathname)
+    return NextResponse.redirect(loginUrl)
   }
-})
+
+  if (isAuthPage && isLoggedIn) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  return NextResponse.next()
+}
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files
     '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
-    // Always run for API routes
     '/(api|trpc)(.*)',
   ],
 }
