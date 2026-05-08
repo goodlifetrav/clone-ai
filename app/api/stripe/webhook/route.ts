@@ -18,13 +18,6 @@ function buildPriceToPlan(): Record<string, Plan> {
 }
 const PRICE_TO_PLAN = buildPriceToPlan()
 
-/** Resolve the plan from an invoice's first line item price ID. */
-function planFromInvoice(invoice: Stripe.Invoice): Plan | null {
-  const lineItem = invoice.lines?.data[0] as Stripe.InvoiceLineItem | undefined
-  const priceOrId = lineItem?.pricing?.price_details?.price
-  const priceId = typeof priceOrId === 'string' ? priceOrId : priceOrId?.id
-  return priceId ? (PRICE_TO_PLAN[priceId] ?? null) : null
-}
 
 export async function POST(request: NextRequest) {
   const body = await request.text()
@@ -151,18 +144,6 @@ export async function POST(request: NextRequest) {
             console.error('checkout.session.completed: billing upsert failed', billingError)
           }
 
-          // Tag the GHL contact with their new plan
-          if (user.email) {
-            const planTag = planToGhlTag(plan)
-            if (planTag) {
-              const contactId = await ghlFindContactByEmail(user.email)
-              if (contactId) {
-                await ghlAddTags(contactId, [planTag])
-              } else {
-                console.warn('[GHL] No contact found for email on upgrade:', user.email)
-              }
-            }
-          }
         }
         break
       }
@@ -273,15 +254,7 @@ export async function POST(request: NextRequest) {
           break
         }
 
-        console.log('invoice.payment_failed: finding GHL contact for', email)
-
-        const contactId = await ghlFindContactByEmail(email)
-        if (contactId) {
-          await ghlAddTags(contactId, ['Payment Failed'])
-          console.log('invoice.payment_failed: Payment Failed tag added to', email)
-        } else {
-          console.warn('invoice.payment_failed: no GHL contact found for', email)
-        }
+        console.log('invoice.payment_failed:', email)
         break
       }
 
@@ -296,30 +269,7 @@ export async function POST(request: NextRequest) {
           break
         }
 
-        console.log('invoice.payment_succeeded: finding GHL contact for', email)
-
-        const contactId = await ghlFindContactByEmail(email)
-        if (!contactId) {
-          console.warn('invoice.payment_succeeded: no GHL contact found for', email)
-          break
-        }
-
-        // Remove the "Payment Failed" tag (no-op if it doesn't exist)
-        await ghlRemoveTags(contactId, ['Payment Failed'])
-
-        // Re-apply their current plan tag
-        const plan = planFromInvoice(invoice)
-        if (plan) {
-          const planTag = planToGhlTag(plan)
-          if (planTag) {
-            await ghlAddTags(contactId, [planTag])
-            console.log('invoice.payment_succeeded: plan tag re-applied', { email, planTag })
-          }
-        } else {
-          console.warn('invoice.payment_succeeded: could not resolve plan from invoice', {
-            invoiceId: invoice.id,
-          })
-        }
+        console.log('invoice.payment_succeeded:', email)
         break
       }
 
