@@ -53,7 +53,7 @@ export function useAuth(): AuthState & { signIn: (next?: string) => void; signOu
     const appUrl = window.location.origin
     function onMessage(e: MessageEvent) {
       if (e.origin !== appUrl) return
-      if (e.data?.type === 'whop_auth_success') {
+      if (e.data?.type === 'igualai_auth_success') {
         cache = null
         fetchAuthState().then((next) => {
           cache = next
@@ -72,17 +72,17 @@ export function useAuth(): AuthState & { signIn: (next?: string) => void; signOu
   const signIn = useCallback((next?: string) => {
     const params = new URLSearchParams({ popup: '1' })
     if (next) params.set('next', next)
-    const url = `/api/auth/whop/login?${params.toString()}`
+    const url = `/sign-in?${params.toString()}`
     const w = 500
     const h = 650
     const left = window.screenX + (window.outerWidth - w) / 2
     const top = window.screenY + (window.outerHeight - h) / 2
-    window.open(url, 'whop_login', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`)
+    window.open(url, 'igualai_login', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`)
   }, [])
 
   function signOut() {
     cache = null
-    window.location.href = '/api/auth/whop/logout'
+    window.location.href = '/api/auth/logout'
   }
 
   return { ...state, signIn, signOut }

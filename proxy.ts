@@ -74,7 +74,7 @@ export default async function middleware(request: NextRequest) {
   const isLoggedIn = !!session.whopUserId
 
   if (isProtected && !isLoggedIn) {
-    const loginUrl = new URL('/api/auth/whop/login', request.url)
+    const loginUrl = new URL('/sign-in', request.url)
     loginUrl.searchParams.set('next', pathname)
     return NextResponse.redirect(loginUrl)
   }
