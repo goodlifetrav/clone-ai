@@ -279,16 +279,12 @@ export function ChatPanel({
         }, 2000)
       })
 
-      const costNote = aiMessage.estimatedCost > 0
-        ? `\n\n_${aiMessage.tokensUsed.toLocaleString()} tokens · $${aiMessage.estimatedCost.toFixed(4)}_`
-        : ''
-
       const assistantMessage: ChatMessage = {
         id: crypto.randomUUID(),
         project_id: projectId,
         user_id: '',
         role: 'assistant',
-        content: aiMessage.text + costNote,
+        content: aiMessage.text,
         created_at: new Date().toISOString(),
       }
       onMessagesChange([...newMessages, assistantMessage])
