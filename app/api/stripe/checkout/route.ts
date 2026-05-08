@@ -1,82 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
-import { stripe, PRICE_IDS } from '@/lib/stripe'
-import { createServiceClient } from '@/lib/supabase'
+import { getAuth } from '@/lib/auth'
+import { getCheckoutUrl } from '@/lib/whop'
 import type { Plan } from '@/types'
+
+const WHOP_PLAN_IDS: Record<string, string | undefined> = {
+  pro: process.env.WHOP_PRO_PLAN_ID,
+  agency: process.env.WHOP_AGENCY_PLAN_ID,
+}
 
 export async function POST(request: NextRequest) {
   try {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      return NextResponse.json({ error: 'Stripe is not configured on this server' }, { status: 503 })
-    }
-
-    const { userId } = await auth()
+    const { userId } = await getAuth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { plan, billingPeriod } = await request.json() as { plan: Plan; billingPeriod: 'monthly' | 'annual' }
+    const { plan } = await request.json() as { plan: Plan; billingPeriod?: string }
 
     if (!plan || plan === 'free') {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
     }
 
-    const period = billingPeriod === 'annual' ? 'annual' : 'monthly'
-    const priceId = PRICE_IDS[plan as keyof typeof PRICE_IDS]?.[period]
-    if (!priceId) {
+    const planId = WHOP_PLAN_IDS[plan]
+    if (!planId) {
       return NextResponse.json(
-        { error: `Price ID not configured for plan: ${plan} (${period}). Add to .env.local` },
+        { error: `Whop plan ID not configured for: ${plan}. Set WHOP_${plan.toUpperCase()}_PLAN_ID in env.` },
         { status: 503 }
       )
     }
 
-    const supabase = createServiceClient()
-
-    // Get or create user
-    let { data: user } = await supabase
-      .from('users')
-      .select('*')
-      .eq('clerk_id', userId)
-      .single()
-
-    if (!user) {
-      const { data: newUser } = await supabase
-        .from('users')
-        .insert({ clerk_id: userId, email: '', name: '', plan: 'free' })
-        .select()
-        .single()
-      user = newUser
-    }
-
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-
-    // Create or get Stripe customer
-    let customerId = user?.stripe_customer_id
-
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        metadata: { clerk_id: userId },
-      })
-      customerId = customer.id
-
-      await supabase
-        .from('users')
-        .update({ stripe_customer_id: customerId })
-        .eq('clerk_id', userId)
-    }
-
-    // Create checkout session
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      payment_method_types: ['card'],
-      line_items: [{ price: priceId, quantity: 1 }],
-      mode: 'subscription',
-      success_url: `${appUrl}/settings?success=true&plan=${plan}`,
-      cancel_url: `${appUrl}/pricing?canceled=true`,
-      metadata: { clerk_id: userId, plan },
-    })
-
-    return NextResponse.json({ url: session.url })
+    return NextResponse.json({ url: getCheckoutUrl(planId) })
   } catch (err) {
     console.error('Checkout error:', err)
-    return NextResponse.json({ error: 'Failed to create checkout session' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to create checkout URL' }, { status: 500 })
   }
 }

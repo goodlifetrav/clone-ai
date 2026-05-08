@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 
 async function getDbUser(userId: string) {
@@ -14,7 +14,7 @@ async function getDbUser(userId: string) {
 
 export async function GET() {
   try {
-    const { userId } = await auth()
+    const { userId } = await getAuth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { supabase, user } = await getDbUser(userId)
@@ -37,7 +37,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth()
+    const { userId } = await getAuth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { name } = await request.json()

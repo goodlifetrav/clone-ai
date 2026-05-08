@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import { getAuth } from '@/lib/auth'
 import { getJob } from '@/lib/chat-jobs'
 
 export async function GET(request: NextRequest) {
-  const { userId } = await auth()
+  const { userId } = await getAuth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(request.url)

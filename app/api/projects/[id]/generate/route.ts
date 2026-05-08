@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import { getAuth } from '@/lib/auth'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
 import { scrapeWebsite } from '@/lib/playwright'
@@ -19,7 +19,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth()
+  const { userId } = await getAuth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params

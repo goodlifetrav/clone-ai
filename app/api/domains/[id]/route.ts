@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 import dns from 'dns'
 
@@ -11,7 +11,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const { userId } = await auth()
+    const { userId } = await getAuth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const supabase = createServiceClient()
@@ -60,7 +60,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const { userId } = await auth()
+    const { userId } = await getAuth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const supabase = createServiceClient()

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 
 const DOMAIN_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i
@@ -7,7 +7,7 @@ const SERVER_IP = '187.124.219.202'
 
 export async function GET() {
   try {
-    const { userId } = await auth()
+    const { userId } = await getAuth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const supabase = createServiceClient()
@@ -43,7 +43,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth()
+    const { userId } = await getAuth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { domain, project_id } = await request.json() as { domain: string; project_id: string }

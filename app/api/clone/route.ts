@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { getAuth, getSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 import { extractDomain } from '@/lib/utils'
 import { isAdminEmail } from '@/lib/admin'
@@ -9,7 +9,7 @@ import { checkUrlBlocked } from '@/lib/url-blocker'
 export async function POST(request: NextRequest) {
   let cloneUrl: string | undefined
   try {
-    const { userId } = await auth()
+    const { userId } = await getAuth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { url } = await request.json()
@@ -30,11 +30,9 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (userError || !user) {
-      const clerkUser = await currentUser()
-      const email = clerkUser?.emailAddresses?.[0]?.emailAddress ?? ''
-      const name = clerkUser
-        ? `${clerkUser.firstName ?? ''} ${clerkUser.lastName ?? ''}`.trim()
-        : ''
+      const session = await getSession()
+      const email = session.email ?? ''
+      const name = session.name ?? ''
 
       const { data: newUser, error: createError } = await supabase
         .from('users')

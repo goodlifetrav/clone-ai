@@ -1,9 +1,6 @@
-import { SignIn } from '@clerk/nextjs'
+import { redirect } from 'next/navigation'
 
+// Redirect to Whop OAuth — middleware handles already-logged-in case
 export default function SignInPage() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-neutral-950">
-      <SignIn />
-    </div>
-  )
+  redirect('/api/auth/whop/login')
 }

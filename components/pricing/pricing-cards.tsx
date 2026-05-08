@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Check, Loader2, Zap } from 'lucide-react'
-import { useUser, useClerk } from '@clerk/nextjs'
+import { useAuth } from '@/hooks/use-auth'
 import type { Plan } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -72,14 +72,13 @@ const PLANS: PricingPlan[] = [
 export function PricingCards({ currentPlan }: { currentPlan?: Plan }) {
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>('monthly')
   const [loading, setLoading] = useState<Plan | null>(null)
-  const { isSignedIn } = useUser()
-  const { openSignIn } = useClerk()
+  const { isSignedIn } = useAuth()
 
   const handleUpgrade = async (plan: Plan) => {
     if (plan === 'free') return
 
     if (!isSignedIn) {
-      openSignIn()
+      window.location.href = '/api/auth/whop/login?next=/pricing'
       return
     }
 

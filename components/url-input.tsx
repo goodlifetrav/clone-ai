@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useUser, useClerk } from '@clerk/nextjs'
+import { useAuth } from '@/hooks/use-auth'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,8 +15,7 @@ export function UrlInput() {
   const [error, setError] = useState('')
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const router = useRouter()
-  const { isSignedIn } = useUser()
-  const { openSignIn } = useClerk()
+  const { isSignedIn } = useAuth()
 
   const handleClone = async () => {
     setError('')
@@ -34,7 +33,7 @@ export function UrlInput() {
     }
 
     if (!isSignedIn) {
-      openSignIn()
+      window.location.href = '/api/auth/whop/login'
       return
     }
 

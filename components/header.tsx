@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { useTheme } from '@/hooks/use-theme'
+import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Moon, Sun, Zap, FolderOpen, Settings, LogOut } from 'lucide-react'
-import { useUser, useClerk, SignInButton, UserButton } from '@clerk/nextjs'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,12 +13,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 export function Header() {
   const { toggleTheme, isDark } = useTheme()
-  const { isSignedIn, user } = useUser()
-  const { signOut } = useClerk()
+  const { isSignedIn, user, signOut } = useAuth()
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 sm:px-6 py-4 border-b border-neutral-200/80 bg-white/80 backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/80">
@@ -52,16 +51,16 @@ export function Header() {
           {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </Button>
 
-        {isSignedIn ? (
-          <UserDropdown user={user} onSignOut={() => signOut()} />
+        {isSignedIn && user ? (
+          <UserDropdown user={user} onSignOut={signOut} />
         ) : (
           <div className="flex items-center gap-2">
-            <SignInButton mode="modal">
+            <Link href="/api/auth/whop/login">
               <Button variant="ghost" size="sm">Sign in</Button>
-            </SignInButton>
-            <SignInButton mode="modal">
+            </Link>
+            <Link href="/api/auth/whop/login">
               <Button size="sm">Get started</Button>
-            </SignInButton>
+            </Link>
           </div>
         )}
       </div>
@@ -73,29 +72,26 @@ function UserDropdown({
   user,
   onSignOut,
 }: {
-  user: ReturnType<typeof useUser>['user']
+  user: { name: string; email: string }
   onSignOut: () => void
 }) {
-  const initials = user?.firstName
-    ? `${user.firstName[0]}${user.lastName?.[0] || ''}`.toUpperCase()
-    : user?.emailAddresses?.[0]?.emailAddress?.[0]?.toUpperCase() || 'U'
+  const initials = user.name
+    ? user.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
+    : user.email[0].toUpperCase()
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button className="flex items-center gap-2 rounded-full focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-white">
           <Avatar className="w-8 h-8">
-            <AvatarImage src={user?.imageUrl} alt={user?.fullName || 'User'} />
             <AvatarFallback className="text-xs">{initials}</AvatarFallback>
           </Avatar>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>
-          <div className="font-medium">{user?.fullName || 'User'}</div>
-          <div className="text-xs text-neutral-500 font-normal truncate">
-            {user?.emailAddresses?.[0]?.emailAddress}
-          </div>
+          <div className="font-medium">{user.name || 'User'}</div>
+          <div className="text-xs text-neutral-500 font-normal truncate">{user.email}</div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>

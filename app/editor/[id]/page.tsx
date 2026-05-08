@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { useUser } from '@clerk/nextjs'
+import { useAuth } from '@/hooks/use-auth'
 import { useProject } from '@/hooks/use-project'
 import { SplitView } from '@/components/editor/split-view'
 import { Loader2, AlertCircle } from 'lucide-react'
@@ -12,7 +12,7 @@ import Link from 'next/link'
 export default function EditorPage() {
   const params = useParams()
   const id = params.id as string
-  const { isSignedIn, isLoaded } = useUser()
+  const { isSignedIn, isLoaded } = useAuth()
   const router = useRouter()
 
   const {

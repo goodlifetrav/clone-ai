@@ -1,9 +1,6 @@
-import { SignUp } from '@clerk/nextjs'
+import { redirect } from 'next/navigation'
 
+// Sign up also goes through Whop (same OAuth flow)
 export default function SignUpPage() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-neutral-950">
-      <SignUp />
-    </div>
-  )
+  redirect('/api/auth/whop/login')
 }

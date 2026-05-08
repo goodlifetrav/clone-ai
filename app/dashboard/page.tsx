@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { useUser } from '@clerk/nextjs'
+import { useAuth } from '@/hooks/use-auth'
 import { Header } from '@/components/header'
 import { ProjectCard } from '@/components/project-card'
 import { UrlInput } from '@/components/url-input'
@@ -32,7 +32,7 @@ import { cn } from '@/lib/utils'
 import { DeleteConfirmDialog } from '@/components/ui/delete-confirm-dialog'
 
 export default function DashboardPage() {
-  const { isSignedIn, isLoaded } = useUser()
+  const { isSignedIn, isLoaded } = useAuth()
   const router = useRouter()
 
   const [projects, setProjects] = useState<Project[]>([])

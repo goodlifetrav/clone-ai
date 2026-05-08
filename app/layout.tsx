@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { ClerkProvider } from '@clerk/nextjs'
 import { ThemeProvider } from 'next-themes'
 import './globals.css'
 
@@ -29,34 +28,17 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <ClerkProvider
-      localization={{
-        signIn: {
-          start: {
-            title: 'Sign in to IgualAI',
-            subtitle: 'Welcome back! Please sign in to continue',
-          },
-        },
-        signUp: {
-          start: {
-            title: 'Create your IgualAI account',
-            subtitle: 'Clone any website with AI in seconds',
-          },
-        },
-      }}
-    >
-      <html lang="en" suppressHydrationWarning>
-        <body>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="system"
-            enableSystem
-            disableTransitionOnChange
-          >
-            {children}
-          </ThemeProvider>
-        </body>
-      </html>
-    </ClerkProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+        </ThemeProvider>
+      </body>
+    </html>
   )
 }
