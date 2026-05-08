@@ -203,7 +203,7 @@ export function ChatPanel({
       // Poll /api/chat/status every 2 seconds until done or error.
       // Transient 5xx errors (502/503/504) are retried — only give up after
       // 3 consecutive failures or a hard 4xx error.
-      const aiMessage = await new Promise<{ text: string; messagesUsed: number }>((resolve, reject) => {
+      const aiMessage = await new Promise<{ text: string; messagesUsed: number; tokensUsed: number; estimatedCost: number }>((resolve, reject) => {
         let consecutiveErrors = 0
         const MAX_ERRORS = 5
         const MAX_POLLS = 180 // 6 minutes max
@@ -243,6 +243,8 @@ export function ChatPanel({
               html?: string
               message?: string
               messagesUsed?: number
+              tokensUsed?: number
+              estimatedCost?: number
               error?: string
             }
 
@@ -260,7 +262,12 @@ export function ChatPanel({
               onHtmlChange(data.html)
               onSaveVersion?.(data.html)
             }
-            resolve({ text: data.message || 'Done.', messagesUsed: data.messagesUsed ?? 0 })
+            resolve({
+              text: data.message || 'Done.',
+              messagesUsed: data.messagesUsed ?? 0,
+              tokensUsed: data.tokensUsed ?? 0,
+              estimatedCost: data.estimatedCost ?? 0,
+            })
           } catch (err) {
             consecutiveErrors++
             if (consecutiveErrors >= MAX_ERRORS) {
@@ -272,12 +279,16 @@ export function ChatPanel({
         }, 2000)
       })
 
+      const costNote = aiMessage.estimatedCost > 0
+        ? `\n\n_${aiMessage.tokensUsed.toLocaleString()} tokens · $${aiMessage.estimatedCost.toFixed(4)}_`
+        : ''
+
       const assistantMessage: ChatMessage = {
         id: crypto.randomUUID(),
         project_id: projectId,
         user_id: '',
         role: 'assistant',
-        content: aiMessage.text,
+        content: aiMessage.text + costNote,
         created_at: new Date().toISOString(),
       }
       onMessagesChange([...newMessages, assistantMessage])

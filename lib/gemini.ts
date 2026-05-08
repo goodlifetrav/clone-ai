@@ -86,7 +86,7 @@ export async function generateTextStreaming(
     onReset?: () => void   // called before each retry so callers can reset buffers
     maxTokens?: number
   } = {}
-): Promise<{ text: string; tokensUsed: number }> {
+): Promise<{ text: string; tokensUsed: number; inputTokens: number; outputTokens: number }> {
   const models = [PRIMARY_MODEL, FALLBACK_MODEL]
 
   for (let mi = 0; mi < models.length; mi++) {
@@ -118,11 +118,11 @@ export async function generateTextStreaming(
         }
 
         const response = await result.response
-        const tokensUsed =
-          (response.usageMetadata?.promptTokenCount ?? 0) +
-          (response.usageMetadata?.candidatesTokenCount ?? 0)
+        const inputTokens = response.usageMetadata?.promptTokenCount ?? 0
+        const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0
+        const tokensUsed = inputTokens + outputTokens
 
-        return { text: fullText, tokensUsed }
+        return { text: fullText, tokensUsed, inputTokens, outputTokens }
       } catch (err) {
         const isLast = mi === models.length - 1 && attempt === 2
         if (!isRetryable(err) || isLast) {
@@ -147,7 +147,7 @@ export async function generateText(
     systemPrompt?: string
     maxTokens?: number
   } = {}
-): Promise<{ text: string; tokensUsed: number }> {
+): Promise<{ text: string; tokensUsed: number; inputTokens: number; outputTokens: number }> {
   return withRetry(async (modelName) => {
     const client = getClient()
     const model = client.getGenerativeModel({
@@ -161,11 +161,11 @@ export async function generateText(
     })
 
     const text = result.response.text()
-    const tokensUsed =
-      (result.response.usageMetadata?.promptTokenCount ?? 0) +
-      (result.response.usageMetadata?.candidatesTokenCount ?? 0)
+    const inputTokens = result.response.usageMetadata?.promptTokenCount ?? 0
+    const outputTokens = result.response.usageMetadata?.candidatesTokenCount ?? 0
+    const tokensUsed = inputTokens + outputTokens
 
-    return { text, tokensUsed }
+    return { text, tokensUsed, inputTokens, outputTokens }
   })
 }
 
@@ -479,7 +479,7 @@ export async function chatWithProjectStreamingGemini(
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   onPartialHtml: (partialHtml: string) => void,
   uploadedImageUrls?: string[]
-): Promise<{ html: string; message: string; tokensUsed: number }> {
+): Promise<{ html: string; message: string; tokensUsed: number; estimatedCost?: number }> {
   const lastUserMessage = messages[messages.length - 1]
 
   const hasUploadedImages = uploadedImageUrls && uploadedImageUrls.length > 0
@@ -646,7 +646,7 @@ export async function chatWithProjectGemini(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   uploadedImageUrls?: string[]
-): Promise<{ html: string; message: string; tokensUsed: number }> {
+): Promise<{ html: string; message: string; tokensUsed: number; estimatedCost?: number }> {
   const lastUserMessage = messages[messages.length - 1]
 
   const hasUploadedImages = uploadedImageUrls && uploadedImageUrls.length > 0
@@ -769,7 +769,9 @@ Build every [SECTION N] listed above — all of them, in order, no exceptions.
 - Sections with no images and short text: use CENTERED CTA layout
 - Match the section count exactly. Long-form pages have 15-30 sections — build all of them.`
 
-    const { text: fullHtml, tokensUsed } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
+    const { text: fullHtml, tokensUsed, inputTokens, outputTokens } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
+    const cost = geminiCost(inputTokens ?? 0, outputTokens ?? 0)
+    console.log(`[gemini] rebuild — input: ${inputTokens} tokens, output: ${outputTokens} tokens, cost: $${cost.toFixed(4)}`)
 
     const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
       ? fullHtml.search(/<!DOCTYPE html/i)
@@ -780,10 +782,10 @@ Build every [SECTION N] listed above — all of them, in order, no exceptions.
       : fullHtml.replace(/\n?```\s*$/, '').trim()
 
     if (!cleaned || !/<html/i.test(cleaned) || !/<\/html>/i.test(cleaned)) {
-      return { html: currentHtml, message: 'Could not generate a complete page. Please try again.', tokensUsed }
+      return { html: currentHtml, message: 'Could not generate a complete page. Please try again.', tokensUsed, estimatedCost: cost }
     }
 
-    return { html: cleaned, message: 'Done.', tokensUsed }
+    return { html: cleaned, message: 'Done.', tokensUsed, estimatedCost: cost }
 
   } else {
     // ── SURGICAL EDIT ─────────────────────────────────────────────────────────
@@ -806,7 +808,9 @@ USER REQUEST: ${userMessage}
 
 Apply ONLY the requested change(s) to the HTML above and return the complete modified page.`
 
-    const { text: fullHtml, tokensUsed } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
+    const { text: fullHtml, tokensUsed, inputTokens, outputTokens } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
+    const cost = geminiCost(inputTokens ?? 0, outputTokens ?? 0)
+    console.log(`[gemini] edit — input: ${inputTokens} tokens, output: ${outputTokens} tokens, cost: $${cost.toFixed(4)}`)
 
     const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
       ? fullHtml.search(/<!DOCTYPE html/i)
@@ -817,11 +821,21 @@ Apply ONLY the requested change(s) to the HTML above and return the complete mod
       : fullHtml.replace(/\n?```\s*$/, '').trim()
 
     if (!cleaned || !/<html/i.test(cleaned) || !/<\/html>/i.test(cleaned)) {
-      return { html: currentHtml, message: 'Could not apply the change. Please try again.', tokensUsed }
+      return { html: currentHtml, message: 'Could not apply the change. Please try again.', tokensUsed, estimatedCost: cost }
     }
 
-    return { html: cleaned, message: 'Done.', tokensUsed }
+    return { html: cleaned, message: 'Done.', tokensUsed, estimatedCost: cost }
   }
+}
+
+/**
+ * Calculate estimated Gemini API cost in USD.
+ * Pricing (Gemini 2.5 Flash, prompts ≤200K tokens):
+ *   Input:  $0.15 / 1M tokens
+ *   Output: $0.60 / 1M tokens
+ */
+export function geminiCost(inputTokens: number, outputTokens: number): number {
+  return (inputTokens * 0.15 + outputTokens * 0.60) / 1_000_000
 }
 
 export function isGeminiConfigured(): boolean {

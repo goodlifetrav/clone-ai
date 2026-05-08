@@ -138,7 +138,7 @@ async function runChatJob(
   const supabase = createServiceClient()
 
   try {
-    const { html: finalHtml, message: finalMessage, tokensUsed } =
+    const { html: finalHtml, message: finalMessage, tokensUsed, estimatedCost } =
       await chatWithProjectGemini(currentHtml, chatMessages, uploadedImageUrls)
 
     const isValidHtml =
@@ -171,11 +171,14 @@ async function runChatJob(
     }
     await supabase.from('users').update(userUpdate).eq('id', user.id)
 
+    console.log(`[chat] job complete — tokens: ${tokensUsed}, cost: $${(estimatedCost ?? 0).toFixed(4)}, project: ${projectId}`)
     completeJob(
       jobId,
       isValidHtml ? finalHtml : currentHtml,
       isValidHtml ? finalMessage : 'Could not generate a complete page. Please try again.',
-      newFreeChatsUsed
+      newFreeChatsUsed,
+      tokensUsed,
+      estimatedCost
     )
   } catch (err) {
     const error = err as Error

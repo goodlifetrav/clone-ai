@@ -26,5 +26,7 @@ export async function GET(request: NextRequest) {
     html: job.html,
     message: job.message,
     messagesUsed: job.messagesUsed ?? 0,
+    tokensUsed: job.tokensUsed ?? 0,
+    estimatedCost: job.estimatedCost ?? 0,
   })
 }
