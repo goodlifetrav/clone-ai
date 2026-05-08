@@ -17,7 +17,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 export function Header() {
   const { toggleTheme, isDark } = useTheme()
-  const { isSignedIn, user, signOut } = useAuth()
+  const { isSignedIn, user, signIn, signOut } = useAuth()
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 sm:px-6 py-4 border-b border-neutral-200/80 bg-white/80 backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/80">
