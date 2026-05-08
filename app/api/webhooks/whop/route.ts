@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
         const contact = await ghlFindContactByEmail(user.email)
         if (contact) {
           const tag = planToGhlTag(plan)
-          if (tag) await ghlAddTags(contact.id, [tag])
+          if (tag) await ghlAddTags(contact, [tag])
         }
       } catch (e) {
         console.error('[Whop webhook] GHL sync failed:', e)
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
         try {
           const contact = await ghlFindContactByEmail(user.email)
           if (contact) {
-            await ghlRemoveTags(contact.id, ['igualai_pro', 'igualai_agency'])
+            await ghlRemoveTags(contact, ['igualai_pro', 'igualai_agency'])
           }
         } catch (e) {
           console.error('[Whop webhook] GHL sync failed:', e)
