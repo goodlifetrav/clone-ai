@@ -32,7 +32,7 @@ async function fetchAuthState(): Promise<AuthState> {
   }
 }
 
-export function useAuth(): AuthState & { signIn: () => void; signOut: () => void } {
+export function useAuth(): AuthState & { signIn: (next?: string) => void; signOut: () => void } {
   const [state, setState] = useState<AuthState>(
     cache ?? { user: null, isLoaded: false, isSignedIn: false }
   )
