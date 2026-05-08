@@ -89,8 +89,5 @@ export async function POST(request: NextRequest) {
 
   console.log('[Clerk Webhook] User saved to Supabase successfully')
 
-  // Create contact in GHL — handles duplicate by adding "IgualAI Lead" tag
-  await ghlCreateContact(email, firstName, lastName, ['IgualAI Lead', 'Website Cloner'])
-
   return NextResponse.json({ received: true })
 }
