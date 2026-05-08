@@ -104,9 +104,14 @@ export function resolvePlan(memberships: WhopMembership[]): string {
   return 'free'
 }
 
-/** Checkout URL for a given plan */
+/** Checkout URL for a given plan ID (must be a plan_xxx ID, not prod_xxx) */
 export function getCheckoutUrl(planId: string): string {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://igualai.com'
+  // Plan IDs start with "plan_" — product IDs won't work here
+  if (!planId.startsWith('plan_')) {
+    // Fallback to the Whop store page if a product ID was accidentally used
+    return 'https://whop.com/igualai/'
+  }
   return `https://whop.com/checkout/${planId}/?redirect_url=${encodeURIComponent(appUrl + '/dashboard')}`
 }
 
