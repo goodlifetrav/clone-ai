@@ -42,6 +42,11 @@ export function Header() {
             Dashboard
           </Link>
         )}
+        {isSignedIn && (
+          <a href="https://whop.com/joined/igualai/" target="_blank" rel="noopener noreferrer" className="hover:text-neutral-900 dark:hover:text-white transition-colors">
+            Support
+          </a>
+        )}
       </nav>
 
       {/* Right side */}
