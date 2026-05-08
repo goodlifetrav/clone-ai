@@ -244,7 +244,7 @@ export function PricingCards({ currentPlan }: { currentPlan?: Plan }) {
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => !isSignedIn && openSignIn()}
+                  onClick={() => !isSignedIn && (window.location.href = '/api/auth/whop/login')}
                 >
                   Get Started Free
                 </Button>
