@@ -50,7 +50,10 @@ export async function GET(request: NextRequest) {
       // Create GHL contact for new users
       if (newUser) {
         try {
-          await ghlCreateContact({ email: whopUser.email, name: whopUser.name ?? whopUser.username })
+          const nameParts = (whopUser.name ?? whopUser.username ?? '').split(' ')
+          const firstName = nameParts[0] ?? ''
+          const lastName = nameParts.slice(1).join(' ') ?? ''
+          await ghlCreateContact(whopUser.email, firstName, lastName, ['igualai_free'])
         } catch (e) {
           console.error('[Whop callback] GHL contact creation failed:', e)
         }
