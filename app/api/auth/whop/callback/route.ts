@@ -10,24 +10,22 @@ export async function GET(request: NextRequest) {
 
   const code = request.nextUrl.searchParams.get('code')
   const error = request.nextUrl.searchParams.get('error')
+  const isPopup = request.cookies.get('whop_auth_popup')?.value === '1'
 
   if (error || !code) {
     console.error('[Whop callback] error:', error)
-    return NextResponse.redirect(`${appUrl}/sign-in?error=auth_failed`)
+    if (isPopup) {
+      return new NextResponse(popupErrorHtml(), { headers: { 'Content-Type': 'text/html' } })
+    }
+    return NextResponse.redirect(`${appUrl}/?error=auth_failed`)
   }
 
   try {
-    // Exchange code for tokens
     const tokens = await exchangeCodeForTokens(code, redirectUri)
-
-    // Get user profile
     const whopUser = await getWhopUser(tokens.access_token)
-
-    // Get memberships to determine plan
     const memberships = await getWhopMemberships(tokens.access_token)
     const plan = resolvePlan(memberships)
 
-    // Upsert user in Supabase (clerk_id column stores Whop user ID)
     const supabase = createServiceClient()
     const { data: existingUser } = await supabase
       .from('users')
@@ -47,7 +45,6 @@ export async function GET(request: NextRequest) {
         .select('id')
         .single()
 
-      // Create GHL contact for new users
       if (newUser) {
         try {
           const nameParts = (whopUser.name ?? whopUser.username ?? '').split(' ')
@@ -59,7 +56,6 @@ export async function GET(request: NextRequest) {
         }
       }
     } else if (existingUser.plan !== plan) {
-      // Sync plan if it changed
       await supabase.from('users').update({ plan }).eq('clerk_id', whopUser.id)
     }
 
@@ -70,13 +66,67 @@ export async function GET(request: NextRequest) {
     session.name = whopUser.name ?? whopUser.username
     await session.save()
 
-    // Redirect to intended destination
     const next = request.cookies.get('whop_auth_next')?.value ?? '/dashboard'
+
+    // Popup mode: close the popup and notify parent window
+    if (isPopup) {
+      const html = popupSuccessHtml(appUrl, next)
+      const response = new NextResponse(html, { headers: { 'Content-Type': 'text/html' } })
+      response.cookies.delete('whop_auth_popup')
+      response.cookies.delete('whop_auth_next')
+      // Copy session cookie from getSession save
+      return response
+    }
+
+    // Normal redirect
     const response = NextResponse.redirect(`${appUrl}${next}`)
     response.cookies.delete('whop_auth_next')
     return response
   } catch (err) {
     console.error('[Whop callback] error:', err)
-    return NextResponse.redirect(`${appUrl}/sign-in?error=auth_failed`)
+    if (isPopup) {
+      return new NextResponse(popupErrorHtml(), { headers: { 'Content-Type': 'text/html' } })
+    }
+    return NextResponse.redirect(`${appUrl}/?error=auth_failed`)
   }
+}
+
+function popupSuccessHtml(appUrl: string, next: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head><title>Signing in...</title></head>
+<body>
+<script>
+  try {
+    if (window.opener) {
+      window.opener.postMessage({ type: 'whop_auth_success', next: ${JSON.stringify(next)} }, ${JSON.stringify(appUrl)});
+      window.close();
+    } else {
+      window.location.href = ${JSON.stringify(appUrl + next)};
+    }
+  } catch(e) {
+    window.location.href = ${JSON.stringify(appUrl + next)};
+  }
+</script>
+<p>Signing in...</p>
+</body>
+</html>`
+}
+
+function popupErrorHtml(): string {
+  return `<!DOCTYPE html>
+<html>
+<head><title>Error</title></head>
+<body>
+<script>
+  try {
+    if (window.opener) {
+      window.opener.postMessage({ type: 'whop_auth_error' }, '*');
+      window.close();
+    }
+  } catch(e) {}
+</script>
+<p>Authentication failed. Please close this window and try again.</p>
+</body>
+</html>`
 }

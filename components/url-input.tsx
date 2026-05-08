@@ -15,7 +15,7 @@ export function UrlInput() {
   const [error, setError] = useState('')
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const router = useRouter()
-  const { isSignedIn } = useAuth()
+  const { isSignedIn, signIn } = useAuth()
 
   const handleClone = async () => {
     setError('')
@@ -33,7 +33,7 @@ export function UrlInput() {
     }
 
     if (!isSignedIn) {
-      window.location.href = '/api/auth/whop/login'
+      signIn()
       return
     }
 

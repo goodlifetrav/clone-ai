@@ -72,13 +72,13 @@ const PLANS: PricingPlan[] = [
 export function PricingCards({ currentPlan }: { currentPlan?: Plan }) {
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>('monthly')
   const [loading, setLoading] = useState<Plan | null>(null)
-  const { isSignedIn } = useAuth()
+  const { isSignedIn, signIn } = useAuth()
 
   const handleUpgrade = async (plan: Plan) => {
     if (plan === 'free') return
 
     if (!isSignedIn) {
-      window.location.href = '/api/auth/whop/login?next=/pricing'
+      signIn('/pricing')
       return
     }
 
@@ -244,7 +244,7 @@ export function PricingCards({ currentPlan }: { currentPlan?: Plan }) {
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => !isSignedIn && (window.location.href = '/api/auth/whop/login')}
+                  onClick={() => !isSignedIn && signIn()}
                 >
                   Get Started Free
                 </Button>

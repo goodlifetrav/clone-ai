@@ -55,12 +55,8 @@ export function Header() {
           <UserDropdown user={user} onSignOut={signOut} />
         ) : (
           <div className="flex items-center gap-2">
-            <Link href="/api/auth/whop/login">
-              <Button variant="ghost" size="sm">Sign in</Button>
-            </Link>
-            <Link href="/api/auth/whop/login">
-              <Button size="sm">Get started</Button>
-            </Link>
+            <Button variant="ghost" size="sm" onClick={() => signIn()}>Sign in</Button>
+            <Button size="sm" onClick={() => signIn()}>Get started</Button>
           </div>
         )}
       </div>
