@@ -48,36 +48,27 @@ export function useAuth(): AuthState & { signIn: (next?: string) => void; signOu
     })
   }, [])
 
-  // Listen for popup auth success
+  // Listen for modal auth success
   useEffect(() => {
-    const appUrl = window.location.origin
-    function onMessage(e: MessageEvent) {
-      if (e.origin !== appUrl) return
-      if (e.data?.type === 'igualai_auth_success') {
-        cache = null
-        fetchAuthState().then((next) => {
-          cache = next
-          setState(next)
-          const next_path = e.data.next as string | undefined
-          if (next_path && next_path !== '/dashboard') {
-            window.location.href = next_path
-          }
-        })
-      }
+    function onAuthSuccess(e: Event) {
+      cache = null
+      fetchAuthState().then((freshState) => {
+        cache = freshState
+        setState(freshState)
+        const nextPath = (e as CustomEvent<{ next?: string }>).detail?.next
+        if (nextPath && nextPath !== window.location.pathname) {
+          window.location.href = nextPath
+        }
+      })
     }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    window.addEventListener('igualai_auth_success', onAuthSuccess)
+    return () => window.removeEventListener('igualai_auth_success', onAuthSuccess)
   }, [])
 
   const signIn = useCallback((next?: string) => {
-    const params = new URLSearchParams({ popup: '1' })
-    if (next) params.set('next', next)
-    const url = `/sign-in?${params.toString()}`
-    const w = 500
-    const h = 650
-    const left = window.screenX + (window.outerWidth - w) / 2
-    const top = window.screenY + (window.outerHeight - h) / 2
-    window.open(url, 'igualai_login', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`)
+    window.dispatchEvent(
+      new CustomEvent('open-auth-modal', { detail: { next: next ?? '/dashboard', mode: 'sign-in' } })
+    )
   }, [])
 
   function signOut() {

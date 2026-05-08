@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { ThemeProvider } from 'next-themes'
+import { AuthModal } from '@/components/auth-modal'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
+          <AuthModal />
         </ThemeProvider>
       </body>
     </html>
