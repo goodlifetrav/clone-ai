@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyWhopWebhook, productIdToPlan, getMembershipsByUserId } from '@/lib/whop'
 import { createServiceClient } from '@/lib/supabase'
-import { ghlFindContactByEmail, ghlAddTags, ghlRemoveTags, planToGhlTag } from '@/lib/ghl'
 
 interface WhopWebhookEvent {
   event: string
@@ -35,7 +34,6 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServiceClient()
 
-  // Extract user ID and product ID from various event shapes
   const whopUserId = event.data.user_id ?? event.data.membership?.user_id
   const productId =
     event.data.product_id ??
@@ -47,58 +45,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (event.event === 'membership.went_valid') {
-    // Map product → plan; if unknown product, default to 'pro' (not free)
     const plan = productId ? (productIdToPlan(productId) ?? 'pro') : 'free'
-
     await supabase.from('users').update({ plan }).eq('clerk_id', whopUserId)
-
-    // Sync GHL tag
-    const { data: user } = await supabase
-      .from('users')
-      .select('email, plan')
-      .eq('clerk_id', whopUserId)
-      .single()
-
-    if (user?.email) {
-      try {
-        const contact = await ghlFindContactByEmail(user.email)
-        if (contact) {
-          const tag = planToGhlTag(plan)
-          if (tag) await ghlAddTags(contact, [tag])
-        }
-      } catch (e) {
-        console.error('[Whop webhook] GHL sync failed:', e)
-      }
-    }
-
     console.log(`[Whop webhook] user ${whopUserId} → plan: ${plan}`)
   }
 
   if (event.event === 'membership.went_invalid') {
-    // Verify no active memberships remain before downgrading
     const memberships = await getMembershipsByUserId(whopUserId)
     const hasActive = memberships.some((m) => m.status === 'active' || m.status === 'trialing')
 
     if (!hasActive) {
       await supabase.from('users').update({ plan: 'free' }).eq('clerk_id', whopUserId)
-
-      const { data: user } = await supabase
-        .from('users')
-        .select('email')
-        .eq('clerk_id', whopUserId)
-        .single()
-
-      if (user?.email) {
-        try {
-          const contact = await ghlFindContactByEmail(user.email)
-          if (contact) {
-            await ghlRemoveTags(contact, ['igualai_pro', 'igualai_agency'])
-          }
-        } catch (e) {
-          console.error('[Whop webhook] GHL sync failed:', e)
-        }
-      }
-
       console.log(`[Whop webhook] user ${whopUserId} → downgraded to free`)
     }
   }

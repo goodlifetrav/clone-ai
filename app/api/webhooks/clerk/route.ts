@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Webhook } from 'svix'
 import { createServiceClient } from '@/lib/supabase'
-import { ghlCreateContact } from '@/lib/ghl'
 
 interface ClerkEmailAddress {
   email_address: string

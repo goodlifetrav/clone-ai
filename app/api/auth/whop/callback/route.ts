@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { exchangeCodeForTokens, getWhopUser, getWhopMemberships, resolvePlan } from '@/lib/whop'
 import { getSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
-import { ghlCreateContact } from '@/lib/ghl'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://igualai.com'
@@ -34,27 +33,12 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (!existingUser) {
-      const { data: newUser } = await supabase
-        .from('users')
-        .insert({
-          clerk_id: whopUser.id,
-          email: whopUser.email,
-          name: whopUser.name ?? whopUser.username,
-          plan,
-        })
-        .select('id')
-        .single()
-
-      if (newUser) {
-        try {
-          const nameParts = (whopUser.name ?? whopUser.username ?? '').split(' ')
-          const firstName = nameParts[0] ?? ''
-          const lastName = nameParts.slice(1).join(' ') ?? ''
-          await ghlCreateContact(whopUser.email, firstName, lastName, ['igualai_free'])
-        } catch (e) {
-          console.error('[Whop callback] GHL contact creation failed:', e)
-        }
-      }
+      await supabase.from('users').insert({
+        clerk_id: whopUser.id,
+        email: whopUser.email,
+        name: whopUser.name ?? whopUser.username,
+        plan,
+      })
     } else if (existingUser.plan !== plan) {
       await supabase.from('users').update({ plan }).eq('clerk_id', whopUser.id)
     }
@@ -68,17 +52,14 @@ export async function GET(request: NextRequest) {
 
     const next = request.cookies.get('whop_auth_next')?.value ?? '/dashboard'
 
-    // Popup mode: close the popup and notify parent window
     if (isPopup) {
       const html = popupSuccessHtml(appUrl, next)
       const response = new NextResponse(html, { headers: { 'Content-Type': 'text/html' } })
       response.cookies.delete('whop_auth_popup')
       response.cookies.delete('whop_auth_next')
-      // Copy session cookie from getSession save
       return response
     }
 
-    // Normal redirect
     const response = NextResponse.redirect(`${appUrl}${next}`)
     response.cookies.delete('whop_auth_next')
     return response

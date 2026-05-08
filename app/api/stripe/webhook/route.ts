@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { stripe, PRICE_IDS } from '@/lib/stripe'
 import { createServiceClient } from '@/lib/supabase'
-import { ghlFindContactByEmail, ghlAddTags, ghlRemoveTags, planToGhlTag } from '@/lib/ghl'
 import type Stripe from 'stripe'
 import type { Plan } from '@/types'
 
