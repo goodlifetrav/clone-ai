@@ -260,16 +260,24 @@ export async function POST(request: NextRequest) {
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice
-        const email = invoice.customer_email
+        const customerId = invoice.customer as string
 
-        if (!email) {
-          console.warn('invoice.payment_succeeded: no customer_email on invoice', {
-            invoiceId: invoice.id,
-          })
-          break
+        if (!customerId) break
+
+        // Reset billing period on every successful payment
+        const { data: paidUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('stripe_customer_id', customerId)
+          .single()
+
+        if (paidUser) {
+          await supabase
+            .from('users')
+            .update({ billing_period_start: new Date().toISOString() })
+            .eq('id', paidUser.id)
+          console.log('invoice.payment_succeeded: billing_period_start reset', { customerId })
         }
-
-        console.log('invoice.payment_succeeded:', email)
         break
       }
 

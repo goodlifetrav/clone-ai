@@ -67,20 +67,20 @@ export async function POST(request: NextRequest) {
           )
         }
       } else {
-        // Paid plans use monthly count
-        const startOfMonth = new Date()
-        startOfMonth.setDate(1)
-        startOfMonth.setHours(0, 0, 0, 0)
+        // Paid plans: count since billing_period_start (resets on payment), fallback to start of month
+        const billingStart = user.billing_period_start
+          ? new Date(user.billing_period_start)
+          : (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d })()
 
         const { count } = await supabase
           .from('projects')
           .select('id', { count: 'exact', head: true })
           .eq('user_id', user.id)
-          .gte('created_at', startOfMonth.toISOString())
+          .gte('created_at', billingStart.toISOString())
 
         if ((count ?? 0) >= limit) {
           return NextResponse.json(
-            { error: `Monthly clone limit reached (${limit}/month on ${user.plan} plan). Upgrade or wait until next month.`, upgradeRequired: true },
+            { error: `Monthly clone limit reached (${limit}/month on ${user.plan} plan). Resets on your next billing date.`, upgradeRequired: true },
             { status: 403 }
           )
         }

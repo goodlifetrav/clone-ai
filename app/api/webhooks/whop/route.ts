@@ -46,8 +46,11 @@ export async function POST(request: NextRequest) {
 
   if (event.event === 'membership.went_valid') {
     const plan = productId ? (productIdToPlan(productId) ?? 'pro') : 'free'
-    await supabase.from('users').update({ plan }).eq('clerk_id', whopUserId)
-    console.log(`[Whop webhook] user ${whopUserId} → plan: ${plan}`)
+    await supabase
+      .from('users')
+      .update({ plan, billing_period_start: new Date().toISOString() })
+      .eq('clerk_id', whopUserId)
+    console.log(`[Whop webhook] user ${whopUserId} → plan: ${plan}, billing_period_start reset`)
   }
 
   if (event.event === 'membership.went_invalid') {
