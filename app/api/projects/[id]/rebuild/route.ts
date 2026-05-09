@@ -25,9 +25,6 @@ export async function POST(
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
   const adminOverride = user.is_admin || isAdminEmail(user.email)
-  if (user.plan === 'free' && !adminOverride) {
-    return NextResponse.json({ error: 'Upgrade to Pro to use AI Rebuild', upgradeRequired: true }, { status: 403 })
-  }
 
   const { data: project } = await supabase
     .from('projects')
