@@ -47,11 +47,44 @@ export async function POST(request: NextRequest) {
     }
 
     const adminByEmail = isAdminEmail(user.email)
-    if (!user.is_admin && !adminByEmail && user.plan === 'free' && user.clones_count >= 1) {
-      return NextResponse.json(
-        { error: 'Free tier limit reached. Upgrade to clone more websites.', upgradeRequired: true },
-        { status: 403 }
-      )
+    const isAdmin = user.is_admin || adminByEmail
+
+    if (!isAdmin) {
+      const PLAN_MONTHLY_LIMITS: Record<string, number> = {
+        free: 2,
+        pro: 20,
+        agency: 60,
+      }
+
+      const limit = PLAN_MONTHLY_LIMITS[user.plan] ?? 2
+
+      if (user.plan === 'free') {
+        // Free uses cumulative count (never resets)
+        if (user.clones_count >= limit) {
+          return NextResponse.json(
+            { error: 'Free tier limit reached. Upgrade to clone more websites.', upgradeRequired: true },
+            { status: 403 }
+          )
+        }
+      } else {
+        // Paid plans use monthly count
+        const startOfMonth = new Date()
+        startOfMonth.setDate(1)
+        startOfMonth.setHours(0, 0, 0, 0)
+
+        const { count } = await supabase
+          .from('projects')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .gte('created_at', startOfMonth.toISOString())
+
+        if ((count ?? 0) >= limit) {
+          return NextResponse.json(
+            { error: `Monthly clone limit reached (${limit}/month on ${user.plan} plan). Upgrade or wait until next month.`, upgradeRequired: true },
+            { status: 403 }
+          )
+        }
+      }
     }
 
     const { data: project, error: projectCreateError } = await supabase
