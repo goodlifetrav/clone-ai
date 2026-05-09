@@ -272,15 +272,15 @@ export function SplitView({
           <span className="hidden sm:inline">Download</span>
         </Button>
 
-        <a href="mailto:support@igualai.com?subject=IgualAI Support Request">
+        <a href="https://whop.com/joined/igualai/" target="_blank" rel="noopener noreferrer">
           <Button
             variant="ghost"
             size="sm"
             className="h-7 px-2 text-xs gap-1 flex-shrink-0"
-            title="Contact Support"
+            title="Support"
           >
             <HelpCircle className="w-3 h-3" />
-            <span className="hidden sm:inline">Help</span>
+            <span className="hidden sm:inline">Support</span>
           </Button>
         </a>
 

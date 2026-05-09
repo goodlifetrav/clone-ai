@@ -272,13 +272,17 @@ export default function SettingsPage() {
                   </p>
                 </div>
               </div>
-              <Separator />
-              <a href="https://whop.com/@me/" target="_blank" rel="noopener noreferrer">
-                <Button variant="outline" size="sm">
-                  Edit Profile on Whop
-                  <ArrowUpRight className="w-3 h-3 ml-1" />
-                </Button>
-              </a>
+              {plan !== 'free' && (
+                <>
+                  <Separator />
+                  <a href="https://whop.com/@me/" target="_blank" rel="noopener noreferrer">
+                    <Button variant="outline" size="sm">
+                      Edit Profile on Whop
+                      <ArrowUpRight className="w-3 h-3 ml-1" />
+                    </Button>
+                  </a>
+                </>
+              )}
             </CardContent>
           </Card>
 

@@ -37,13 +37,10 @@ export async function POST(request: NextRequest) {
     { onConflict: 'clerk_id' }
   )
 
-  // New user → welcome email + Whop free membership (non-blocking)
+  // New user → welcome email (non-blocking)
   if (!existing) {
     sendWelcomeEmail(user.email ?? '', displayName).catch((err) =>
       console.error('[Session] Welcome email failed:', err)
-    )
-    createWhopFreeMembership(user.email ?? '').catch((err) =>
-      console.error('[Session] Whop membership creation failed:', err)
     )
   }
 
@@ -56,16 +53,3 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ ok: true })
 }
 
-async function createWhopFreeMembership(email: string): Promise<void> {
-  const productId = process.env.WHOP_FREE_PRODUCT_ID
-  if (!productId || !email) return
-  const res = await fetch('https://api.whop.com/api/v5/memberships', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.WHOP_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ product_id: productId, email }),
-  })
-  if (!res.ok) throw new Error(`Whop API ${res.status}: ${await res.text()}`)
-}

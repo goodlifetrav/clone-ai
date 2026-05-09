@@ -82,12 +82,9 @@ export async function GET(request: NextRequest) {
         clones_count: 0,
       })
 
-      // Non-blocking: welcome email + Whop free membership
+      // Non-blocking: welcome email
       sendWelcomeEmail(profile.email, displayName).catch((err) =>
         console.error('[Google OAuth] Welcome email failed:', err)
-      )
-      createWhopFreeMembership(profile.email).catch((err) =>
-        console.error('[Google OAuth] Whop membership failed:', err)
       )
     }
 
@@ -105,16 +102,3 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function createWhopFreeMembership(email: string): Promise<void> {
-  const productId = process.env.WHOP_FREE_PRODUCT_ID
-  if (!productId || !email) return
-  const res = await fetch('https://api.whop.com/api/v5/memberships', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.WHOP_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ product_id: productId, email }),
-  })
-  if (!res.ok) throw new Error(`Whop API ${res.status}: ${await res.text()}`)
-}
