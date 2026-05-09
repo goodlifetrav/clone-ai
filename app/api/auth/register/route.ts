@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
-import { sendWelcomeEmail } from '@/lib/email'
+import { sendWelcomeEmail, sendCommunityInviteEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
   const { email, password, name } = await request.json()
@@ -45,9 +45,12 @@ export async function POST(request: NextRequest) {
     { onConflict: 'clerk_id' }
   )
 
-  // Non-blocking: welcome email
+  // Non-blocking: welcome email + delayed community invite
   sendWelcomeEmail(email, displayName).catch((err) =>
     console.error('[Register] Welcome email failed (non-critical):', err)
+  )
+  sendCommunityInviteEmail(email, displayName).catch((err) =>
+    console.error('[Register] Community invite email failed (non-critical):', err)
   )
 
   // Create iron-session so the user is immediately logged in

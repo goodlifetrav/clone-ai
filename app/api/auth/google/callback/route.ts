@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { getSession } from '@/lib/auth'
-import { sendWelcomeEmail } from '@/lib/email'
+import { sendWelcomeEmail, sendCommunityInviteEmail } from '@/lib/email'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://igualai.com'
@@ -82,9 +82,12 @@ export async function GET(request: NextRequest) {
         clones_count: 0,
       })
 
-      // Non-blocking: welcome email
+      // Non-blocking: welcome email + delayed community invite
       sendWelcomeEmail(profile.email, displayName).catch((err) =>
         console.error('[Google OAuth] Welcome email failed:', err)
+      )
+      sendCommunityInviteEmail(profile.email, displayName).catch((err) =>
+        console.error('[Google OAuth] Community invite email failed:', err)
       )
     }
 
