@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { getSession } from '@/lib/auth'
+import { sendWelcomeEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
   const { access_token } = await request.json()
@@ -36,8 +37,11 @@ export async function POST(request: NextRequest) {
     { onConflict: 'clerk_id' }
   )
 
-  // New user → create Whop free membership (non-blocking)
+  // New user → welcome email + Whop free membership (non-blocking)
   if (!existing) {
+    sendWelcomeEmail(user.email ?? '', displayName).catch((err) =>
+      console.error('[Session] Welcome email failed:', err)
+    )
     createWhopFreeMembership(user.email ?? '').catch((err) =>
       console.error('[Session] Whop membership creation failed:', err)
     )

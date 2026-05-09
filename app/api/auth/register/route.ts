@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
+import { sendWelcomeEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
   const { email, password, name } = await request.json()
@@ -44,9 +45,12 @@ export async function POST(request: NextRequest) {
     { onConflict: 'clerk_id' }
   )
 
-  // Attempt to create Whop free membership (non-blocking — failure doesn't break signup)
+  // Non-blocking: Whop free membership + welcome email
   createWhopFreeMembership(email).catch((err) =>
     console.error('[Register] Whop membership creation failed (non-critical):', err)
+  )
+  sendWelcomeEmail(email, displayName).catch((err) =>
+    console.error('[Register] Welcome email failed (non-critical):', err)
   )
 
   // Create iron-session so the user is immediately logged in
