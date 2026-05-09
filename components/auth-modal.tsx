@@ -1,13 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { createClient } from '@supabase/supabase-js'
 import { Zap, Loader2, Eye, EyeOff, X } from 'lucide-react'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-)
 
 type Mode = 'sign-in' | 'sign-up'
 
@@ -91,13 +85,9 @@ export function AuthModal() {
     close()
   }
 
-  const handleGoogle = async () => {
-    setGoogleLoading(true)
-    setError('')
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    })
+  const handleGoogle = () => {
+    const params = new URLSearchParams({ next })
+    window.location.href = `/api/auth/google/login?${params.toString()}`
   }
 
   const switchMode = (m: Mode) => {
