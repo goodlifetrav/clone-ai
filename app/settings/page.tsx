@@ -273,7 +273,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               <Separator />
-              <a href="https://whop.com/my-account/" target="_blank" rel="noopener noreferrer">
+              <a href="https://whop.com/@me/" target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" size="sm">
                   Edit Profile on Whop
                   <ArrowUpRight className="w-3 h-3 ml-1" />
@@ -528,6 +528,25 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
           </Card>}
+
+          {/* Community */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-neutral-500" />
+                <CardTitle className="text-base">Community Access</CardTitle>
+              </div>
+              <CardDescription>Join the IgualAI community on Whop for support, tips, and updates.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <a href="https://whop.com/checkout/plan_RqjBsFXY6jcfP/?redirect_url=https%3A%2F%2Figualai.com%2Fdashboard" target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="sm">
+                  Join Community — Free
+                  <ArrowUpRight className="w-3 h-3 ml-1" />
+                </Button>
+              </a>
+            </CardContent>
+          </Card>
 
           {/* Contact Support */}
           <Card>
