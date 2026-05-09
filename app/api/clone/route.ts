@@ -105,6 +105,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create project' }, { status: 500 })
     }
 
+    // Increment clones_count immediately so it's always accurate regardless
+    // of which pipeline (DOM vs screenshot) completes the project.
+    await supabase
+      .from('users')
+      .update({
+        clones_count: (user.clones_count || 0) + 1,
+        ...(user.plan === 'free' ? { free_clones_used: (user.free_clones_used || 0) + 1 } : {}),
+      })
+      .eq('id', user.id)
+
     // Fire-and-forget DOM extraction pipeline.
     // The client receives projectId immediately and navigates to the editor,
     // which streams from /api/projects/[id]/generate.

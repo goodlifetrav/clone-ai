@@ -39,7 +39,7 @@ export async function POST(
 
   const strippedHtml = preprocessHtmlForClone(project.html_content ?? '', 15000)
 
-  const prompt = `You are an expert web designer. I have a cloned website's HTML below. Your task is to redesign it as a clean, modern, fully self-contained webpage using the brand details provided.
+  const prompt = `You are an expert web designer. I have a cloned website's HTML below. Your task is to REBRAND it using the brand details provided — while keeping the original site's visual design, layout, and aesthetic INTACT.
 
 BRAND DETAILS:
 - Brand Name: ${brandName}
@@ -47,26 +47,28 @@ BRAND DETAILS:
 - Primary Color: ${primaryColor}
 - Secondary Color: ${secondaryColor}
 - Accent Color: ${accentColor}
-- Logo URL: ${logoUrl || 'none — use brand name as text logo'}
+- Logo URL: ${logoUrl || 'none — use brand name as styled text'}
 - Brand Description: ${brandDescription}
 - Hero Headline: ${headline || brandName}
 - Hero Subheadline: ${subheadline || tagline || brandDescription}
 - CTA Button Text: ${ctaText || 'Get Started'}
 
-INSTRUCTIONS:
-1. Keep the same page STRUCTURE and SECTIONS as the original (nav, hero, features, testimonials, footer etc)
-2. Replace ALL text content with the brand details above — no placeholder text
-3. Use the brand colors throughout — primary for main elements, secondary for backgrounds/accents, accent for CTAs and highlights
-4. Output clean, modern HTML with all CSS inlined in a <style> tag — NO external dependencies, NO CDN links
-5. Make it fully responsive with mobile-friendly design
-6. If a logo URL is provided, use it as an <img> in the nav. Otherwise use the brand name as styled text
-7. Remove any scripts that reference the original site's functionality
-8. Output ONLY the complete HTML document — no explanation, no markdown, no code blocks
+CRITICAL RULES — READ CAREFULLY:
+1. PRESERVE the original site's visual design EXACTLY — same layout, same spacing, same font styles, same section structure, same overall aesthetic. The output must look like the original site, just rebranded.
+2. Only REPLACE: brand name, text content, colors (swap original colors with the brand colors provided), and logo.
+3. Do NOT redesign, restructure, or reimagine the layout. Do NOT change font sizes, border radii, card styles, or spacing unless replacing a color.
+4. Keep ALL sections in the same order and with the same visual treatment as the original.
+5. Replace the original site's color palette with the brand colors: primary color for main accents/buttons/headings, secondary for backgrounds/secondary elements, accent for CTAs and highlights.
+6. Replace all text content with brand-appropriate copy based on the brand details — no placeholder text, no lorem ipsum.
+7. If a logo URL is provided, use it as <img> in the nav. Otherwise use the brand name as styled text matching the original logo position and style.
+8. Keep all images from the original HTML unless a logo URL is provided.
+9. Output clean HTML with all CSS inlined in a <style> tag — NO external dependencies.
+10. Output ONLY the complete HTML document — no explanation, no markdown, no code blocks.
 
-ORIGINAL SITE HTML:
+ORIGINAL SITE HTML (preserve its look and feel exactly — only rebrand):
 ${strippedHtml}
 
-OUTPUT: Complete redesigned HTML document only.`
+OUTPUT: Complete rebranded HTML document only. Must look like the original site with new brand applied.`
 
   const encoder = new TextEncoder()
 
