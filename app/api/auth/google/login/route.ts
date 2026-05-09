@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+const CALLBACK_URL = 'https://igualai.com/api/auth/google/callback'
+
 export async function GET(request: NextRequest) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://igualai.com'
   const next = request.nextUrl.searchParams.get('next') ?? '/dashboard'
 
   const state = Buffer.from(JSON.stringify({ next })).toString('base64')
 
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID!,
-    redirect_uri: `${appUrl}/api/auth/google/callback`,
+    redirect_uri: CALLBACK_URL,
     response_type: 'code',
     scope: 'openid email profile',
     state,
