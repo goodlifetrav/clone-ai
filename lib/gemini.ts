@@ -523,99 +523,43 @@ tailwind.config = {
 
 Override brand colors to match the user's palette. Keep Inter font throughout.
 
-━━━ LAYOUT RULES BY SECTION TYPE ━━━
+━━━ DESIGN PHILOSOPHY ━━━
+Build clean, modern SaaS landing pages. NO random stock photos. Use icons, typography, UI mockups, and geometric shapes instead.
 
-⚠️ CRITICAL IMAGE RULE: NEVER put an image below centered text as a full-width block.
-Every section with an image MUST use SPLIT LAYOUT — text on one side, image on the other.
+━━━ LAYOUT PATTERNS ━━━
 
-SPLIT LAYOUT sections (text + image side by side) — required for any section with an image:
-<section class="py-20 px-8 bg-white">
-  <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-16">
-    <div class="lg:w-1/2 space-y-6">
-      <p class="text-sm font-semibold uppercase tracking-widest opacity-60">Label</p>
-      <h2 class="text-4xl lg:text-5xl font-bold text-gray-900">Heading</h2>
-      <p class="text-lg text-gray-600 leading-relaxed">2-3 sentence description.</p>
-      <a href="#" class="inline-flex px-6 py-3 rounded-full bg-indigo-600 text-white font-semibold hover:bg-indigo-500 transition">CTA →</a>
-    </div>
-    <div class="lg:w-1/2"><img src="https://picsum.photos/seed/WORD/900/600" class="w-full rounded-2xl shadow-2xl" alt=""></div>
-  </div>
-</section>
-- Odd sections: text left, image right. Even sections: add lg:flex-row-reverse.
+HERO: large bold heading + subtext + 2 buttons + UI wireframe mockup (gray skeleton box with icon, no real photo)
+LOGO BAR: "TRUSTED BY X TEAMS" label + 5-7 company names in muted gray
+ICON FEATURE GRID: 3-column grid, each cell has Font Awesome icon + bold title + 2-sentence description. NO images.
+BENTO GRID: dark card (bg-gray-900, white text) side by side with light card (bg-white, border) containing a checklist of features
+TESTIMONIALS: 2-3 quote cards in a grid, each with quote text + avatar initial + author name/role
+CTA SECTION: centered, large heading, 2 buttons (dark primary + white border secondary), small "no credit card" note
+FOOTER: logo + tagline col, then 3-4 link columns, bottom bar with copyright + social icons
 
-IMAGE MOSAIC GRID sections (hero visual only):
-- Use: <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-- Fill with: <img src="https://picsum.photos/seed/WORD/600/400" class="w-full h-48 object-cover rounded-xl">
-- Use 6-12 images with DIFFERENT seed words
-
-CARD GRID sections:
-- Use: <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-- Each card: <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
-- Card contains: icon (Font Awesome), heading (text-xl font-semibold), description
-
-LOGO BAR sections (social proof):
-- Horizontal flex row of 5-7 brand/company names in text-xl font-semibold opacity-40
-
-TESTIMONIAL sections:
-- Grid of 2-3 quote cards; each has blockquote text, author name, role, company
-
-CTA SECTION:
-- Centered, py-32, large heading (text-5xl font-bold), subtext, 2 buttons
-
-━━━ TYPOGRAPHY RULES ━━━
-- Hero heading: text-6xl lg:text-7xl xl:text-8xl font-black tracking-tighter (if original has massive type)
-- Feature section headings: text-4xl lg:text-5xl font-bold (NOT text-2xl — make them BIG)
-- Body text: text-lg leading-relaxed
-- Small labels above headings: text-sm font-semibold uppercase tracking-widest opacity-60
-
-━━━ IMAGE RULES ━━━
-- ALWAYS use: https://picsum.photos/seed/WORD/WIDTH/HEIGHT
-- WORD = single lowercase English word, different for every image
-- Good seed words: dashboard, interface, analytics, workflow, team, office, product, design, code, city, launch, scale, growth, connect, build
-- Hero images: /seed/WORD/1920/1080
-- Split section images: /seed/WORD/900/600
-- Card/grid images: /seed/WORD/600/400
-
-━━━ GENERAL RULES ━━━
-- Nav: logo text + flex gap-8 nav links + CTA button — no wrapping
-- All buttons: px-6 py-3 rounded-full font-semibold transition-all duration-300
-- Fully mobile responsive — sm: md: lg: breakpoints on every section
+━━━ RULES ━━━
+- NO stock photos. NO picsum images. Use Font Awesome icons and UI skeleton mockups only.
+- Buttons: rounded-lg bg-gray-900 text-white (primary), bg-white border border-gray-200 (secondary)
+- Nav: font-bold logo + horizontal links + dark CTA button
+- Alternating section backgrounds: bg-white and bg-gray-50
+- Mobile responsive on every section
 - Original compelling copy — no Lorem ipsum
-- Build EVERY section listed in SITE STRUCTURE — all of them, no exceptions.
-  Long pages have 20-40 sections. Build all 20-40. Do not stop early.
-  Do not merge sections. Do not skip sections. Output the complete page.
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
-  const blueprint = currentHtml.length > 200
-    ? buildPageBlueprint(currentHtml)
-    : ''
-
-  const styleSignals = currentHtml.length > 200
-    ? extractStyleSignals(currentHtml)
-    : ''
-
   const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND: ${userMessage}
 
-━━━ ORIGINAL SITE STYLE ━━━
-${styleSignals || 'No style data — use your best judgment.'}
+━━━ ORIGINAL SITE HTML ━━━
+Use the full HTML below as your base. Rebuild it for the brand above — keep the same sections and structure, but replace all content, colors, and visuals with brand-appropriate equivalents. Follow the design system above exactly.
 
-━━━ ORIGINAL SITE BLUEPRINT ━━━
-The blueprint below maps every section of the cloned site. Each [SECTION N] entry shows:
-- The heading text (so you know what that section is about)
-- Image/video/icon counts (so you know if it needs visual content)
-- Context text (so you understand the section's purpose)
-- The structural skeleton shows nesting depth and layout patterns
-
-Use this to build every section in the same order, with the same layout complexity.
-
-${blueprint || 'No blueprint — build a full-featured landing page for the brand described.'}
+${currentHtml}
 
 ━━━ BUILD INSTRUCTIONS ━━━
-Build every [SECTION N] listed above — all of them, in order, no exceptions.
-- Sections with images: use SPLIT LAYOUT (text one side, large image other side)
-- Sections with many list items: use CARD GRID
-- Sections with no images and short text: use CENTERED CTA layout
-- Match the section count exactly. Long-form pages have 15-30 sections — build all of them.`
+- Replicate every section from the original in the same order
+- Use ICON FEATURE GRID for feature sections (no photos)
+- Use BENTO GRID for highlight/comparison sections
+- Use UI MOCKUP placeholder in the hero
+- Replace all colors with the brand palette
+- Output a complete, self-contained page`
 
   let fullHtml = ''
   const { tokensUsed } = await generateTextStreaming(prompt, {
@@ -706,83 +650,142 @@ tailwind.config = {
 
 Override brand colors to match the user's palette. Keep Inter font throughout.
 
-━━━ LAYOUT RULES BY SECTION TYPE ━━━
+━━━ DESIGN PHILOSOPHY ━━━
+Build clean, modern SaaS landing pages. NO random stock photos. Use icons, typography, UI mockups, and geometric shapes instead.
 
-⚠️ CRITICAL IMAGE RULE: NEVER put an image below centered text as a full-width block.
-Every section with an image MUST use SPLIT LAYOUT — text on one side, image on the other.
+━━━ LAYOUT PATTERNS ━━━
 
-SPLIT LAYOUT sections (text + image side by side) — required for any section with an image:
-<section class="py-20 px-8 bg-white">
-  <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-16">
-    <div class="lg:w-1/2 space-y-6">
-      <p class="text-sm font-semibold uppercase tracking-widest opacity-60">Label</p>
-      <h2 class="text-4xl lg:text-5xl font-bold text-gray-900">Heading</h2>
-      <p class="text-lg text-gray-600 leading-relaxed">2-3 sentence description.</p>
-      <a href="#" class="inline-flex px-6 py-3 rounded-full bg-indigo-600 text-white font-semibold hover:bg-indigo-500 transition">CTA →</a>
+HERO SECTION — large bold heading + subtext + 2 buttons + UI mockup below:
+<section class="bg-white pt-24 pb-0 px-8 text-center">
+  <div class="max-w-4xl mx-auto">
+    <p class="text-sm font-semibold uppercase tracking-widest text-gray-400 mb-6">● V2.0 IS NOW LIVE</p>
+    <h1 class="text-6xl lg:text-7xl font-black tracking-tighter text-gray-900 leading-none mb-6">Hero heading<br>here.</h1>
+    <p class="text-xl text-gray-500 mb-8 max-w-2xl mx-auto">Subheadline text goes here.</p>
+    <div class="flex items-center justify-center gap-4 flex-wrap">
+      <a href="#" class="px-6 py-3 bg-gray-900 text-white rounded-lg font-semibold hover:bg-gray-800 transition">Primary CTA →</a>
+      <a href="#" class="px-6 py-3 bg-white text-gray-900 rounded-lg font-semibold border border-gray-200 hover:bg-gray-50 transition">Secondary CTA</a>
     </div>
-    <div class="lg:w-1/2"><img src="https://picsum.photos/seed/WORD/900/600" class="w-full rounded-2xl shadow-2xl" alt=""></div>
+    <!-- UI Mockup -->
+    <div class="mt-16 max-w-3xl mx-auto bg-white rounded-2xl shadow-2xl border border-gray-200 p-6">
+      <div class="flex items-center gap-2 mb-4"><div class="w-3 h-3 rounded-full bg-red-400"></div><div class="w-3 h-3 rounded-full bg-yellow-400"></div><div class="w-3 h-3 rounded-full bg-green-400"></div></div>
+      <div class="space-y-3">
+        <div class="h-4 bg-gray-100 rounded w-3/4"></div><div class="h-4 bg-gray-100 rounded w-1/2"></div>
+        <div class="h-32 bg-gray-50 rounded-xl flex items-center justify-center text-gray-300 border border-gray-100"><i class="fas fa-calendar-alt text-5xl"></i></div>
+        <div class="grid grid-cols-3 gap-2"><div class="h-3 bg-gray-100 rounded"></div><div class="h-3 bg-gray-100 rounded"></div><div class="h-3 bg-gray-100 rounded"></div></div>
+      </div>
+    </div>
   </div>
 </section>
-- Odd sections: text left, image right. Even sections: add lg:flex-row-reverse.
 
-IMAGE MOSAIC GRID sections (hero visual only):
-- Use: <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-- Fill with: <img src="https://picsum.photos/seed/WORD/600/400" class="w-full h-48 object-cover rounded-xl">
-- Use 6-12 images with DIFFERENT seed words
+LOGO BAR — social proof strip:
+<section class="py-12 px-8 border-y border-gray-100">
+  <p class="text-center text-xs font-semibold uppercase tracking-widest text-gray-400 mb-8">TRUSTED BY 10,000+ TEAMS</p>
+  <div class="max-w-4xl mx-auto flex items-center justify-center flex-wrap gap-10">
+    <span class="text-xl font-bold text-gray-300">AcmeCorp</span>
+    <span class="text-xl font-bold text-gray-300">Globex</span>
+    <span class="text-xl font-bold text-gray-300">Soylent</span>
+    <span class="text-xl font-bold text-gray-300">Initech</span>
+    <span class="text-xl font-bold text-gray-300">Umbrella</span>
+  </div>
+</section>
 
-CARD GRID sections:
-- Use: <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-- Each card: <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
-- Card contains: icon (Font Awesome), heading (text-xl font-semibold), description
+ICON FEATURE GRID — 3 columns, no images, icons only:
+<section class="py-24 px-8 bg-white">
+  <div class="max-w-5xl mx-auto">
+    <div class="text-center mb-16">
+      <h2 class="text-4xl lg:text-5xl font-bold text-gray-900">Section heading</h2>
+      <p class="text-lg text-gray-400 mt-4">Subtext</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
+      <div class="space-y-3">
+        <div class="w-10 h-10 flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><i class="fas fa-calendar text-xl"></i></div>
+        <h3 class="text-lg font-semibold text-gray-900">Feature Name</h3>
+        <p class="text-gray-500 leading-relaxed">2 sentence description.</p>
+      </div>
+    </div>
+  </div>
+</section>
 
-LOGO BAR sections (social proof):
-- Horizontal flex row of 5-7 brand/company names in text-xl font-semibold opacity-40
+BENTO GRID — dark card + light feature list (for highlight sections):
+<section class="py-24 px-8 bg-gray-50">
+  <div class="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="bg-gray-900 rounded-3xl p-10 text-white">
+      <h3 class="text-3xl font-bold mb-4">Dark card heading</h3>
+      <p class="text-gray-400 leading-relaxed">Description text.</p>
+      <a href="#" class="mt-8 inline-flex items-center text-white font-semibold gap-2">Learn more <i class="fas fa-arrow-right text-sm"></i></a>
+    </div>
+    <div class="bg-white rounded-3xl p-10 border border-gray-100 space-y-6">
+      <div class="flex items-start gap-4"><div class="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 mt-0.5"><i class="fas fa-check text-indigo-600 text-xs"></i></div><div><h4 class="font-semibold text-gray-900">Feature one</h4><p class="text-gray-500 text-sm mt-1">Short description.</p></div></div>
+      <div class="flex items-start gap-4"><div class="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 mt-0.5"><i class="fas fa-check text-indigo-600 text-xs"></i></div><div><h4 class="font-semibold text-gray-900">Feature two</h4><p class="text-gray-500 text-sm mt-1">Short description.</p></div></div>
+      <div class="flex items-start gap-4"><div class="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0 mt-0.5"><i class="fas fa-check text-indigo-600 text-xs"></i></div><div><h4 class="font-semibold text-gray-900">Feature three</h4><p class="text-gray-500 text-sm mt-1">Short description.</p></div></div>
+    </div>
+  </div>
+</section>
 
-TESTIMONIAL sections:
-- Grid of 2-3 quote cards; each has blockquote text, author name, role, company
+TESTIMONIALS — quote cards grid:
+<section class="py-24 px-8 bg-white">
+  <div class="max-w-5xl mx-auto">
+    <h2 class="text-4xl font-bold text-gray-900 text-center mb-16">What our users say</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+        <p class="text-gray-600 leading-relaxed mb-6">"Quote text here. Make it authentic and specific."</p>
+        <div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center font-bold text-gray-500">A</div><div><p class="font-semibold text-gray-900 text-sm">Author Name</p><p class="text-gray-400 text-xs">Title, Company</p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
 
 CTA SECTION:
-- Centered, py-32, large heading (text-5xl font-bold), subtext, 2 buttons
+<section class="py-32 px-8 bg-white text-center">
+  <div class="max-w-3xl mx-auto">
+    <h2 class="text-5xl font-bold text-gray-900 mb-6">Ready to get started?</h2>
+    <p class="text-xl text-gray-400 mb-10">Join thousands of teams already using [brand].</p>
+    <div class="flex items-center justify-center gap-4"><a href="#" class="px-8 py-4 bg-gray-900 text-white rounded-lg font-semibold hover:bg-gray-800 transition">Sign up free</a><a href="#" class="px-8 py-4 bg-white text-gray-900 rounded-lg font-semibold border border-gray-200">Contact Sales</a></div>
+    <p class="text-sm text-gray-400 mt-4">No credit card required. Cancel anytime.</p>
+  </div>
+</section>
 
-━━━ TYPOGRAPHY RULES ━━━
-- Hero heading: text-6xl lg:text-7xl xl:text-8xl font-black tracking-tighter (if original has massive type)
-- Feature section headings: text-4xl lg:text-5xl font-bold (NOT text-2xl — make them BIG)
-- Body text: text-lg leading-relaxed
-- Small labels above headings: text-sm font-semibold uppercase tracking-widest opacity-60
+FOOTER — multi-column with logo:
+<footer class="bg-white border-t border-gray-100 py-16 px-8">
+  <div class="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8">
+    <div class="col-span-2 md:col-span-1"><p class="font-bold text-gray-900 text-lg mb-3">Brand</p><p class="text-gray-400 text-sm leading-relaxed">Short tagline or description.</p></div>
+    <div><p class="font-semibold text-gray-900 text-sm mb-4">Product</p><ul class="space-y-2 text-sm text-gray-500"><li>Features</li><li>Pricing</li><li>Changelog</li></ul></div>
+    <div><p class="font-semibold text-gray-900 text-sm mb-4">Company</p><ul class="space-y-2 text-sm text-gray-500"><li>About</li><li>Blog</li><li>Careers</li></ul></div>
+    <div><p class="font-semibold text-gray-900 text-sm mb-4">Legal</p><ul class="space-y-2 text-sm text-gray-500"><li>Privacy</li><li>Terms</li></ul></div>
+  </div>
+  <div class="max-w-6xl mx-auto mt-12 pt-8 border-t border-gray-100 flex items-center justify-between text-sm text-gray-400"><p>© 2025 Brand. All rights reserved.</p><div class="flex gap-4"><i class="fab fa-twitter"></i><i class="fab fa-github"></i><i class="fab fa-linkedin"></i></div></div>
+</footer>
 
-━━━ IMAGE RULES ━━━
-- ALWAYS use: https://picsum.photos/seed/WORD/WIDTH/HEIGHT
-- WORD = single lowercase English word, different for every image
-- Good seed words: dashboard, interface, analytics, workflow, team, office, product, design, code, city, launch, scale, growth, connect, build
-- Hero images: /seed/WORD/1920/1080
-- Split section images: /seed/WORD/900/600
-- Card/grid images: /seed/WORD/600/400
-- Square images: /seed/WORD/600/600
+━━━ TYPOGRAPHY ━━━
+- Hero: text-6xl lg:text-7xl font-black tracking-tighter
+- Section headings: text-4xl lg:text-5xl font-bold
+- Body: text-lg text-gray-500 leading-relaxed
+- Labels above headings: text-xs font-semibold uppercase tracking-widest text-gray-400
 
-━━━ GENERAL RULES ━━━
-- Nav: logo text + flex gap-8 nav links + CTA button — no wrapping
-- All buttons: px-6 py-3 rounded-full font-semibold transition-all duration-300
-- Fully mobile responsive — sm: md: lg: breakpoints on every section
+━━━ RULES ━━━
+- NO random stock photos (no picsum). Use icons, UI mockups, and typography instead.
+- Nav: logo (font-bold) + horizontal links + dark CTA button
+- Buttons: rounded-lg (not rounded-full), dark bg-gray-900 primary, white border secondary
+- Light background throughout: bg-white or bg-gray-50 for alternating sections
+- Mobile responsive on every section
 - Original compelling copy — no Lorem ipsum
-- Build EVERY section listed in SITE STRUCTURE — all of them, no exceptions.
-  Long pages have 20-40 sections. Build all 20-40. Do not stop early.
-  Do not merge sections. Do not skip sections. Output the complete page.
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
     const prompt = `BRAND: ${userMessage}
 
 ━━━ ORIGINAL SITE HTML ━━━
-Use the full HTML below as your base. Rebuild it for the brand above — same layout, same sections, same structure. Replace all text, colors, and images with brand-appropriate content.
+Use the full HTML below as your base. Rebuild it for the brand above — keep the same sections and structure, but replace all content, colors, and visuals with brand-appropriate equivalents. Follow the design system above exactly.
 
 ${currentHtml}
 
 ━━━ BUILD INSTRUCTIONS ━━━
-- Keep every section from the original — same order, same layout complexity
-- Replace all text with brand-appropriate copy
-- Replace all colors with the brand's color palette
-- Replace all images with https://picsum.photos/seed/WORD/WIDTH/HEIGHT (different seed per image)
-- Output a complete, self-contained page with Tailwind CSS from CDN`
+- Replicate every section from the original in the same order
+- Use ICON FEATURE GRID for feature sections (no photos)
+- Use BENTO GRID for highlight/comparison sections
+- Use UI MOCKUP placeholder in the hero (no real photos)
+- Replace all colors with the brand palette
+- Output a complete, self-contained page`
 
     const { text: fullHtml, tokensUsed, inputTokens, outputTokens } = await generateText(prompt, { systemPrompt, maxTokens: 65536, disableThinking: true })
     // Note: full HTML is sent — input tokens will be large (350k+ for complex sites)
