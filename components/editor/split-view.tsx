@@ -41,7 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
-type RightTab = 'preview' | 'code' | 'visual' | 'versions'
+type RightTab = 'preview' | 'code'
 type MobileTab = 'preview' | 'chat' | 'code' | 'more'
 
 interface SplitViewProps {
@@ -175,8 +175,6 @@ export function SplitView({
   const rightTabs: { id: RightTab; label: string; icon: React.ReactNode }[] = [
     { id: 'preview', label: 'Preview', icon: <Eye className="w-3.5 h-3.5" /> },
     { id: 'code', label: 'Code', icon: <Code2 className="w-3.5 h-3.5" /> },
-    { id: 'visual', label: 'Visual', icon: <Paintbrush className="w-3.5 h-3.5" /> },
-    { id: 'versions', label: 'History', icon: <History className="w-3.5 h-3.5" /> },
   ]
 
   return (
@@ -342,6 +340,12 @@ export function SplitView({
             rebuildRequired={!hasBeenRebuilt}
             rebuildInProgress={rebuildInProgress}
             onOpenRebuild={() => setShowBrandWizard(true)}
+            versions={versions}
+            onRestoreVersion={(version) => {
+              onSaveVersion(html)
+              onRestoreVersion(version)
+            }}
+            onRefetchVersions={onRefetchVersions}
           />
         </div>
 
@@ -360,7 +364,7 @@ export function SplitView({
             {rightTabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => { setRightTab(tab.id); if (tab.id === 'versions') onRefetchVersions?.() }}
+                onClick={() => setRightTab(tab.id)}
                 className={cn(
                   'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors flex-shrink-0',
                   rightTab === tab.id
@@ -391,31 +395,6 @@ export function SplitView({
               {mobileTab === 'code' && (
                 <CodeEditor value={html} onChange={onHtmlChange} className="h-full" isStreaming={isGenerating} />
               )}
-              {mobileTab === 'more' && moreContent === 'visual' && (
-                <VisualEditor
-                  html={html ?? ''}
-                  hasBeenAiRebuilt={hasBeenRebuilt}
-                  onHtmlChange={onHtmlChange}
-                  onOpenRebuild={() => setShowBrandWizard(true)}
-                  className="h-full"
-                />
-              )}
-              {mobileTab === 'more' && moreContent === 'history' && (
-                <VersionHistory
-                  versions={versions}
-                  currentHtml={html}
-                  onRestore={(version) => {
-                    onSaveVersion(html) // snapshot current state before restoring
-                    onRestoreVersion(version)
-                    setMobileTab('preview')
-                  }}
-                  onSaveVersion={onSaveVersion}
-                  className="h-full"
-                />
-              )}
-              {mobileTab === 'more' && moreContent === null && (
-                <PreviewPane projectId={project.id} html={html} className="h-full" />
-              )}
             </div>
 
             {/* ── Desktop layer ────────────────────────────────────────── */}
@@ -425,28 +404,6 @@ export function SplitView({
               )}
               {rightTab === 'code' && (
                 <CodeEditor value={html} onChange={onHtmlChange} className="h-full" isStreaming={isGenerating} />
-              )}
-              {rightTab === 'visual' && (
-                <VisualEditor
-                  html={html ?? ''}
-                  hasBeenAiRebuilt={hasBeenRebuilt}
-                  onHtmlChange={onHtmlChange}
-                  onOpenRebuild={() => setShowBrandWizard(true)}
-                  className="h-full"
-                />
-              )}
-              {rightTab === 'versions' && (
-                <VersionHistory
-                  versions={versions}
-                  currentHtml={html}
-                  onRestore={(version) => {
-                    onSaveVersion(html) // snapshot current state before restoring
-                    onRestoreVersion(version)
-                    setRightTab('preview')
-                  }}
-                  onSaveVersion={onSaveVersion}
-                  className="h-full"
-                />
               )}
             </div>
           </div>
@@ -459,19 +416,10 @@ export function SplitView({
           { id: 'preview' as MobileTab, label: 'Preview', icon: <Eye className="w-5 h-5" /> },
           { id: 'chat' as MobileTab, label: 'Ask AI', icon: <Bot className="w-5 h-5" /> },
           { id: 'code' as MobileTab, label: 'Code', icon: <Code2 className="w-5 h-5" /> },
-          { id: 'more' as MobileTab, label: 'More', icon: <MoreHorizontal className="w-5 h-5" /> },
         ].map((tab) => (
           <button
             key={tab.id}
-            onClick={() => {
-              if (tab.id === 'more') {
-                setShowMoreSheet(true)
-                setMobileTab('more')
-              } else {
-                setMobileTab(tab.id)
-                setShowMoreSheet(false)
-              }
-            }}
+            onClick={() => setMobileTab(tab.id)}
             className={cn(
               'flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
               mobileTab === tab.id
@@ -485,45 +433,6 @@ export function SplitView({
         ))}
       </div>
 
-      {/* ── More slide-up sheet ───────────────────────────────────── */}
-      {showMoreSheet && (
-        <div className="sm:hidden fixed inset-0 z-50 flex flex-col justify-end">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setShowMoreSheet(false)}
-          />
-          {/* Sheet */}
-          <div className="relative bg-white dark:bg-neutral-900 rounded-t-2xl border-t border-neutral-200 dark:border-neutral-800 pb-safe pb-8">
-            <div className="w-10 h-1 bg-neutral-300 dark:bg-neutral-600 rounded-full mx-auto mt-3 mb-4" />
-            <div className="px-4 space-y-1">
-              <button
-                onClick={() => {
-                  setMoreContent('visual')
-                  setRightTab('visual')
-                  setShowMoreSheet(false)
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Paintbrush className="w-5 h-5 text-purple-500" />
-                Visual
-              </button>
-              <button
-                onClick={() => {
-                  setMoreContent('history')
-                  setRightTab('versions')
-                  setShowMoreSheet(false)
-                  onRefetchVersions?.()
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <History className="w-5 h-5 text-purple-500" />
-                History
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Brand Rebuild wizard */}
       {showBrandWizard && (

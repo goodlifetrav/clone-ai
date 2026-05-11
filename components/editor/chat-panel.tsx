@@ -3,9 +3,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Send, Loader2, User, Bot, Zap, Upload, ImagePlus, X, Maximize2, Minimize2, Sparkles } from 'lucide-react'
-import type { ChatMessage } from '@/types'
-import { cn } from '@/lib/utils'
+import { Send, Loader2, User, Bot, Zap, Upload, ImagePlus, X, Maximize2, Minimize2, Sparkles, History, RotateCcw, Clock } from 'lucide-react'
+import type { ChatMessage, ProjectVersion } from '@/types'
+import { cn, formatDate } from '@/lib/utils'
 import Link from 'next/link'
 
 interface ChatPanelProps {
@@ -32,6 +32,10 @@ interface ChatPanelProps {
   rebuildInProgress?: boolean
   /** Opens the Brand Rebuild wizard */
   onOpenRebuild?: () => void
+  /** Version history */
+  versions?: ProjectVersion[]
+  onRestoreVersion?: (version: ProjectVersion) => void
+  onRefetchVersions?: () => void
 }
 
 export function ChatPanel({
@@ -50,6 +54,9 @@ export function ChatPanel({
   rebuildRequired = false,
   rebuildInProgress = false,
   onOpenRebuild,
+  versions,
+  onRestoreVersion,
+  onRefetchVersions,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -60,6 +67,7 @@ export function ChatPanel({
   const [uploadingImage, setUploadingImage] = useState(false)
   const [pendingImages, setPendingImages] = useState<string[]>([])
   const [isExpanded, setIsExpanded] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -328,30 +336,87 @@ export function ChatPanel({
     <>
       <div className="flex flex-col h-full border-t border-neutral-200 dark:border-neutral-800">
         {/* Header */}
-        <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex items-center gap-2">
-          <Bot className="w-4 h-4 text-neutral-500" />
-          <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">AI Chat</span>
-          {chatLimit !== null && messagesUsed !== null ? (
-            <span
-              className={cn(
-                'text-xs ml-auto',
-                isAtLimit
-                  ? 'text-red-500 dark:text-red-400 font-medium'
-                  : messagesUsed >= chatLimit - 1
-                  ? 'text-amber-500 dark:text-amber-400'
-                  : 'text-neutral-400'
-              )}
-            >
-              {messagesUsed} of {chatLimit} free messages used
-            </span>
+        <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex items-center gap-2 flex-shrink-0">
+          {showHistory ? (
+            <>
+              <History className="w-4 h-4 text-neutral-500" />
+              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">History</span>
+              <div className="ml-auto flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => onSaveVersion?.(currentHtml ?? '')} className="h-6 text-xs px-2">
+                  Save Version
+                </Button>
+                <button
+                  onClick={() => setShowHistory(false)}
+                  className="text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 px-2 py-1 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  ← Chat
+                </button>
+              </div>
+            </>
           ) : (
-            <span className="text-xs text-neutral-400 ml-auto">Press Enter to send</span>
+            <>
+              <Bot className="w-4 h-4 text-neutral-500" />
+              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">AI Chat</span>
+              {chatLimit !== null && messagesUsed !== null ? (
+                <span className={cn('text-xs', isAtLimit ? 'text-red-500 dark:text-red-400 font-medium' : messagesUsed >= chatLimit - 1 ? 'text-amber-500 dark:text-amber-400' : 'text-neutral-400')}>
+                  {messagesUsed}/{chatLimit}
+                </span>
+              ) : null}
+              <button
+                onClick={() => { setShowHistory(true); onRefetchVersions?.() }}
+                className="ml-auto flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 px-2 py-1 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <History className="w-3.5 h-3.5" />
+                History
+              </button>
+            </>
           )}
         </div>
 
 
+        {/* Version History panel */}
+        {showHistory && (
+          <ScrollArea className="flex-1 min-h-0">
+            {!versions || versions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-40 text-neutral-400 dark:text-neutral-500 text-sm">
+                <History className="w-8 h-8 mb-3 opacity-40" />
+                <p>No versions saved yet</p>
+                <p className="text-xs mt-1">Versions are saved automatically after each AI edit</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                <div className="flex items-center gap-3 px-4 py-3 bg-neutral-50 dark:bg-neutral-900/50">
+                  <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">Current</p>
+                    <p className="text-xs text-neutral-500">{currentHtml?.length.toLocaleString()} chars</p>
+                  </div>
+                </div>
+                {[...versions].sort((a, b) => b.version_number - a.version_number).map((v) => (
+                  <div key={v.id} className="flex items-center gap-3 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-900/50 group">
+                    <Clock className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">Version {v.version_number}</p>
+                      <p className="text-xs text-neutral-500">{formatDate(v.created_at)} · {v.html_content.length.toLocaleString()} chars</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => { onRestoreVersion?.(v); setShowHistory(false) }}
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" />
+                      Restore
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        )}
+
         {/* Messages */}
-        <ScrollArea className="flex-1 min-h-0 p-4">
+        {!showHistory && <ScrollArea className="flex-1 min-h-0 p-4">
           {messages.length === 0 ? (
             <div className="text-center text-sm text-neutral-400 dark:text-neutral-500 py-8">
               <Bot className="w-8 h-8 mx-auto mb-3 opacity-40" />
@@ -408,7 +473,7 @@ export function ChatPanel({
               <div ref={bottomRef} />
             </div>
           )}
-        </ScrollArea>
+        </ScrollArea>}
 
 
         {/* Limit reached banner */}
@@ -444,7 +509,7 @@ export function ChatPanel({
         )}
 
         {/* Brand Rebuild gate — shown before first rebuild */}
-        {rebuildRequired && (
+        {!showHistory && rebuildRequired && (
           rebuildInProgress ? (
             <div className="px-4 py-5 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex flex-col items-center gap-3 text-center">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center">
@@ -480,7 +545,7 @@ export function ChatPanel({
         )}
 
         {/* Input area */}
-        {!rebuildRequired && (
+        {!showHistory && !rebuildRequired && (
         <div
           className="px-3 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 sticky bottom-0"
           onDragOver={handleDragOver}
