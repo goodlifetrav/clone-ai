@@ -1,9 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
-import { isAdminEmail } from '@/lib/admin'
-import { chatWithProjectGemini } from '@/lib/gemini'
+import { generateTextStreaming } from '@/lib/gemini'
 import { injectBrandImages } from '@/lib/image-injection'
+
+/**
+ * Strip only scripts/comments from the HTML so Gemini receives the real
+ * structure, CSS, and content — just like pasting it manually into Gemini.
+ */
+function prepareHtmlForRebrand(html: string, maxChars = 150000): string {
+  let result = html
+  result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+  result = result.replace(/<!--[\s\S]*?-->/g, '')
+  result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
+  result = result.replace(/\s+/g, ' ').trim()
+  if (result.length > maxChars) result = result.slice(0, maxChars)
+  return result
+}
 
 export async function POST(
   request: NextRequest,
@@ -34,19 +47,31 @@ export async function POST(
   const body = await request.json()
   const { brandName, tagline, primaryColor, secondaryColor, accentColor, logoUrl, brandDescription, headline, subheadline, ctaText } = body
 
-  // Build a compact brand description to pass as the user message
-  const brandMessage = [
-    `Brand Name: ${brandName}`,
-    tagline ? `Tagline: ${tagline}` : null,
-    brandDescription ? `Description: ${brandDescription}` : null,
-    `Primary Color: ${primaryColor}`,
-    secondaryColor ? `Secondary Color: ${secondaryColor}` : null,
-    accentColor ? `Accent Color: ${accentColor}` : null,
-    logoUrl ? `Logo URL: ${logoUrl}` : null,
-    headline ? `Hero Headline: ${headline}` : null,
-    subheadline ? `Hero Subheadline: ${subheadline}` : null,
-    ctaText ? `CTA Button Text: ${ctaText}` : null,
-  ].filter(Boolean).join('\n')
+  const preparedHtml = prepareHtmlForRebrand(project.html_content ?? '')
+
+  const prompt = `Take this HTML code and use it as a base to rebuild a website for the brand described below. Keep the exact same layout, sections, visual structure, and design patterns from the original HTML — only change the brand name, text content, colors, and logo.
+
+BRAND DETAILS:
+- Brand Name: ${brandName}
+- Tagline: ${tagline || 'Not provided'}
+- Primary Color: ${primaryColor}
+- Secondary Color: ${secondaryColor || 'Not provided'}
+- Accent Color: ${accentColor || 'Not provided'}
+- Logo: ${logoUrl ? `Use this image URL as the logo: ${logoUrl}` : 'Use brand name as styled text in the nav'}
+- Description: ${brandDescription}
+- Hero Headline: ${headline || brandName}
+- Hero Subheadline: ${subheadline || tagline || brandDescription}
+- CTA Button Text: ${ctaText || 'Get Started'}
+
+INSTRUCTIONS:
+1. Keep the EXACT same layout, section order, visual structure, and design patterns from the original HTML below
+2. Replace all text with brand-appropriate copy based on the brand details above
+3. Replace the original color palette with the brand colors (primary for main accents/buttons/headings, secondary for backgrounds, accent for CTAs)
+4. Keep all images from the original unless a logo URL is provided
+5. Output ONLY the complete HTML document — no explanation, no markdown, no code fences
+
+ORIGINAL HTML:
+${preparedHtml}`
 
   const encoder = new TextEncoder()
 
@@ -62,18 +87,40 @@ export async function POST(
 
       try {
         send({ status: 'thinking' })
+        let fullHtml = ''
 
-        // Use the same chatWithProjectGemini pipeline that powers chat edits.
-        // Passing an empty history triggers the full brand rebuild path.
-        const { html: rebuiltHtml } = await chatWithProjectGemini(
-          project.html_content ?? '',
-          [{ role: 'user', content: brandMessage }]
-        )
+        await generateTextStreaming(prompt, {
+          maxTokens: 65536,
+          onReset: () => { fullHtml = '' },
+          onChunk: (chunk) => {
+            fullHtml += chunk
+            // Only stream once we have valid HTML started
+            const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
+              ? fullHtml.search(/<!DOCTYPE html/i)
+              : fullHtml.search(/<html/i)
+            if (htmlStart >= 0) {
+              send({ htmlChunk: chunk })
+            }
+          },
+        })
 
-        let fullHtml = rebuiltHtml
+        // Strip any markdown code fences Gemini might add
+        fullHtml = fullHtml
+          .replace(/^```html\n?/i, '')
+          .replace(/^```\n?/, '')
+          .replace(/\n?```$/, '')
+          .trim()
 
-        // Stream the completed HTML to the client
-        send({ htmlChunk: fullHtml })
+        // Extract just the HTML portion
+        const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
+          ? fullHtml.search(/<!DOCTYPE html/i)
+          : fullHtml.search(/<html/i)
+        if (htmlStart > 0) fullHtml = fullHtml.slice(htmlStart)
+
+        if (!fullHtml || !/<html/i.test(fullHtml)) {
+          send({ error: 'Gemini did not return valid HTML. Please try again.' })
+          return
+        }
 
         // ── Image generation ─────────────────────────────────────────────────
         send({ status: 'generating_images' })
