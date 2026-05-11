@@ -90,7 +90,7 @@ ${preparedHtml}`
 
         // Use non-streaming generateText to avoid stream-parse failures on large inputs.
         // This matches how Gemini web works when you paste HTML manually.
-        const { text: rawHtml } = await generateText(prompt, { maxTokens: 131072 })
+        const { text: rawHtml } = await generateText(prompt, { maxTokens: 131072, disableThinking: true })
         console.log(`[rebuild] Gemini returned ${rawHtml.length} chars`)
         console.log(`[rebuild] First 300 chars: ${rawHtml.slice(0, 300)}`)
 

@@ -146,6 +146,7 @@ export async function generateText(
   options: {
     systemPrompt?: string
     maxTokens?: number
+    disableThinking?: boolean
   } = {}
 ): Promise<{ text: string; tokensUsed: number; inputTokens: number; outputTokens: number }> {
   return withRetry(async (modelName) => {
@@ -157,7 +158,11 @@ export async function generateText(
 
     const result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: options.maxTokens ?? 1000 },
+      generationConfig: {
+        maxOutputTokens: options.maxTokens ?? 1000,
+        // Disable thinking so all tokens go to actual output (not internal reasoning)
+        ...(options.disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+      },
     })
 
     const text = result.response.text()
