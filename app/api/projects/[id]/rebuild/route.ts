@@ -5,14 +5,21 @@ import { generateText } from '@/lib/gemini'
 import { injectBrandImages } from '@/lib/image-injection'
 
 /**
- * Strip only scripts/comments — send the full HTML including all CSS
- * exactly like pasting manually into Gemini.
+ * Prepare HTML for Gemini rebuild.
+ * Strip <style> tag contents (Framer CSS alone is 1.2MB — Gemini cannot reproduce it
+ * and trying to do so causes MAX_TOKENS truncation after ~11% of the page).
+ * Keep inline style="" attributes so Gemini understands layout positioning.
+ * Keep all HTML structure, text content, and image URLs.
+ * This is what Gemini web does when you paste HTML manually — it reads the structure
+ * and generates a fresh page, it does NOT try to copy 1.4MB of compiled CSS.
  */
 function prepareHtmlForRebrand(html: string): string {
   let result = html
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
   result = result.replace(/<!--[\s\S]*?-->/g, '')
   result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
+  // Strip style tag CONTENTS only — keep inline style="" attributes
+  result = result.replace(/(<style\b[^>]*>)[\s\S]*?(<\/style>)/gi, '$1$2')
   return result
 }
 
@@ -48,7 +55,7 @@ export async function POST(
   const preparedHtml = prepareHtmlForRebrand(project.html_content ?? '')
   console.log(`[rebuild] HTML size sent to Gemini: ${preparedHtml.length} chars`)
 
-  const prompt = `Take this HTML code and use it as a base to rebuild a website for the brand described below. Keep the exact same layout, sections, visual structure, and design patterns from the original HTML — only change the brand name, text content, colors, and logo.
+  const prompt = `Take this HTML code and use it as a base to rebuild a website for the brand described below. Keep the exact same layout, sections, and visual structure — but generate fresh CSS using the brand colors. Do not try to copy the original CSS class names.
 
 BRAND DETAILS:
 - Brand Name: ${brandName}
@@ -63,9 +70,9 @@ BRAND DETAILS:
 - CTA Button Text: ${ctaText || 'Get Started'}
 
 INSTRUCTIONS:
-1. Keep the EXACT same layout, section order, visual structure, and design patterns from the original HTML below
+1. Keep the EXACT same layout, section order, and visual structure from the original HTML below
 2. Replace all text with brand-appropriate copy based on the brand details above
-3. Replace the original color palette with the brand colors (primary for main accents/buttons/headings, secondary for backgrounds, accent for CTAs)
+3. Write fresh CSS in a <style> tag using the brand colors (primary for buttons/headings/accents, secondary for backgrounds, accent for CTAs)
 4. Keep all images from the original unless a logo URL is provided
 5. Output ONLY the complete HTML document — no explanation, no markdown, no code fences
 
