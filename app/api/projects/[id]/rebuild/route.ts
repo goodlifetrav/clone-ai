@@ -68,7 +68,7 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
           [{ role: 'user', content: brandMessage }]
         )
 
-        if (!fullHtmlRaw || !/<html/i.test(fullHtmlRaw)) {
+        if (!fullHtmlRaw || !/<html/i.test(fullHtmlRaw) || !/<\/html>/i.test(fullHtmlRaw)) {
           send({ error: 'Gemini did not return valid HTML. Please try again.' })
           return
         }

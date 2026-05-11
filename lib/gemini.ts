@@ -774,7 +774,7 @@ Build every [SECTION N] listed above — all of them, in order, no exceptions.
 - Sections with no images and short text: use CENTERED CTA layout
 - Match the section count exactly. Long-form pages have 15-30 sections — build all of them.`
 
-    const { text: fullHtml, tokensUsed, inputTokens, outputTokens } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
+    const { text: fullHtml, tokensUsed, inputTokens, outputTokens } = await generateText(prompt, { systemPrompt, maxTokens: 65536, disableThinking: true })
     const cost = geminiCost(inputTokens ?? 0, outputTokens ?? 0)
     console.log(`[gemini] rebuild — input: ${inputTokens} tokens, output: ${outputTokens} tokens, cost: $${cost.toFixed(4)}`)
 
