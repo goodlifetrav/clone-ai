@@ -10,17 +10,11 @@ import { injectBrandImages } from '@/lib/image-injection'
  */
 function prepareHtmlForRebrand(html: string): string {
   let result = html
-  // Remove scripts
+  // Remove only scripts — everything else (CSS, structure, text) goes to Gemini intact.
+  // Framer/compiled sites need their CSS to be readable; stripping it produces garbage.
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-  // Remove inlined CSS — after CSS inlining this can be 1MB+ of compiled CSS.
-  // Gemini generates its own CSS for the rebuilt page anyway.
-  result = result.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-  // Remove HTML comments and noscript
   result = result.replace(/<!--[\s\S]*?-->/g, '')
   result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
-  // Collapse whitespace
-  result = result.replace(/\s+/g, ' ').trim()
-  // No truncation — Gemini 2.5 Flash supports 1M token context
   return result
 }
 
