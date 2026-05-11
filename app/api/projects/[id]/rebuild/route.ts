@@ -8,12 +8,11 @@ import { injectBrandImages } from '@/lib/image-injection'
  * Strip only scripts/comments from the HTML so Gemini receives the real
  * structure, CSS, and content — just like pasting it manually into Gemini.
  */
-function prepareHtmlForRebrand(html: string, maxChars = 400000): string {
+function prepareHtmlForRebrand(html: string): string {
   let result = html
   // Remove scripts
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-  // Remove inlined CSS — after CSS inlining this can be 800k+ chars of compiled
-  // CSS that consumes the entire context budget, leaving no room for HTML structure.
+  // Remove inlined CSS — after CSS inlining this can be 1MB+ of compiled CSS.
   // Gemini generates its own CSS for the rebuilt page anyway.
   result = result.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
   // Remove HTML comments and noscript
@@ -21,7 +20,7 @@ function prepareHtmlForRebrand(html: string, maxChars = 400000): string {
   result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
   // Collapse whitespace
   result = result.replace(/\s+/g, ' ').trim()
-  if (result.length > maxChars) result = result.slice(0, maxChars)
+  // No truncation — Gemini 2.5 Flash supports 1M token context
   return result
 }
 
