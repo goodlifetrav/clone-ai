@@ -90,22 +90,17 @@ ${preparedHtml}`
 
         // Use non-streaming generateText to avoid stream-parse failures on large inputs.
         // This matches how Gemini web works when you paste HTML manually.
-        const { text: rawHtml } = await generateText(prompt, { maxTokens: 65536 })
+        const { text: rawHtml } = await generateText(prompt, { maxTokens: 131072 })
         console.log(`[rebuild] Gemini returned ${rawHtml.length} chars`)
         console.log(`[rebuild] First 300 chars: ${rawHtml.slice(0, 300)}`)
 
-        // Strip any markdown code fences Gemini might add
-        let fullHtml = rawHtml
-          .replace(/^```html\n?/i, '')
-          .replace(/^```\n?/, '')
-          .replace(/\n?```$/, '')
-          .trim()
-
-        // Extract just the HTML portion
-        const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
-          ? fullHtml.search(/<!DOCTYPE html/i)
-          : fullHtml.search(/<html/i)
-        if (htmlStart > 0) fullHtml = fullHtml.slice(htmlStart)
+        // Find where actual HTML starts — this strips any code fences, preamble, or whitespace
+        const htmlStartIdx = /<!DOCTYPE html/i.test(rawHtml)
+          ? rawHtml.search(/<!DOCTYPE html/i)
+          : rawHtml.search(/<html/i)
+        let fullHtml = htmlStartIdx >= 0
+          ? rawHtml.slice(htmlStartIdx).replace(/\s*```\s*$/, '').trim()
+          : rawHtml.replace(/\s*```\s*$/, '').trim()
 
         if (!fullHtml || !/<html/i.test(fullHtml)) {
           send({ error: 'Gemini did not return valid HTML. Please try again.' })
