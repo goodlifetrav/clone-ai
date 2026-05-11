@@ -55,7 +55,7 @@ export async function POST(
   const preparedHtml = prepareHtmlForRebrand(project.html_content ?? '')
   console.log(`[rebuild] HTML size sent to Gemini: ${preparedHtml.length} chars`)
 
-  const prompt = `Take this HTML code and use it as a base to rebuild a website for the brand described below. Keep the exact same layout, sections, and visual structure — but generate fresh CSS using the brand colors. Do not try to copy the original CSS class names.
+  const prompt = `You are rebuilding a website for a new brand. Study the HTML below to understand the layout, sections, and content structure — then generate a completely fresh, clean HTML page using Tailwind CSS (from CDN) that replicates that same layout for the new brand.
 
 BRAND DETAILS:
 - Brand Name: ${brandName}
@@ -70,13 +70,15 @@ BRAND DETAILS:
 - CTA Button Text: ${ctaText || 'Get Started'}
 
 INSTRUCTIONS:
-1. Keep the EXACT same layout, section order, and visual structure from the original HTML below
-2. Replace all text with brand-appropriate copy based on the brand details above
-3. Write fresh CSS in a <style> tag using the brand colors (primary for buttons/headings/accents, secondary for backgrounds, accent for CTAs)
-4. Keep all images from the original unless a logo URL is provided
-5. Output ONLY the complete HTML document — no explanation, no markdown, no code fences
+1. Read the original HTML to understand the page structure: how many sections, what each section contains, navigation links, hero area, feature sections, testimonials, pricing, footer, etc.
+2. Build a FRESH HTML page using Tailwind CSS (include <script src="https://cdn.tailwindcss.com"></script>) that has the same sections in the same order
+3. Replace all text and copy with brand-appropriate content for ${brandName}
+4. Use the brand colors: primary ${primaryColor} for buttons/headings/accents, secondary ${secondaryColor || '#ffffff'} for backgrounds
+5. Keep images from the original HTML (same img src URLs)
+6. DO NOT copy Framer class names or any original CSS — use only Tailwind utility classes
+7. Output ONLY the complete HTML document — no explanation, no markdown, no code fences
 
-ORIGINAL HTML:
+ORIGINAL HTML TO STUDY:
 ${preparedHtml}`
 
   const encoder = new TextEncoder()
