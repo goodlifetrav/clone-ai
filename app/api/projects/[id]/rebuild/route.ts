@@ -18,8 +18,11 @@ function prepareHtmlForRebrand(html: string): string {
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
   result = result.replace(/<!--[\s\S]*?-->/g, '')
   result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
-  // Strip style tag CONTENTS only — keep inline style="" attributes
+  // Strip style tag contents and all class attributes
+  // Framer class names (framer-abc123) cause Gemini to try to reproduce Framer CSS
+  // Removing them forces Gemini to generate clean Tailwind instead
   result = result.replace(/(<style\b[^>]*>)[\s\S]*?(<\/style>)/gi, '$1$2')
+  result = result.replace(/\s+class="[^"]*"/gi, '')
   return result
 }
 
