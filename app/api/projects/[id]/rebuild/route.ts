@@ -10,11 +10,13 @@ import { injectBrandImages } from '@/lib/image-injection'
  */
 function prepareHtmlForRebrand(html: string): string {
   let result = html
-  // Remove only scripts — everything else (CSS, structure, text) goes to Gemini intact.
-  // Framer/compiled sites need their CSS to be readable; stripping it produces garbage.
+  // Remove scripts, comments, noscript
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
   result = result.replace(/<!--[\s\S]*?-->/g, '')
   result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
+  // Strip contents of <style> tags (compiled CSS like Framer can be 1MB+)
+  // but keep inline style="" attributes so layout structure is preserved
+  result = result.replace(/(<style\b[^>]*>)[\s\S]*?(<\/style>)/gi, '$1$2')
   return result
 }
 
