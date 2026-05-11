@@ -81,8 +81,14 @@ export function SplitView({
   const [rebuildInProgress, setRebuildInProgress] = useState(false)
   const [showBrandWizard, setShowBrandWizard] = useState(false)
   // showBrandBanner removed — the chat panel lock handles Brand Rebuild discovery
-  // True once any AI rebuild (wizard or chat) has completed for this project
-  const [hasBeenRebuilt, setHasBeenRebuilt] = useState(messages.length > 0)
+  // True once any AI rebuild (wizard or chat) has completed for this project.
+  // Also true if the saved HTML already contains Tailwind CDN (rebuilt in a previous session)
+  // or if there are saved versions (rebuild happened before).
+  const [hasBeenRebuilt, setHasBeenRebuilt] = useState(
+    messages.length > 0 ||
+    versions.length > 0 ||
+    (project.html_content?.includes('cdn.tailwindcss.com') ?? false)
+  )
   const [showMoreSheet, setShowMoreSheet] = useState(false)
   const [moreContent, setMoreContent] = useState<'visual' | 'history' | null>(null)
   const rebuildHtmlRef = useRef('')
