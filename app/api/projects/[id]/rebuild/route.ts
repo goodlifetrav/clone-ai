@@ -1,22 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
-import { generateTextStreaming } from '@/lib/gemini'
+import { generateText } from '@/lib/gemini'
 import { injectBrandImages } from '@/lib/image-injection'
 
 /**
- * Strip only scripts/comments from the HTML so Gemini receives the real
- * structure, CSS, and content — just like pasting it manually into Gemini.
+ * Strip only scripts/comments — send the full HTML including all CSS
+ * exactly like pasting manually into Gemini.
  */
 function prepareHtmlForRebrand(html: string): string {
   let result = html
-  // Remove scripts, comments, noscript
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
   result = result.replace(/<!--[\s\S]*?-->/g, '')
   result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
-  // Strip contents of <style> tags (compiled CSS like Framer can be 1MB+)
-  // but keep inline style="" attributes so layout structure is preserved
-  result = result.replace(/(<style\b[^>]*>)[\s\S]*?(<\/style>)/gi, '$1$2')
   return result
 }
 
@@ -86,32 +82,20 @@ ${preparedHtml}`
         } catch { /* client disconnected */ }
       }
 
+      // Keepalive every 3s so the SSE connection stays open while Gemini processes
       const keepalive = setInterval(() => send({ status: 'thinking' }), 3000)
 
       try {
         send({ status: 'thinking' })
-        let fullHtml = ''
 
-        await generateTextStreaming(prompt, {
-          maxTokens: 65536,
-          onReset: () => { fullHtml = '' },
-          onChunk: (chunk) => {
-            fullHtml += chunk
-            // Only stream once we have valid HTML started
-            const htmlStart = /<!DOCTYPE html/i.test(fullHtml)
-              ? fullHtml.search(/<!DOCTYPE html/i)
-              : fullHtml.search(/<html/i)
-            if (htmlStart >= 0) {
-              send({ htmlChunk: chunk })
-            }
-          },
-        })
-
-        console.log(`[rebuild] Gemini returned ${fullHtml.length} chars`)
-        console.log(`[rebuild] First 300 chars: ${fullHtml.slice(0, 300)}`)
+        // Use non-streaming generateText to avoid stream-parse failures on large inputs.
+        // This matches how Gemini web works when you paste HTML manually.
+        const { text: rawHtml } = await generateText(prompt, { maxTokens: 65536 })
+        console.log(`[rebuild] Gemini returned ${rawHtml.length} chars`)
+        console.log(`[rebuild] First 300 chars: ${rawHtml.slice(0, 300)}`)
 
         // Strip any markdown code fences Gemini might add
-        fullHtml = fullHtml
+        let fullHtml = rawHtml
           .replace(/^```html\n?/i, '')
           .replace(/^```\n?/, '')
           .replace(/\n?```$/, '')
