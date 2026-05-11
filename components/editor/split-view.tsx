@@ -78,6 +78,7 @@ export function SplitView({
   // isStreamingProp comes from use-project's real-time stream subscription;
   // isGenerating covers the chat streaming case managed locally.
   const [chatGenerating, setChatGenerating] = useState(false)
+  const [rebuildInProgress, setRebuildInProgress] = useState(false)
   const [showBrandWizard, setShowBrandWizard] = useState(false)
   // showBrandBanner removed — the chat panel lock handles Brand Rebuild discovery
   // True once any AI rebuild (wizard or chat) has completed for this project
@@ -339,6 +340,7 @@ export function SplitView({
               setChatInputAppend(url)
             }}
             rebuildRequired={!hasBeenRebuilt}
+            rebuildInProgress={rebuildInProgress}
             onOpenRebuild={() => setShowBrandWizard(true)}
           />
         </div>
@@ -532,6 +534,7 @@ export function SplitView({
             rebuildHtmlRef.current = ''
             setRightTab('code')
             setChatGenerating(true)
+            setRebuildInProgress(true)
           }}
           onHtmlChunk={(chunk) => {
             rebuildHtmlRef.current += chunk
@@ -540,12 +543,14 @@ export function SplitView({
           onRebuildComplete={(finalHtml) => {
             onHtmlChange(finalHtml)
             setChatGenerating(false)
+            setRebuildInProgress(false)
             setHasBeenRebuilt(true)
             setRightTab('preview')
             onSaveVersion(finalHtml)
           }}
           onRebuildError={() => {
             setChatGenerating(false)
+            setRebuildInProgress(false)
           }}
           onImageGenStatus={(status) => setImageGenStatus(status)}
         />

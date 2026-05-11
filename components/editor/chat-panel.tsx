@@ -28,6 +28,8 @@ interface ChatPanelProps {
   onImageUploaded?: (url: string) => void
   /** When true, chat is locked until Brand Rebuild is completed */
   rebuildRequired?: boolean
+  /** When true, a rebuild is currently streaming */
+  rebuildInProgress?: boolean
   /** Opens the Brand Rebuild wizard */
   onOpenRebuild?: () => void
 }
@@ -46,6 +48,7 @@ export function ChatPanel({
   onImageLibraryInsert,
   onImageUploaded,
   rebuildRequired = false,
+  rebuildInProgress = false,
   onOpenRebuild,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
@@ -442,23 +445,38 @@ export function ChatPanel({
 
         {/* Brand Rebuild gate — shown before first rebuild */}
         {rebuildRequired && (
-          <div className="px-4 py-5 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex flex-col items-center gap-3 text-center">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-white" />
+          rebuildInProgress ? (
+            <div className="px-4 py-5 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex flex-col items-center gap-3 text-center">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center">
+                <Loader2 className="w-5 h-5 text-white animate-spin" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-neutral-900 dark:text-white">Rebuilding your website…</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">This may take a minute. Chat will unlock when done.</p>
+              </div>
+              <div className="w-full rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 px-3 py-2">
+                <p className="text-xs text-purple-700 dark:text-purple-300">Your website is currently being rebuilt</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-neutral-900 dark:text-white">Brand Rebuild first</p>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">Apply your brand to the site before making edits</p>
+          ) : (
+            <div className="px-4 py-5 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex flex-col items-center gap-3 text-center">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center">
+                <Sparkles className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-neutral-900 dark:text-white">Brand Rebuild first</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">Apply your brand to the site before making edits</p>
+              </div>
+              <Button
+                size="sm"
+                className="w-full gap-2 bg-purple-600 hover:bg-purple-500 text-white border-0"
+                onClick={onOpenRebuild}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Start Brand Rebuild
+              </Button>
             </div>
-            <Button
-              size="sm"
-              className="w-full gap-2 bg-purple-600 hover:bg-purple-500 text-white border-0"
-              onClick={onOpenRebuild}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Start Brand Rebuild
-            </Button>
-          </div>
+          )
         )}
 
         {/* Input area */}
