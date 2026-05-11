@@ -340,6 +340,8 @@ export function SplitView({
               setUploadedImages((prev) => [...prev, url])
               setChatInputAppend(url)
             }}
+            rebuildRequired={!hasBeenRebuilt}
+            onOpenRebuild={() => { setShowBrandWizard(true); setShowBrandBanner(false) }}
           />
         </div>
 

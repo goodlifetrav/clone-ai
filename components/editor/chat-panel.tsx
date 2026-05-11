@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Send, Loader2, User, Bot, Zap, Upload, ImagePlus, X, Maximize2, Minimize2 } from 'lucide-react'
+import { Send, Loader2, User, Bot, Zap, Upload, ImagePlus, X, Maximize2, Minimize2, Sparkles } from 'lucide-react'
 import type { ChatMessage } from '@/types'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
@@ -26,6 +26,10 @@ interface ChatPanelProps {
   onImageLibraryInsert?: (url: string) => void
   /** Called when a drag-drop upload completes with the new public URL */
   onImageUploaded?: (url: string) => void
+  /** When true, chat is locked until Brand Rebuild is completed */
+  rebuildRequired?: boolean
+  /** Opens the Brand Rebuild wizard */
+  onOpenRebuild?: () => void
 }
 
 export function ChatPanel({
@@ -41,6 +45,8 @@ export function ChatPanel({
   uploadedImages,
   onImageLibraryInsert,
   onImageUploaded,
+  rebuildRequired = false,
+  onOpenRebuild,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -434,7 +440,29 @@ export function ChatPanel({
           </div>
         )}
 
+        {/* Brand Rebuild gate — shown before first rebuild */}
+        {rebuildRequired && (
+          <div className="px-4 py-5 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex flex-col items-center gap-3 text-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-neutral-900 dark:text-white">Brand Rebuild first</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">Apply your brand to the site before making edits</p>
+            </div>
+            <Button
+              size="sm"
+              className="w-full gap-2 bg-purple-600 hover:bg-purple-500 text-white border-0"
+              onClick={onOpenRebuild}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Start Brand Rebuild
+            </Button>
+          </div>
+        )}
+
         {/* Input area */}
+        {!rebuildRequired && (
         <div
           className="px-3 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 sticky bottom-0"
           onDragOver={handleDragOver}
@@ -519,6 +547,7 @@ export function ChatPanel({
             Enter to send · Shift+Enter for new line
           </p>
         </div>
+        )}
       </div>
 
       {/* Upgrade modal */}
