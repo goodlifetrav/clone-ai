@@ -770,38 +770,22 @@ CTA SECTION:
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
-    const blueprint = currentHtml.length > 200
-      ? buildPageBlueprint(currentHtml)
-      : ''
-
-    const styleSignals = currentHtml.length > 200
-      ? extractStyleSignals(currentHtml)
-      : ''
-
     const prompt = `BRAND: ${userMessage}
 
-━━━ ORIGINAL SITE STYLE ━━━
-${styleSignals || 'No style data — use your best judgment.'}
+━━━ ORIGINAL SITE HTML ━━━
+Use the full HTML below as your base. Rebuild it for the brand above — same layout, same sections, same structure. Replace all text, colors, and images with brand-appropriate content.
 
-━━━ ORIGINAL SITE BLUEPRINT ━━━
-The blueprint below maps every section of the cloned site. Each [SECTION N] entry shows:
-- The heading text (so you know what that section is about)
-- Image/video/icon counts (so you know if it needs visual content)
-- Context text (so you understand the section's purpose)
-- The structural skeleton shows nesting depth and layout patterns
-
-Use this to build every section in the same order, with the same layout complexity.
-
-${blueprint || 'No blueprint — build a full-featured landing page for the brand described.'}
+${currentHtml}
 
 ━━━ BUILD INSTRUCTIONS ━━━
-Build every [SECTION N] listed above — all of them, in order, no exceptions.
-- Sections with images: use SPLIT LAYOUT (text one side, large image other side)
-- Sections with many list items: use CARD GRID
-- Sections with no images and short text: use CENTERED CTA layout
-- Match the section count exactly. Long-form pages have 15-30 sections — build all of them.`
+- Keep every section from the original — same order, same layout complexity
+- Replace all text with brand-appropriate copy
+- Replace all colors with the brand's color palette
+- Replace all images with https://picsum.photos/seed/WORD/WIDTH/HEIGHT (different seed per image)
+- Output a complete, self-contained page with Tailwind CSS from CDN`
 
     const { text: fullHtml, tokensUsed, inputTokens, outputTokens } = await generateText(prompt, { systemPrompt, maxTokens: 65536, disableThinking: true })
+    // Note: full HTML is sent — input tokens will be large (350k+ for complex sites)
     const cost = geminiCost(inputTokens ?? 0, outputTokens ?? 0)
     console.log(`[gemini] rebuild — input: ${inputTokens} tokens, output: ${outputTokens} tokens, cost: $${cost.toFixed(4)}`)
 
