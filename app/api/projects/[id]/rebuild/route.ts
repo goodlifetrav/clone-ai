@@ -48,6 +48,7 @@ export async function POST(
   const { brandName, tagline, primaryColor, secondaryColor, accentColor, logoUrl, brandDescription, headline, subheadline, ctaText } = body
 
   const preparedHtml = prepareHtmlForRebrand(project.html_content ?? '')
+  console.log(`[rebuild] HTML size sent to Gemini: ${preparedHtml.length} chars`)
 
   const prompt = `Take this HTML code and use it as a base to rebuild a website for the brand described below. Keep the exact same layout, sections, visual structure, and design patterns from the original HTML — only change the brand name, text content, colors, and logo.
 
@@ -103,6 +104,9 @@ ${preparedHtml}`
             }
           },
         })
+
+        console.log(`[rebuild] Gemini returned ${fullHtml.length} chars`)
+        console.log(`[rebuild] First 300 chars: ${fullHtml.slice(0, 300)}`)
 
         // Strip any markdown code fences Gemini might add
         fullHtml = fullHtml
