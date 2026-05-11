@@ -8,7 +8,7 @@ import { injectBrandImages } from '@/lib/image-injection'
  * Strip only scripts/comments from the HTML so Gemini receives the real
  * structure, CSS, and content — just like pasting it manually into Gemini.
  */
-function prepareHtmlForRebrand(html: string, maxChars = 150000): string {
+function prepareHtmlForRebrand(html: string, maxChars = 400000): string {
   let result = html
   // Remove scripts
   result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
