@@ -193,15 +193,20 @@ function extractStyleSignals(html: string): string {
   const darkIndicators = [
     /class="[^"]*bg-(?:black|gray-900|gray-950|neutral-900|neutral-950|slate-900|zinc-900)/i,
     /background(?:-color)?:\s*(?:#0[0-9a-f]{5}|#1[0-9a-f]{5}|rgb\(\s*[0-2]\d,)/i,
-    /class="[^"]*dark(?:\s|")/i,
   ]
-  const looksLightBg = html.match(/class="[^"]*bg-white/i) || html.match(/background(?:-color)?:\s*(?:#fff|white|#f[0-9a-f]{5})/i)
-  const looksLikeDark = darkIndicators.some((re) => re.test(bodyMatch + htmlTagMatch + headStyles + html.slice(0, 4000)))
+  // looksLightBg: check many patterns including CSS custom properties (Framer/Next sites often use vars)
+  const looksLightBg =
+    html.match(/class="[^"]*bg-white/i) ||
+    html.match(/background(?:-color)?:\s*(?:#fff(?:fff)?|white|#f[0-9a-f]{5})/i) ||
+    html.match(/--(?:background|bg-color|color-bg|page-background)[^:]*:\s*(?:#fff(?:fff)?|white|#f[0-9a-f]{5})/i) ||
+    html.match(/body[^{]*\{[^}]*background[^:]*:\s*(?:#fff(?:fff)?|white|#f[0-9a-f]{5})/i)
+  // Only use dark indicator matches from the body/html tags and head styles (not full doc — compiled CSS has dark vars for dark-mode support even on light sites)
+  const looksLikeDark = darkIndicators.some((re) => re.test(bodyMatch + htmlTagMatch + headStyles.slice(0, 2000)))
 
   if (looksLikeDark && !looksLightBg) {
     signals.push('DARK THEME: The original site uses a dark background (near-black or very dark). Your rebuild MUST use a dark theme — dark body/sections, light text.')
   } else {
-    signals.push('LIGHT THEME: The original site uses a light background. Your rebuild should use a light theme.')
+    signals.push('LIGHT THEME: The original site uses a light/white background. Your rebuild MUST use a light theme — white or very light gray body background (#ffffff or #f8fafc), dark text.')
   }
 
   // ── Image density ────────────────────────────────────────────────────────
@@ -210,11 +215,11 @@ function extractStyleSignals(html: string): string {
   const totalImages = imgCount + bgImgCount
 
   if (totalImages >= 8) {
-    signals.push('IMAGE-HEAVY: The original has many images/background images. Your rebuild should be visually dense with images — hero background images, product shots, lifestyle photography in multiple sections.')
+    signals.push('IMAGE-HEAVY: The original has many images. Use images in multiple sections — but ALWAYS in SPLIT LAYOUT (image on one side, text on the other), never as standalone full-width blocks below text.')
   } else if (totalImages >= 3) {
-    signals.push('MODERATE IMAGES: The original uses some images. Include hero background and a few content images.')
+    signals.push('MODERATE IMAGES: The original uses some images. Include a hero image and 2-3 split-layout sections with images.')
   } else {
-    signals.push('MINIMAL IMAGES: The original is text/UI focused. Use minimal images — rely on color, typography, and UI elements instead.')
+    signals.push('MINIMAL IMAGES: The original is text/UI focused. Use minimal images — rely on color, typography, and layout instead.')
   }
 
   // ── Typography scale ─────────────────────────────────────────────────────
@@ -520,20 +525,31 @@ Override brand colors to match the user's palette. Keep Inter font throughout.
 
 ━━━ LAYOUT RULES BY SECTION TYPE ━━━
 
-SPLIT LAYOUT sections (text + image side by side):
-- Use: <div class="flex flex-col lg:flex-row items-center gap-16 py-24 px-8 max-w-7xl mx-auto">
-- Text side (lg:w-1/2): heading in text-5xl lg:text-6xl font-bold, paragraph, optional button
-- Image side (lg:w-1/2): <img src="https://picsum.photos/seed/WORD/900/600" class="w-full rounded-2xl shadow-2xl">
-- Alternate which side text appears on (left for odd sections, right for even)
+⚠️ CRITICAL IMAGE RULE: NEVER put an image below centered text as a full-width block.
+Every section with an image MUST use SPLIT LAYOUT — text on one side, image on the other.
 
-IMAGE MOSAIC GRID sections (hero or gallery):
+SPLIT LAYOUT sections (text + image side by side) — required for any section with an image:
+<section class="py-20 px-8 bg-white">
+  <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-16">
+    <div class="lg:w-1/2 space-y-6">
+      <p class="text-sm font-semibold uppercase tracking-widest opacity-60">Label</p>
+      <h2 class="text-4xl lg:text-5xl font-bold text-gray-900">Heading</h2>
+      <p class="text-lg text-gray-600 leading-relaxed">2-3 sentence description.</p>
+      <a href="#" class="inline-flex px-6 py-3 rounded-full bg-indigo-600 text-white font-semibold hover:bg-indigo-500 transition">CTA →</a>
+    </div>
+    <div class="lg:w-1/2"><img src="https://picsum.photos/seed/WORD/900/600" class="w-full rounded-2xl shadow-2xl" alt=""></div>
+  </div>
+</section>
+- Odd sections: text left, image right. Even sections: add lg:flex-row-reverse.
+
+IMAGE MOSAIC GRID sections (hero visual only):
 - Use: <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
 - Fill with: <img src="https://picsum.photos/seed/WORD/600/400" class="w-full h-48 object-cover rounded-xl">
 - Use 6-12 images with DIFFERENT seed words
 
 CARD GRID sections:
 - Use: <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-- Each card: <div class="bg-white/5 rounded-2xl p-6 border border-white/10">
+- Each card: <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
 - Card contains: icon (Font Awesome), heading (text-xl font-semibold), description
 
 LOGO BAR sections (social proof):
@@ -692,20 +708,31 @@ Override brand colors to match the user's palette. Keep Inter font throughout.
 
 ━━━ LAYOUT RULES BY SECTION TYPE ━━━
 
-SPLIT LAYOUT sections (text + image side by side):
-- Use: <div class="flex flex-col lg:flex-row items-center gap-16 py-24 px-8 max-w-7xl mx-auto">
-- Text side (lg:w-1/2): heading in text-5xl lg:text-6xl font-bold, paragraph, optional button
-- Image side (lg:w-1/2): <img src="https://picsum.photos/seed/WORD/900/600" class="w-full rounded-2xl shadow-2xl">
-- Alternate which side text appears on (left for odd sections, right for even)
+⚠️ CRITICAL IMAGE RULE: NEVER put an image below centered text as a full-width block.
+Every section with an image MUST use SPLIT LAYOUT — text on one side, image on the other.
 
-IMAGE MOSAIC GRID sections (hero or gallery):
+SPLIT LAYOUT sections (text + image side by side) — required for any section with an image:
+<section class="py-20 px-8 bg-white">
+  <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-16">
+    <div class="lg:w-1/2 space-y-6">
+      <p class="text-sm font-semibold uppercase tracking-widest opacity-60">Label</p>
+      <h2 class="text-4xl lg:text-5xl font-bold text-gray-900">Heading</h2>
+      <p class="text-lg text-gray-600 leading-relaxed">2-3 sentence description.</p>
+      <a href="#" class="inline-flex px-6 py-3 rounded-full bg-indigo-600 text-white font-semibold hover:bg-indigo-500 transition">CTA →</a>
+    </div>
+    <div class="lg:w-1/2"><img src="https://picsum.photos/seed/WORD/900/600" class="w-full rounded-2xl shadow-2xl" alt=""></div>
+  </div>
+</section>
+- Odd sections: text left, image right. Even sections: add lg:flex-row-reverse.
+
+IMAGE MOSAIC GRID sections (hero visual only):
 - Use: <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
 - Fill with: <img src="https://picsum.photos/seed/WORD/600/400" class="w-full h-48 object-cover rounded-xl">
 - Use 6-12 images with DIFFERENT seed words
 
 CARD GRID sections:
 - Use: <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-- Each card: <div class="bg-white/5 rounded-2xl p-6 border border-white/10">
+- Each card: <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100">
 - Card contains: icon (Font Awesome), heading (text-xl font-semibold), description
 
 LOGO BAR sections (social proof):
