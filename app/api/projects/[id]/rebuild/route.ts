@@ -1,30 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
-import { generateText } from '@/lib/gemini'
+import { chatWithProjectGemini } from '@/lib/gemini'
 import { injectBrandImages } from '@/lib/image-injection'
-
-/**
- * Prepare HTML for Gemini rebuild.
- * Strip <style> tag contents (Framer CSS alone is 1.2MB — Gemini cannot reproduce it
- * and trying to do so causes MAX_TOKENS truncation after ~11% of the page).
- * Keep inline style="" attributes so Gemini understands layout positioning.
- * Keep all HTML structure, text content, and image URLs.
- * This is what Gemini web does when you paste HTML manually — it reads the structure
- * and generates a fresh page, it does NOT try to copy 1.4MB of compiled CSS.
- */
-function prepareHtmlForRebrand(html: string): string {
-  let result = html
-  result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-  result = result.replace(/<!--[\s\S]*?-->/g, '')
-  result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
-  // Strip style tag contents and all class attributes
-  // Framer class names (framer-abc123) cause Gemini to try to reproduce Framer CSS
-  // Removing them forces Gemini to generate clean Tailwind instead
-  result = result.replace(/(<style\b[^>]*>)[\s\S]*?(<\/style>)/gi, '$1$2')
-  result = result.replace(/\s+class="[^"]*"/gi, '')
-  return result
-}
 
 export async function POST(
   request: NextRequest,
@@ -55,34 +33,20 @@ export async function POST(
   const body = await request.json()
   const { brandName, tagline, primaryColor, secondaryColor, accentColor, logoUrl, brandDescription, headline, subheadline, ctaText } = body
 
-  const preparedHtml = prepareHtmlForRebrand(project.html_content ?? '')
-  console.log(`[rebuild] HTML size sent to Gemini: ${preparedHtml.length} chars`)
-
-  const prompt = `You are rebuilding a website for a new brand. Study the HTML below to understand the layout, sections, and content structure — then generate a completely fresh, clean HTML page using Tailwind CSS (from CDN) that replicates that same layout for the new brand.
-
-BRAND DETAILS:
+  // Build the brand message exactly like the user would type in chat
+  const brandMessage = `Rebuild this website for my brand:
 - Brand Name: ${brandName}
-- Tagline: ${tagline || 'Not provided'}
+- Tagline: ${tagline || ''}
 - Primary Color: ${primaryColor}
-- Secondary Color: ${secondaryColor || 'Not provided'}
-- Accent Color: ${accentColor || 'Not provided'}
-- Logo: ${logoUrl ? `Use this image URL as the logo: ${logoUrl}` : 'Use brand name as styled text in the nav'}
+- Secondary Color: ${secondaryColor || ''}
+- Accent Color: ${accentColor || ''}
+- Logo: ${logoUrl ? logoUrl : 'use brand name as text logo'}
 - Description: ${brandDescription}
 - Hero Headline: ${headline || brandName}
 - Hero Subheadline: ${subheadline || tagline || brandDescription}
 - CTA Button Text: ${ctaText || 'Get Started'}
 
-INSTRUCTIONS:
-1. Read the original HTML to understand the page structure: how many sections, what each section contains, navigation links, hero area, feature sections, testimonials, pricing, footer, etc.
-2. Build a FRESH HTML page using Tailwind CSS (include <script src="https://cdn.tailwindcss.com"></script>) that has the same sections in the same order
-3. Replace all text and copy with brand-appropriate content for ${brandName}
-4. Use the brand colors: primary ${primaryColor} for buttons/headings/accents, secondary ${secondaryColor || '#ffffff'} for backgrounds
-5. Keep images from the original HTML (same img src URLs)
-6. DO NOT copy Framer class names or any original CSS — use only Tailwind utility classes
-7. Output ONLY the complete HTML document — no explanation, no markdown, no code fences
-
-ORIGINAL HTML TO STUDY:
-${preparedHtml}`
+Keep the exact same layout, sections, and visual structure. Replace all text with brand-appropriate copy.`
 
   const encoder = new TextEncoder()
 
@@ -94,35 +58,25 @@ ${preparedHtml}`
         } catch { /* client disconnected */ }
       }
 
-      // Keepalive every 3s so the SSE connection stays open while Gemini processes
       const keepalive = setInterval(() => send({ status: 'thinking' }), 3000)
 
       try {
         send({ status: 'thinking' })
 
-        // Use non-streaming generateText to avoid stream-parse failures on large inputs.
-        // This matches how Gemini web works when you paste HTML manually.
-        const { text: rawHtml } = await generateText(prompt, { maxTokens: 131072, disableThinking: true })
-        console.log(`[rebuild] Gemini returned ${rawHtml.length} chars`)
-        console.log(`[rebuild] First 300 chars: ${rawHtml.slice(0, 300)}`)
+        const { html: fullHtmlRaw } = await chatWithProjectGemini(
+          project.html_content ?? '',
+          [{ role: 'user', content: brandMessage }]
+        )
 
-        // Find where actual HTML starts — this strips any code fences, preamble, or whitespace
-        const htmlStartIdx = /<!DOCTYPE html/i.test(rawHtml)
-          ? rawHtml.search(/<!DOCTYPE html/i)
-          : rawHtml.search(/<html/i)
-        let fullHtml = htmlStartIdx >= 0
-          ? rawHtml.slice(htmlStartIdx).replace(/\s*```\s*$/, '').trim()
-          : rawHtml.replace(/\s*```\s*$/, '').trim()
-
-        if (!fullHtml || !/<html/i.test(fullHtml)) {
+        if (!fullHtmlRaw || !/<html/i.test(fullHtmlRaw)) {
           send({ error: 'Gemini did not return valid HTML. Please try again.' })
           return
         }
 
         // ── Image generation ─────────────────────────────────────────────────
         send({ status: 'generating_images' })
-        fullHtml = await injectBrandImages(
-          fullHtml,
+        const fullHtml = await injectBrandImages(
+          fullHtmlRaw,
           { brandName, brandDescription, primaryColor, secondaryColor, tagline },
           id,
           (current, total) => send({ status: 'generating_images', current, total })
