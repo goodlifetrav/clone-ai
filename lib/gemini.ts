@@ -674,6 +674,14 @@ BENTO GRID — use for comparison/highlight sections when original has no clear 
 - Buttons: rounded-lg, brand-colored primary, white/gray border secondary
 - Mobile responsive on every section
 - Original compelling copy — no Lorem ipsum
+- SPLIT LAYOUT structure — every split section MUST use this exact pattern, no exceptions:
+  <section class="py-24 px-6 bg-[dark-or-light]">
+    <div class="max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-16">
+      <div class="w-full lg:w-1/2"> <!-- text side --> </div>
+      <div class="w-full lg:w-1/2 overflow-hidden rounded-2xl"> <!-- mockup side --> </div>
+    </div>
+  </section>
+  The mockup wrapper MUST have overflow:hidden so nothing bleeds outside. NEVER use absolute or relative positioning to place text over the mockup.
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
