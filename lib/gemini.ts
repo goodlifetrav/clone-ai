@@ -774,16 +774,28 @@ Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
 
   } else {
     // ── SURGICAL EDIT ─────────────────────────────────────────────────────────
+
+    // Extract the brand name from the current HTML so we can anchor it explicitly in the prompt.
+    // Check <title>, nav logo text, and h1 — take the shortest plausible name.
+    const titleText = currentHtml.match(/<title[^>]*>([^<]{1,60})<\/title>/i)?.[1]?.split(/[|–\-·]/)[0]?.trim() ?? ''
+    const h1Text = currentHtml.match(/<h1[^>]*>([^<]{1,60})<\/h1>/i)?.[1]?.trim() ?? ''
+    const brandName = (titleText.length > 0 && titleText.length <= 30) ? titleText
+      : (h1Text.length > 0 && h1Text.length <= 30) ? h1Text
+      : titleText.slice(0, 30) || 'the current brand'
+
     const systemPrompt = `You are a precise HTML editor. The user wants to make a specific, targeted change to an existing webpage.
+
+THE BRAND NAME IS: "${brandName}"
+DO NOT change this brand name or any other text/copy under any circumstances.
 
 CRITICAL RULES:
 - Make ONLY the change the user explicitly requests — nothing else
-- NEVER change brand names, company names, logo text, headings, body copy, or any text content unless the user explicitly asks to change text
-- NEVER rename, rebrand, or rewrite content — treat all existing text as sacred
-- Do NOT change fonts, colors, layout, or anything not mentioned
+- NEVER change the brand name, company name, logo text, headings, body copy, or ANY text content
+- NEVER invent a new brand name or rewrite content — every word in the HTML is sacred
+- Do NOT change fonts, colors, layout, or anything not mentioned by the user
 - Do NOT "improve", "clean up", or "modernize" anything
 - Preserve every class, style, attribute, and element exactly as-is except the one thing being changed
-- If the user says "change X to Y", change only X
+- If the user says "change X to Y", change ONLY X
 
 Output ONLY the complete raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
@@ -792,7 +804,7 @@ ${currentHtml}
 
 USER REQUEST: ${userMessage}
 
-Apply ONLY the requested change(s) to the HTML above and return the complete modified page.`
+REMINDER: The brand name is "${brandName}". Do not change it or any other text. Apply ONLY the requested change and return the complete modified page.`
 
     const { text: fullHtml, tokensUsed, inputTokens, outputTokens } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
     const cost = geminiCost(inputTokens ?? 0, outputTokens ?? 0)
