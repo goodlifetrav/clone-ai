@@ -29,19 +29,27 @@ export async function extractSite(url: string): Promise<string> {
 
     await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 })
 
+    // Force all lazy-loaded images to eager before scrolling so they begin fetching immediately
+    await page.evaluate(() => {
+      document.querySelectorAll('img[loading="lazy"]').forEach((img) => {
+        img.setAttribute('loading', 'eager')
+      })
+    })
+
     // Scroll the full page height to trigger lazy-loaded images and JS sections
+    // Use 400ms delay (up from 200ms) to give Framer/React lazy loaders more time per viewport
     await page.evaluate(async () => {
       const totalHeight = document.documentElement.scrollHeight
       const step = window.innerHeight
       for (let y = 0; y < totalHeight; y += step) {
         window.scrollTo(0, y)
-        await new Promise((r) => setTimeout(r, 200))
+        await new Promise((r) => setTimeout(r, 400))
       }
       window.scrollTo(0, 0)
     })
 
     // Let any scroll-triggered network requests and animations settle
-    await page.waitForTimeout(2500)
+    await page.waitForTimeout(4000)
 
     // Force all scroll-animated elements visible — many sites use AOS, GSAP, or
     // Intersection Observer to hide elements initially (opacity:0, translateY, etc.)
@@ -57,6 +65,8 @@ export async function extractSite(url: string): Promise<string> {
         .aos-init:not(.aos-animate) { opacity: 1 !important; transform: none !important; }
         [data-aos] { opacity: 1 !important; transform: none !important; transition: none !important; }
         .gsap-hidden, .is-hidden, .js-hidden { opacity: 1 !important; visibility: visible !important; }
+        /* Prevent images from overflowing their containers when CSS constraints are class-based */
+        img { max-width: 100%; }
       `
     })
 
@@ -89,6 +99,34 @@ export async function extractSite(url: string): Promise<string> {
 
     // Brief pause for the style injection to apply
     await page.waitForTimeout(300)
+
+    // Replace <video> elements with their poster image or a dark placeholder div.
+    // Headless Chromium doesn't autoplay videos — they render as black rectangles.
+    // This must run before CSS extraction so the replaced <img> tags get CSS applied.
+    await page.evaluate(() => {
+      document.querySelectorAll('video').forEach((video) => {
+        const poster = video.getAttribute('poster')
+        const replacement = document.createElement(poster ? 'img' : 'div')
+        // Copy position/size attributes so layout is preserved
+        replacement.className = video.className
+        const computedStyle = window.getComputedStyle(video)
+        const w = computedStyle.width
+        const h = computedStyle.height
+        if (w && w !== '0px') replacement.style.width = w
+        if (h && h !== '0px') replacement.style.height = h
+        replacement.style.objectFit = 'cover'
+        replacement.style.display = 'block'
+        if (poster && replacement instanceof HTMLImageElement) {
+          replacement.src = poster
+          replacement.alt = video.getAttribute('aria-label') ?? ''
+        } else {
+          // No poster — dark placeholder that blends with dark sites, subtle on light sites
+          replacement.style.background = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)'
+          replacement.style.borderRadius = computedStyle.borderRadius || '8px'
+        }
+        video.parentNode?.replaceChild(replacement, video)
+      })
+    })
 
     // Extract all CSS from the browser's CSSOM and inline it.
     // This is more reliable than server-side CSS fetching because the browser
