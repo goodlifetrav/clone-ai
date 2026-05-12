@@ -39,6 +39,12 @@ export function cleanHtml(html: string): string {
   // Remove cookie consent banners / GDPR popups
   $('[id*="cookie"], [class*="cookie"], [id*="consent"], [class*="consent"], [id*="gdpr"], [class*="gdpr"], [id*="privacy-banner"], [class*="privacy-banner"], [id*="cc-"], [class*="cc-banner"], [id*="CookieBanner"], [class*="CookieBanner"], [id*="cookiebanner"], [class*="cookiebanner"]').remove()
 
+  // Remove modal backdrops / overlays left behind by cookie banners or popups
+  $('[id*="overlay"], [class*="overlay"], [id*="backdrop"], [class*="backdrop"], [id*="modal-bg"], [class*="modal-bg"]').remove()
+
+  // Remove live chat widgets (Intercom, Drift, Crisp, HubSpot, Zendesk)
+  $('[id*="intercom"], [class*="intercom"], [id*="drift"], [class*="drift"], [id*="crisp"], [id*="hubspot"], [class*="hubspot"], [id*="launcher"], iframe[src*="intercom"], iframe[src*="drift"], iframe[src*="crisp"]').remove()
+
   // Remove SEO / crawl-directive tags that serve no purpose in a standalone clone
   $('link[rel="canonical"]').remove()
   $('meta[name="robots"]').remove()

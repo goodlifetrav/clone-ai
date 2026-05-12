@@ -74,6 +74,17 @@ export async function extractSite(url: string): Promise<string> {
       selectors.forEach(sel => {
         document.querySelectorAll(sel).forEach(el => el.remove())
       })
+      // Also remove backdrops/overlays and live chat widgets
+      ;[
+        '[id*="overlay"]', '[class*="overlay"]',
+        '[id*="backdrop"]', '[class*="backdrop"]',
+        '[id*="intercom"]', '[class*="intercom"]',
+        '[id*="drift"]', '[class*="drift"]',
+        '[id*="crisp"]', '[id*="hubspot"]',
+        'iframe[src*="intercom"]', 'iframe[src*="drift"]',
+      ].forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => el.remove())
+      })
     })
 
     // Brief pause for the style injection to apply
