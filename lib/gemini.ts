@@ -469,7 +469,8 @@ function describeSiteStructure(html: string): string {
     const listItemCount = (sec.match(/<li\b/gi) ?? []).length
     const cardPatterns = (sec.match(/<(?:article|figure)\b|class="[^"]*card/gi) ?? []).length
     const isQuote = /blockquote|testimonial|review|"[^"]{20,}"/i.test(sec)
-    const isLogoBar = totalImgs >= 4 && sec.length < 2000
+    // Logo bar: many images, minimal text — trusted-by / partner strip
+    const isLogoBar = totalImgs >= 4 && sec.length < 4000 && (getText(sec).length < 150 || /trusted|partner|customer|used by|powered by/i.test(sec))
     const isCta = totalImgs === 0 && sec.length < 800 && /button|btn|get.{0,10}start|sign.{0,5}up|try.{0,5}free/i.test(sec)
     const isPricingGrid = /price|\$\d|\bplan\b|\bmonthly\b/i.test(sec)
     // Split layout: section has a heading + 1-2 images = text on one side, image/screenshot on other.
@@ -599,6 +600,14 @@ tailwind.config = {
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
 Override brand colors to match the user's palette. Keep Inter font throughout.
+${isDarkTheme ? `
+DARK THEME ENFORCEMENT — add this exact <style> block immediately after the Tailwind script:
+<style>
+  html, body { background-color: #0a0f1e !important; color: #ffffff; }
+  section, header, footer, nav, main, .section, [class*="py-"], [class*="px-"] { background-color: inherit; }
+</style>
+Every top-level section wrapper MUST have one of: bg-[#0a0f1e] bg-[#0f1629] bg-gray-950 bg-gray-900 bg-slate-950
+NO white, NO bg-white, NO bg-gray-50, NO bg-gray-100, NO light backgrounds anywhere on the page.` : ''}
 
 ━━━ STYLE SIGNALS (detected from original — OBEY THESE STRICTLY) ━━━
 ${styleSignals}
@@ -807,6 +816,14 @@ tailwind.config = {
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
 Override brand colors to match the user's palette. Keep Inter font throughout.
+${isDarkTheme ? `
+DARK THEME ENFORCEMENT — add this exact <style> block immediately after the Tailwind script:
+<style>
+  html, body { background-color: #0a0f1e !important; color: #ffffff; }
+  section, header, footer, nav, main, .section, [class*="py-"], [class*="px-"] { background-color: inherit; }
+</style>
+Every top-level section wrapper MUST have one of: bg-[#0a0f1e] bg-[#0f1629] bg-gray-950 bg-gray-900 bg-slate-950
+NO white, NO bg-white, NO bg-gray-50, NO bg-gray-100, NO light backgrounds anywhere on the page.` : ''}
 
 ━━━ STYLE SIGNALS (detected from original — OBEY THESE STRICTLY) ━━━
 ${styleSignals}
