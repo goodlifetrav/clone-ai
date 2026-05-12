@@ -63,6 +63,31 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
       try {
         send({ status: 'thinking' })
 
+        // Save the original clone as a labeled version before overwriting it.
+        // This lets users restore the raw clone from History at any time.
+        const existingVersions = await supabase
+          .from('project_versions')
+          .select('id')
+          .eq('project_id', id)
+          .limit(1)
+        const hasNoVersions = !existingVersions.data || existingVersions.data.length === 0
+        if (hasNoVersions && project.html_content) {
+          const { data: latest } = await supabase
+            .from('project_versions')
+            .select('version_number')
+            .eq('project_id', id)
+            .order('version_number', { ascending: false })
+            .limit(1)
+            .single()
+          const nextVersion = (latest?.version_number || 0) + 1
+          await supabase.from('project_versions').insert({
+            project_id: id,
+            html_content: project.html_content,
+            version_number: nextVersion,
+            label: 'Original Clone',
+          })
+        }
+
         const { html: fullHtmlRaw } = await chatWithProjectGemini(
           project.html_content ?? '',
           [{ role: 'user', content: brandMessage }]

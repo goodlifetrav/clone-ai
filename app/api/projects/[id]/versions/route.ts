@@ -36,7 +36,7 @@ export async function POST(
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id } = await params
-    const { html_content } = await request.json()
+    const { html_content, label } = await request.json()
     const supabase = createServiceClient()
 
     // Get latest version number
@@ -56,6 +56,7 @@ export async function POST(
         project_id: id,
         html_content,
         version_number: nextVersion,
+        ...(label ? { label } : {}),
       })
       .select()
       .single()

@@ -39,6 +39,7 @@ export interface ProjectVersion {
   html_content: string
   created_at: string
   version_number: number
+  label?: string | null
 }
 
 export interface ChatMessage {

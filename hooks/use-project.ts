@@ -52,14 +52,14 @@ export function useProject(projectId: string) {
     [projectId]
   )
 
-  const saveVersion = useCallback(async (html?: string) => {
+  const saveVersion = useCallback(async (html?: string, label?: string) => {
     const content = html ?? project?.html_content
     if (!content) return
     try {
       const res = await fetch(`/api/projects/${projectId}/versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html_content: content }),
+        body: JSON.stringify({ html_content: content, ...(label ? { label } : {}) }),
       })
       if (res.ok) {
         await fetchVersions()

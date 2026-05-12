@@ -392,24 +392,37 @@ export function ChatPanel({
                     <p className="text-xs text-neutral-500">{currentHtml?.length.toLocaleString()} chars</p>
                   </div>
                 </div>
-                {[...versions].sort((a, b) => b.version_number - a.version_number).map((v) => (
-                  <div key={v.id} className="flex items-center gap-3 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-900/50 group">
-                    <Clock className="w-4 h-4 text-neutral-400 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">Version {v.version_number}</p>
-                      <p className="text-xs text-neutral-500">{formatDate(v.created_at)} · {v.html_content.length.toLocaleString()} chars</p>
+                {[...versions].sort((a, b) => b.version_number - a.version_number).map((v) => {
+                  const isOriginal = v.label === 'Original Clone'
+                  return (
+                    <div key={v.id} className={cn('flex items-center gap-3 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-900/50 group', isOriginal && 'bg-amber-50/50 dark:bg-amber-950/10')}>
+                      {isOriginal
+                        ? <Sparkles className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                        : <Clock className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+                      }
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{v.label ?? `Version ${v.version_number}`}</p>
+                          {isOriginal && (
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/50 px-1.5 py-0.5 rounded">
+                              Clone
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-neutral-500">{formatDate(v.created_at)} · {v.html_content.length.toLocaleString()} chars</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => { onRestoreVersion?.(v); setShowHistory(false) }}
+                      >
+                        <RotateCcw className="w-3 h-3 mr-1" />
+                        Restore
+                      </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => { onRestoreVersion?.(v); setShowHistory(false) }}
-                    >
-                      <RotateCcw className="w-3 h-3 mr-1" />
-                      Restore
-                    </Button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </ScrollArea>

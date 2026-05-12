@@ -52,7 +52,7 @@ interface SplitViewProps {
   isStreaming?: boolean
   onHtmlChange: (html: string) => void
   onMessagesChange: (messages: ChatMessage[]) => void
-  onSaveVersion: (html?: string) => void
+  onSaveVersion: (html?: string, label?: string) => void
   onRestoreVersion: (version: ProjectVersion) => void
   onRefetchVersions?: () => void
 }
@@ -350,6 +350,10 @@ export function SplitView({
             onRestoreVersion={(version) => {
               onSaveVersion(html)
               onRestoreVersion(version)
+              // If restoring the original clone, re-show the Brand Rebuild gate
+              if (version.label === 'Original Clone' || !version.html_content.includes('cdn.tailwindcss.com')) {
+                setHasBeenRebuilt(false)
+              }
             }}
             onRefetchVersions={onRefetchVersions}
           />
