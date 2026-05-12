@@ -350,9 +350,11 @@ export function SplitView({
             onRestoreVersion={(version) => {
               onSaveVersion(html)
               onRestoreVersion(version)
-              // If restoring the original clone, re-show the Brand Rebuild gate
+              // Toggle Brand Rebuild gate based on whether the restored version is a raw clone or a rebuilt page
               if (version.label === 'Original Clone' || !version.html_content.includes('cdn.tailwindcss.com')) {
                 setHasBeenRebuilt(false)
+              } else {
+                setHasBeenRebuilt(true)
               }
             }}
             onRefetchVersions={onRefetchVersions}
