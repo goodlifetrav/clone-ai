@@ -396,12 +396,24 @@ function describeSiteStructure(html: string): string {
     const hasBgImg = /background-image/i.test(heroSlice.slice(0, 2000))
     const hasGrid = /grid|columns/i.test(heroSlice)
 
-    let heroDesc = `HERO: full-width`
+    // Detect text alignment — check for explicit center classes/styles, default to left
+    const hasCenterAlign = /text-center|mx-auto|justify-center.*flex.*col|text-align:\s*center/i.test(heroSlice.slice(0, 3000))
+    const alignment = hasCenterAlign ? 'CENTERED text' : 'LEFT-ALIGNED text (NOT centered — flush left, not centered on page)'
+
+    // Detect spacious top padding (Linear-style hero has a lot of space above the headline)
+    const hasSpacious = /pt-\d{2,}|py-\d{2,}|padding-top:\s*(?:[6-9]\d|[1-9]\d{2})/i.test(heroSlice.slice(0, 2000))
+
+    // Detect announcement/badge pill (common in Linear-style heroes — small label + link to the right of subtext)
+    const hasAnnouncementPill = heroSlice.length > 500 && /new\b|announcing|launch|just\s+released|→|↗/i.test(getText(heroSlice).slice(0, 200))
+
+    let heroDesc = `HERO: full-width, ${alignment}`
+    if (hasSpacious) heroDesc += ', SPACIOUS top padding (headline sits low in a tall hero)'
     if (hasBgImg) heroDesc += ', background image'
-    if (h1Text) heroDesc += `, large heading ("${h1Text}")`
+    if (h1Text) heroDesc += `, massive headline ("${h1Text}")`
+    if (hasAnnouncementPill) heroDesc += ', announcement pill/badge link alongside subtext'
     if (imgCount >= 6 && hasGrid) heroDesc += `, IMAGE MOSAIC GRID (${imgCount} images in multi-column grid)`
     else if (imgCount >= 3) heroDesc += `, ${imgCount} embedded images in grid`
-    else if (imgCount > 0) heroDesc += `, ${imgCount} image(s)`
+    else if (imgCount > 0) heroDesc += `, full-width product screenshot below headline`
     heroDesc += ', CTA buttons'
     parts.push(`• ${heroDesc}`)
   }
@@ -446,6 +458,10 @@ function describeSiteStructure(html: string): string {
     const headingMatch = sec.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i)
     const headingText = headingMatch ? getText(headingMatch[1]).slice(0, 60) : ''
 
+    // Detect text alignment for this section
+    const secHasCenterAlign = /text-center|mx-auto|text-align:\s*center/i.test(sec.slice(0, 1000))
+    const secAlignment = secHasCenterAlign ? 'centered' : 'left-aligned'
+
     // Detect layout type
     const hasFlex = /flex/i.test(sec)
     const hasGrid = /grid/i.test(sec)
@@ -468,16 +484,16 @@ function describeSiteStructure(html: string): string {
       layout = `TESTIMONIALS — ${Math.max(1, Math.round(sec.length / 400))} quote cards with author name and role`
     } else if (isSplit && totalImgs >= 1) {
       const side = secNum % 2 === 0 ? 'RIGHT text, LEFT image' : 'LEFT text, RIGHT image'
-      layout = `SPLIT LAYOUT — 50/50 flex row: ${side}. LARGE heading (text-5xl+), paragraph, optional button. ${totalImgs > 1 ? totalImgs + ' images' : '1 large image or UI screenshot'} on image side.`
+      layout = `SPLIT LAYOUT — 50/50 flex row: ${side}. Text side is ${secAlignment}. LARGE heading (text-5xl+), paragraph, optional button. ${totalImgs > 1 ? totalImgs + ' images' : '1 large image or UI screenshot'} on image side.`
       if (videoCount > 0) layout += ` + ${videoCount} video`
     } else if (totalImgs >= 5 || (totalImgs >= 3 && hasGrid)) {
       layout = `IMAGE GRID — ${totalImgs} images in a ${Math.ceil(totalImgs / 2)}-column mosaic or gallery grid`
     } else if ((listItemCount >= 3 || cardPatterns >= 2) && hasGrid) {
-      layout = `CARD GRID — ${Math.max(listItemCount, cardPatterns, 3)} cards in a ${Math.min(4, Math.ceil(listItemCount / 2))}-column grid. Each card: icon/image, heading, short text`
+      layout = `CARD GRID — ${Math.max(listItemCount, cardPatterns, 3)} cards in a ${Math.min(4, Math.ceil(listItemCount / 2))}-column grid, ${secAlignment}. Each card: icon/image, heading, short text`
     } else if (totalImgs >= 1) {
-      layout = `CONTENT SECTION with ${totalImgs} image(s) — mixed text and images`
+      layout = `CONTENT SECTION with ${totalImgs} image(s), ${secAlignment} — mixed text and images`
     } else {
-      layout = `TEXT SECTION — heading, paragraph, optional button`
+      layout = `TEXT SECTION — ${secAlignment} heading, paragraph, optional button`
     }
 
     parts.push(`• SECTION ${secNum}: ${layout}${headingText ? ` — heading: "${headingText}"` : ''}`)
