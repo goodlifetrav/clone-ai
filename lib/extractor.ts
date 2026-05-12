@@ -29,27 +29,19 @@ export async function extractSite(url: string): Promise<string> {
 
     await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 })
 
-    // Force all lazy-loaded images to eager before scrolling so they begin fetching immediately
-    await page.evaluate(() => {
-      document.querySelectorAll('img[loading="lazy"]').forEach((img) => {
-        img.setAttribute('loading', 'eager')
-      })
-    })
-
     // Scroll the full page height to trigger lazy-loaded images and JS sections
-    // Use 400ms delay (up from 200ms) to give Framer/React lazy loaders more time per viewport
     await page.evaluate(async () => {
       const totalHeight = document.documentElement.scrollHeight
       const step = window.innerHeight
       for (let y = 0; y < totalHeight; y += step) {
         window.scrollTo(0, y)
-        await new Promise((r) => setTimeout(r, 400))
+        await new Promise((r) => setTimeout(r, 200))
       }
       window.scrollTo(0, 0)
     })
 
     // Let any scroll-triggered network requests and animations settle
-    await page.waitForTimeout(4000)
+    await page.waitForTimeout(2500)
 
     // Force all scroll-animated elements visible — many sites use AOS, GSAP, or
     // Intersection Observer to hide elements initially (opacity:0, translateY, etc.)
@@ -97,36 +89,6 @@ export async function extractSite(url: string): Promise<string> {
 
     // Brief pause for the style injection to apply
     await page.waitForTimeout(300)
-
-    // Hide images that are 0×0 in the live browser (inside collapsed/animated containers).
-    // Without JS, their containers may become visible and these images would expand to fill
-    // the container width (especially ones with style="width:100%"), causing huge placeholders.
-    // Setting display:none keeps them hidden in the static clone, matching the live site state.
-    await page.evaluate(() => {
-      document.querySelectorAll('img').forEach((img) => {
-        const rect = img.getBoundingClientRect()
-        if (rect.width === 0 && rect.height === 0) {
-          img.style.display = 'none'
-        }
-      })
-    })
-
-    // Replace <video> elements with a <div> that keeps the exact same class and inline styles.
-    // Headless Chromium doesn't autoplay videos — they render as black rectangles.
-    // We use a plain div (not a poster <img>) because poster images lack the CSS constraints
-    // that Framer/React apply to the video via its class names — they'd render huge.
-    // The div inherits all Framer layout classes so it occupies the same space as the video.
-    await page.evaluate(() => {
-      document.querySelectorAll('video').forEach((video) => {
-        const placeholder = document.createElement('div')
-        placeholder.className = video.className
-        // Preserve inline styles (Framer sets position/dimensions here)
-        if (video.style.cssText) placeholder.style.cssText = video.style.cssText
-        // Dark neutral fill — blends on dark sites, unobtrusive on light sites
-        placeholder.style.background = '#111111'
-        video.parentNode?.replaceChild(placeholder, video)
-      })
-    })
 
     // Extract all CSS from the browser's CSSOM and inline it.
     // This is more reliable than server-side CSS fetching because the browser
