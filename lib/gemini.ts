@@ -512,7 +512,8 @@ function describeSiteStructure(html: string): string {
     return 'Standard multi-section landing page: nav, hero with CTA, 4-6 feature sections, footer'
   }
 
-  return parts.join('\n')
+  const sectionCount = secNum - 1
+  return `⚠️ EXACT SECTION COUNT: ${sectionCount} sections detected. You MUST output EXACTLY ${sectionCount} sections in this exact order — no more, no less. Do not invent, merge, or skip any section.\n\n${parts.join('\n')}`
 }
 
 export async function chatWithProjectStreamingGemini(
@@ -596,11 +597,15 @@ PRESERVE (replicate from original):
 - Overall visual density and spacing feel
 
 ━━━ PHOTO/IMAGE REPLACEMENT RULES ━━━
-When the original has an image, replace it with one of:
-1. A gradient div in brand colors: <div class="w-full h-64 rounded-2xl bg-gradient-to-br from-[brand-color] to-[brand-color2]"></div>
-2. A Font Awesome icon centered in a colored background
-3. A UI skeleton mockup (browser chrome + content skeleton) for product screenshots
-4. An SVG geometric shape or abstract illustration in brand colors
+CRITICAL: NEVER output an empty div as an image placeholder. Every image placeholder MUST have visible content.
+
+For every image in the original, replace it with one of these — pick based on context:
+1. PRODUCT SCREENSHOT → build a UI skeleton mockup (browser chrome + sidebar + content rows). Use the example below.
+2. FEATURE ILLUSTRATION → large Font Awesome icon (text-6xl) centered in a tall rounded div with a brand gradient background
+3. GENERIC/DECORATIVE IMAGE → gradient div: <div class="w-full h-64 rounded-2xl bg-gradient-to-br from-[color1] to-[color2] flex items-center justify-center"><i class="fas fa-[relevant-icon] text-5xl text-white opacity-50"></i></div>
+4. LOGO/ICON → inline SVG or Font Awesome icon in brand colors
+
+ALWAYS include a Font Awesome icon inside gradient placeholders so they are never blank.
 Never use picsum.photos or random external images.
 UI mockup style for THIS site:
 ${uiMockupExample}
@@ -629,20 +634,21 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
   const htmlForRebuild = stripCssForRebuild(currentHtml)
   const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND: ${userMessage}
 
-━━━ ORIGINAL SITE SECTION STRUCTURE (use this to guide your rebuild) ━━━
+━━━ ORIGINAL SITE SECTION STRUCTURE ━━━
 ${siteStructure}
 
-━━━ ORIGINAL SITE HTML (CSS stripped for token efficiency — use section structure above as your layout guide) ━━━
+━━━ ORIGINAL SITE HTML (CSS stripped — use section structure above as your layout guide) ━━━
 ${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
-Rebuild the page above for the brand described. Follow these priorities IN ORDER:
-1. REPLICATE the original's exact section structure — match every section in the structure map above
-2. APPLY the style signals: ${isDarkTheme ? 'DARK THEME — near-black background throughout, all sections dark' : 'LIGHT THEME — white/light gray background'}
-3. REPLACE colors with the brand palette, text with brand copy, external photos with gradient/icon/mockup placeholders
-4. Use the fallback patterns from the system prompt ONLY for sections where the original has no clear structure
+Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
+1. OUTPUT EVERY SECTION — the section count in the structure map above is exact. Match it section-for-section, in order. Do not skip, merge, or invent sections.
+2. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
+3. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
+4. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
+5. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
-The rebuilt page should look like the same website redesigned for a new brand — NOT a generic template.
+The rebuilt page must look like the SAME website redesigned for a new brand — not a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
 
   let fullHtml = ''
@@ -795,11 +801,15 @@ PRESERVE (replicate from original):
 - Overall visual density and spacing feel
 
 ━━━ PHOTO/IMAGE REPLACEMENT RULES ━━━
-When the original has an image, replace it with one of:
-1. A gradient div in brand colors: <div class="w-full h-64 rounded-2xl bg-gradient-to-br from-[brand-color] to-[brand-color2]"></div>
-2. A Font Awesome icon centered in a colored background
-3. A UI skeleton mockup (browser chrome + content skeleton) for product screenshots
-4. An SVG geometric shape or abstract illustration in brand colors
+CRITICAL: NEVER output an empty div as an image placeholder. Every image placeholder MUST have visible content.
+
+For every image in the original, replace it with one of these — pick based on context:
+1. PRODUCT SCREENSHOT → build a UI skeleton mockup (browser chrome + sidebar + content rows). Use the example below.
+2. FEATURE ILLUSTRATION → large Font Awesome icon (text-6xl) centered in a tall rounded div with a brand gradient background
+3. GENERIC/DECORATIVE IMAGE → gradient div: <div class="w-full h-64 rounded-2xl bg-gradient-to-br from-[color1] to-[color2] flex items-center justify-center"><i class="fas fa-[relevant-icon] text-5xl text-white opacity-50"></i></div>
+4. LOGO/ICON → inline SVG or Font Awesome icon in brand colors
+
+ALWAYS include a Font Awesome icon inside gradient placeholders so they are never blank.
 Never use picsum.photos or random external images.
 UI mockup style for THIS site:
 ${uiMockupExample}
@@ -828,20 +838,21 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 
     const prompt = `BRAND: ${userMessage}
 
-━━━ ORIGINAL SITE SECTION STRUCTURE (use this to guide your rebuild) ━━━
+━━━ ORIGINAL SITE SECTION STRUCTURE ━━━
 ${siteStructure}
 
-━━━ ORIGINAL SITE HTML (CSS stripped for token efficiency — use section structure above as your layout guide) ━━━
+━━━ ORIGINAL SITE HTML (CSS stripped — use section structure above as your layout guide) ━━━
 ${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
-Rebuild the page above for the brand described. Follow these priorities IN ORDER:
-1. REPLICATE the original's exact section structure — match every section in the structure map above
-2. APPLY the style signals: ${isDarkTheme ? 'DARK THEME — near-black background throughout, all sections dark' : 'LIGHT THEME — white/light gray background'}
-3. REPLACE colors with the brand palette, text with brand copy, external photos with gradient/icon/mockup placeholders
-4. Use the fallback patterns from the system prompt ONLY for sections where the original has no clear structure
+Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
+1. OUTPUT EVERY SECTION — the section count in the structure map above is exact. Match it section-for-section, in order. Do not skip, merge, or invent sections.
+2. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
+3. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
+4. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
+5. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
-The rebuilt page should look like the same website redesigned for a new brand — NOT a generic template.
+The rebuilt page must look like the SAME website redesigned for a new brand — not a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
 
     const { text: fullHtml, tokensUsed, inputTokens, outputTokens } = await generateText(prompt, { systemPrompt, maxTokens: 65536, disableThinking: true })
