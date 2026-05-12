@@ -463,7 +463,8 @@ function describeSiteStructure(html: string): string {
     const secAlignment = secHasCenterAlign ? 'centered' : 'left-aligned'
 
     // Detect layout type
-    const hasFlex = /flex/i.test(sec)
+    // NOTE: do NOT rely on hasFlex/hasGrid for split detection — Framer/Next.js sites
+    // put all layout CSS in <style> blocks which describeSiteStructure strips.
     const hasGrid = /grid/i.test(sec)
     const listItemCount = (sec.match(/<li\b/gi) ?? []).length
     const cardPatterns = (sec.match(/<(?:article|figure)\b|class="[^"]*card/gi) ?? []).length
@@ -471,7 +472,9 @@ function describeSiteStructure(html: string): string {
     const isLogoBar = totalImgs >= 4 && sec.length < 2000
     const isCta = totalImgs === 0 && sec.length < 800 && /button|btn|get.{0,10}start|sign.{0,5}up|try.{0,5}free/i.test(sec)
     const isPricingGrid = /price|\$\d|\bplan\b|\bmonthly\b/i.test(sec)
-    const isSplit = hasFlex && totalImgs >= 1
+    // Split layout: section has a heading + 1-2 images = text on one side, image/screenshot on other.
+    // 1-2 images is the key signal — card grids have many small icons, split layouts have 1 large screenshot.
+    const isSplit = totalImgs >= 1 && totalImgs <= 2 && headingText.length > 0 && !isPricingGrid
 
     let layout: string
     if (isLogoBar) {
@@ -482,7 +485,7 @@ function describeSiteStructure(html: string): string {
       layout = `PRICING SECTION — 2-3 plan cards with price, features list, CTA button`
     } else if (isQuote) {
       layout = `TESTIMONIALS — ${Math.max(1, Math.round(sec.length / 400))} quote cards with author name and role`
-    } else if (isSplit && totalImgs >= 1) {
+    } else if (isSplit) {
       const side = secNum % 2 === 0 ? 'RIGHT text, LEFT image' : 'LEFT text, RIGHT image'
       layout = `SPLIT LAYOUT — 50/50 flex row: ${side}. Text side is ${secAlignment}. LARGE heading (text-5xl+), paragraph, optional button. ${totalImgs > 1 ? totalImgs + ' images' : '1 large image or UI screenshot'} on image side.`
       if (videoCount > 0) layout += ` + ${videoCount} video`
