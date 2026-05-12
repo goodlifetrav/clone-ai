@@ -74,14 +74,14 @@ export async function extractSite(url: string): Promise<string> {
       selectors.forEach(sel => {
         document.querySelectorAll(sel).forEach(el => el.remove())
       })
-      // Also remove backdrops/overlays and live chat widgets
+      // Remove live chat widgets and specific modal backdrops (NOT generic overlay/backdrop —
+      // Framer and other frameworks use those class names for real layout containers)
       ;[
-        '[id*="overlay"]', '[class*="overlay"]',
-        '[id*="backdrop"]', '[class*="backdrop"]',
         '[id*="intercom"]', '[class*="intercom"]',
         '[id*="drift"]', '[class*="drift"]',
         '[id*="crisp"]', '[id*="hubspot"]',
         'iframe[src*="intercom"]', 'iframe[src*="drift"]',
+        '[id="modal-backdrop"]', '[id="overlay-backdrop"]',
       ].forEach(sel => {
         document.querySelectorAll(sel).forEach(el => el.remove())
       })
