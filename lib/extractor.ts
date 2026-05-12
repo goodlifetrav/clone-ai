@@ -98,56 +98,15 @@ export async function extractSite(url: string): Promise<string> {
     // Brief pause for the style injection to apply
     await page.waitForTimeout(300)
 
-    // Freeze live-rendered dimensions on images and their containers.
-    // Framer/Next.js sites size components via CSS custom properties set by JS
-    // (e.g. width: var(--framer-component-width)). Without JS in a static clone,
-    // those vars are unset → containers collapse and images render at natural (huge) sizes.
-    // Fix: snapshot the correct rendered dimensions from getBoundingClientRect while
-    // JS is still running, then inject them as inline styles that survive without JS.
+    // Hide images that are 0×0 in the live browser (inside collapsed/animated containers).
+    // Without JS, their containers may become visible and these images would expand to fill
+    // the container width (especially ones with style="width:100%"), causing huge placeholders.
+    // Setting display:none keeps them hidden in the static clone, matching the live site state.
     await page.evaluate(() => {
       document.querySelectorAll('img').forEach((img) => {
-        // Skip unloaded images
-        if (!img.complete || img.naturalWidth === 0) return
-        const imgRect = img.getBoundingClientRect()
-        if (imgRect.width === 0 || imgRect.height === 0) return
-
-        const renderedW = Math.round(imgRect.width)
-        const renderedH = Math.round(imgRect.height)
-
-        // Only process images that CSS is significantly constraining
-        // (rendered << natural means a container is clamping the image)
-        if (renderedW >= img.naturalWidth * 0.9) return
-
-        const imgCs = window.getComputedStyle(img)
-
-        // Freeze img dimensions so it keeps its correct size without CSS vars
-        img.style.width = renderedW + 'px'
-        img.style.height = renderedH + 'px'
-        if (imgCs.objectFit && imgCs.objectFit !== 'fill' && !img.style.objectFit) {
-          img.style.objectFit = imgCs.objectFit
-        }
-
-        // Walk up the DOM to find and freeze the constraining container
-        // (this captures circular-clip, overflow:hidden, and border-radius)
-        let parent = img.parentElement
-        for (let i = 0; i < 4 && parent && parent !== document.body; i++) {
-          const pRect = parent.getBoundingClientRect()
-          if (pRect.width === 0) { parent = parent.parentElement; continue }
-
-          // This ancestor is approximately the same size → it's the constraint container
-          if (pRect.width <= renderedW * 1.2 && pRect.height <= renderedH * 1.2) {
-            const pCs = window.getComputedStyle(parent)
-            if (!parent.style.width) parent.style.width = Math.round(pRect.width) + 'px'
-            if (!parent.style.height) parent.style.height = Math.round(pRect.height) + 'px'
-            if (!parent.style.borderRadius && pCs.borderRadius !== '0px') {
-              parent.style.borderRadius = pCs.borderRadius
-            }
-            if (!parent.style.overflow && pCs.overflow !== 'visible') {
-              parent.style.overflow = pCs.overflow
-            }
-            break
-          }
-          parent = parent.parentElement
+        const rect = img.getBoundingClientRect()
+        if (rect.width === 0 && rect.height === 0) {
+          img.style.display = 'none'
         }
       })
     })
