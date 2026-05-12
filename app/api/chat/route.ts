@@ -184,6 +184,11 @@ async function runChatJob(
     const error = err as Error
     console.error('[chat job error]', error)
     reportError(err, 'POST /api/chat background job', { projectId })
-    failJob(jobId, error.message || 'Generation failed. Please try again.')
+    // Never expose raw API error messages (e.g. GoogleGenerativeAI stack traces) to users
+    const isApiError = /GoogleGenerativeAI|fetchai|generativelanguage|googleapis/i.test(error.message)
+    const userMessage = isApiError
+      ? 'AI service is temporarily unavailable. Please try again in a moment.'
+      : error.message || 'Generation failed. Please try again.'
+    failJob(jobId, userMessage)
   }
 }

@@ -117,7 +117,8 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
       } catch (err) {
         const error = err as Error
         console.error('Rebuild error:', error)
-        send({ error: error.message || 'Rebuild failed' })
+        const isApiError = /GoogleGenerativeAI|fetchai|generativelanguage|googleapis/i.test(error.message)
+        send({ error: isApiError ? 'AI service is temporarily unavailable. Please try again in a moment.' : error.message || 'Rebuild failed' })
       } finally {
         clearInterval(keepalive)
         try { controller.close() } catch { /* already closed */ }
