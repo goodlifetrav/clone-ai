@@ -889,12 +889,24 @@ REMINDER: The brand name is "${brandName}". Do not change it or any other text. 
       ? fullHtml.search(/<!DOCTYPE html/i)
       : fullHtml.search(/<html/i)
 
-    const cleaned = htmlStart >= 0
+    let cleaned = htmlStart >= 0
       ? fullHtml.slice(htmlStart).replace(/\n?```\s*$/, '').trim()
       : fullHtml.replace(/\n?```\s*$/, '').trim()
 
     if (!cleaned || !/<html/i.test(cleaned) || !/<\/html>/i.test(cleaned)) {
       return { html: currentHtml, message: 'Could not apply the change. Please try again.', tokensUsed, estimatedCost: cost }
+    }
+
+    // Guard: if Gemini renamed the brand, restore the original name.
+    // Compare the <title> of the output to the original — if different, replace all
+    // occurrences of the hallucinated name back to the correct brand name.
+    if (brandName && brandName !== 'the current brand') {
+      const newTitle = cleaned.match(/<title[^>]*>([^<]{1,60})<\/title>/i)?.[1]?.split(/[|–\-·]/)[0]?.trim() ?? ''
+      if (newTitle && newTitle !== brandName) {
+        const escaped = newTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        cleaned = cleaned.replace(new RegExp(escaped, 'gi'), brandName)
+        console.log(`[gemini] edit — brand name drift detected ("${newTitle}" → "${brandName}"), restored`)
+      }
     }
 
     return { html: cleaned, message: 'Done.', tokensUsed, estimatedCost: cost }
