@@ -30,13 +30,33 @@ export async function extractSite(url: string): Promise<string> {
       const step = window.innerHeight
       for (let y = 0; y < totalHeight; y += step) {
         window.scrollTo(0, y)
-        await new Promise((r) => setTimeout(r, 120))
+        await new Promise((r) => setTimeout(r, 200))
       }
       window.scrollTo(0, 0)
     })
 
-    // Let any scroll-triggered network requests settle
-    await page.waitForTimeout(1500)
+    // Let any scroll-triggered network requests and animations settle
+    await page.waitForTimeout(2500)
+
+    // Force all scroll-animated elements visible — many sites use AOS, GSAP, or
+    // Intersection Observer to hide elements initially (opacity:0, translateY, etc.)
+    // and reveal them on scroll. Since the static clone has no JS, we override
+    // these so every section is visible in the captured HTML.
+    await page.addStyleTag({
+      content: `
+        *[style*="opacity: 0"],
+        *[style*="opacity:0"] { opacity: 1 !important; }
+        *[style*="visibility: hidden"] { visibility: visible !important; }
+        *[style*="translateY"] { transform: none !important; }
+        *[style*="translateX"] { transform: none !important; }
+        .aos-init:not(.aos-animate) { opacity: 1 !important; transform: none !important; }
+        [data-aos] { opacity: 1 !important; transform: none !important; transition: none !important; }
+        .gsap-hidden, .is-hidden, .js-hidden { opacity: 1 !important; visibility: visible !important; }
+      `
+    })
+
+    // Brief pause for the style injection to apply
+    await page.waitForTimeout(300)
 
     return await page.evaluate(() => document.documentElement.outerHTML)
   } finally {
