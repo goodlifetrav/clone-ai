@@ -65,8 +65,6 @@ export async function extractSite(url: string): Promise<string> {
         .aos-init:not(.aos-animate) { opacity: 1 !important; transform: none !important; }
         [data-aos] { opacity: 1 !important; transform: none !important; transition: none !important; }
         .gsap-hidden, .is-hidden, .js-hidden { opacity: 1 !important; visibility: visible !important; }
-        /* Prevent images from overflowing their containers when CSS constraints are class-based */
-        img { max-width: 100%; }
       `
     })
 
@@ -100,31 +98,20 @@ export async function extractSite(url: string): Promise<string> {
     // Brief pause for the style injection to apply
     await page.waitForTimeout(300)
 
-    // Replace <video> elements with their poster image or a dark placeholder div.
+    // Replace <video> elements with a <div> that keeps the exact same class and inline styles.
     // Headless Chromium doesn't autoplay videos — they render as black rectangles.
-    // This must run before CSS extraction so the replaced <img> tags get CSS applied.
+    // We use a plain div (not a poster <img>) because poster images lack the CSS constraints
+    // that Framer/React apply to the video via its class names — they'd render huge.
+    // The div inherits all Framer layout classes so it occupies the same space as the video.
     await page.evaluate(() => {
       document.querySelectorAll('video').forEach((video) => {
-        const poster = video.getAttribute('poster')
-        const replacement = document.createElement(poster ? 'img' : 'div')
-        // Copy position/size attributes so layout is preserved
-        replacement.className = video.className
-        const computedStyle = window.getComputedStyle(video)
-        const w = computedStyle.width
-        const h = computedStyle.height
-        if (w && w !== '0px') replacement.style.width = w
-        if (h && h !== '0px') replacement.style.height = h
-        replacement.style.objectFit = 'cover'
-        replacement.style.display = 'block'
-        if (poster && replacement instanceof HTMLImageElement) {
-          replacement.src = poster
-          replacement.alt = video.getAttribute('aria-label') ?? ''
-        } else {
-          // No poster — dark placeholder that blends with dark sites, subtle on light sites
-          replacement.style.background = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)'
-          replacement.style.borderRadius = computedStyle.borderRadius || '8px'
-        }
-        video.parentNode?.replaceChild(replacement, video)
+        const placeholder = document.createElement('div')
+        placeholder.className = video.className
+        // Preserve inline styles (Framer sets position/dimensions here)
+        if (video.style.cssText) placeholder.style.cssText = video.style.cssText
+        // Dark neutral fill — blends on dark sites, unobtrusive on light sites
+        placeholder.style.background = '#111111'
+        video.parentNode?.replaceChild(placeholder, video)
       })
     })
 
