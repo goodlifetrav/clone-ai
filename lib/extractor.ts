@@ -9,7 +9,12 @@ export async function extractSite(url: string): Promise<string> {
 
   const browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-web-security', // allows reading cross-origin cssRules from CSSOM
+    ],
   })
 
   try {
@@ -57,6 +62,30 @@ export async function extractSite(url: string): Promise<string> {
 
     // Brief pause for the style injection to apply
     await page.waitForTimeout(300)
+
+    // Extract all CSS from the browser's CSSOM and inline it.
+    // This is more reliable than server-side CSS fetching because the browser
+    // already has all stylesheets loaded (no CORS/CDN fetch issues).
+    await page.evaluate(() => {
+      const rules: string[] = []
+      for (const sheet of Array.from(document.styleSheets)) {
+        try {
+          for (const rule of Array.from(sheet.cssRules ?? [])) {
+            rules.push(rule.cssText)
+          }
+        } catch {
+          // Cross-origin sheet without --disable-web-security — skip, leave link tag
+        }
+      }
+      if (rules.length > 0) {
+        // Remove all external <link rel="stylesheet"> tags (we've extracted their rules)
+        document.querySelectorAll('link[rel="stylesheet"]').forEach(el => el.remove())
+        // Inject all extracted CSS as a single inline <style> block
+        const style = document.createElement('style')
+        style.textContent = rules.join('\n')
+        document.head.insertBefore(style, document.head.firstChild)
+      }
+    })
 
     return await page.evaluate(() => document.documentElement.outerHTML)
   } finally {
