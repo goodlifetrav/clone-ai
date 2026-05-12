@@ -519,6 +519,32 @@ function describeSiteStructure(html: string): string {
   return `⚠️ EXACT SECTION COUNT: ${sectionCount} sections detected. You MUST output EXACTLY ${sectionCount} sections in this exact order — no more, no less. Do not invent, merge, or skip any section.\n\n${parts.join('\n')}`
 }
 
+/**
+ * Extract every h1/h2/h3 heading from the original HTML as a numbered required-section checklist.
+ * This gives Gemini a concrete, ordered list of sections it cannot ignore or replace with
+ * invented content (like extra testimonial sections).
+ */
+function extractHeadingChecklist(html: string): string {
+  const cleaned = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+
+  const getText = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+
+  const headings: string[] = []
+  const headingRegex = /<h([1-3])\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi
+  let m: RegExpExecArray | null
+  while ((m = headingRegex.exec(cleaned)) !== null) {
+    const text = getText(m[2]).slice(0, 80)
+    if (text.length > 2) headings.push(text)
+  }
+
+  if (headings.length === 0) return ''
+
+  return `REQUIRED SECTIONS — these are the EXACT headings from the original HTML (${headings.length} total). You MUST output a section for EVERY heading below, in this exact order. No invented sections. No skipped sections:\n${headings.map((h, i) => `${i + 1}. "${h}"`).join('\n')}`
+}
+
 export async function chatWithProjectStreamingGemini(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -544,6 +570,7 @@ export async function chatWithProjectStreamingGemini(
   // Analyze original HTML (before CSS strip) for theme and layout signals
   const styleSignals = extractStyleSignals(currentHtml)
   const siteStructure = describeSiteStructure(currentHtml)
+  const headingChecklist = extractHeadingChecklist(currentHtml)
   const isDarkTheme = styleSignals.startsWith('DARK THEME')
 
   const uiMockupExample = isDarkTheme
@@ -637,15 +664,18 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
   const htmlForRebuild = stripCssForRebuild(currentHtml)
   const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND: ${userMessage}
 
+━━━ REQUIRED SECTION CHECKLIST (from original HTML — follow exactly) ━━━
+${headingChecklist}
+
 ━━━ ORIGINAL SITE SECTION STRUCTURE ━━━
 ${siteStructure}
 
-━━━ ORIGINAL SITE HTML (CSS stripped — use section structure above as your layout guide) ━━━
+━━━ ORIGINAL SITE HTML (CSS stripped — structure above is your layout guide) ━━━
 ${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
 Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
-1. OUTPUT EVERY SECTION — the section count in the structure map above is exact. Match it section-for-section, in order. Do not skip, merge, or invent sections.
+1. OUTPUT EVERY SECTION from the checklist above — every heading = one section. Same order. No additions, no deletions, no substitutions.
 2. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
 3. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
 4. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
@@ -742,6 +772,7 @@ export async function chatWithProjectGemini(
     // Analyze the original HTML (before CSS strip) for theme and layout signals
     const styleSignals = extractStyleSignals(currentHtml)
     const siteStructure = describeSiteStructure(currentHtml)
+    const headingChecklist = extractHeadingChecklist(currentHtml)
 
     // Strip compiled CSS before sending — Framer/Next sites can exceed 1M tokens otherwise.
     const htmlForRebuild = stripCssForRebuild(currentHtml)
@@ -841,15 +872,18 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 
     const prompt = `BRAND: ${userMessage}
 
+━━━ REQUIRED SECTION CHECKLIST (from original HTML — follow exactly) ━━━
+${headingChecklist}
+
 ━━━ ORIGINAL SITE SECTION STRUCTURE ━━━
 ${siteStructure}
 
-━━━ ORIGINAL SITE HTML (CSS stripped — use section structure above as your layout guide) ━━━
+━━━ ORIGINAL SITE HTML (CSS stripped — structure above is your layout guide) ━━━
 ${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
 Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
-1. OUTPUT EVERY SECTION — the section count in the structure map above is exact. Match it section-for-section, in order. Do not skip, merge, or invent sections.
+1. OUTPUT EVERY SECTION from the checklist above — every heading = one section. Same order. No additions, no deletions, no substitutions.
 2. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
 3. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
 4. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
