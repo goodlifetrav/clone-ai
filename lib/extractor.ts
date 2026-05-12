@@ -60,6 +60,22 @@ export async function extractSite(url: string): Promise<string> {
       `
     })
 
+    // Dismiss cookie banners before capturing
+    await page.evaluate(() => {
+      const selectors = [
+        '[id*="cookie"]', '[class*="cookie"]',
+        '[id*="consent"]', '[class*="consent"]',
+        '[id*="gdpr"]', '[class*="gdpr"]',
+        '[id*="privacy-banner"]', '[class*="privacy-banner"]',
+        '[id*="cc-"]', '[class*="cc-banner"]',
+        '[id*="CookieBanner"]', '[class*="CookieBanner"]',
+        '[id*="cookiebanner"]', '[class*="cookiebanner"]',
+      ]
+      selectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => el.remove())
+      })
+    })
+
     // Brief pause for the style injection to apply
     await page.waitForTimeout(300)
 
