@@ -1,8 +1,10 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-// Primary model, with a fallback for when primary is overloaded
+// Primary model, with a fallback for when primary is overloaded.
+// gemini-2.5-pro requires thinking to be enabled (budget > 0) — use flash-8b as fallback
+// since it accepts the same config as flash without special thinking requirements.
 const PRIMARY_MODEL = 'gemini-2.5-flash'
-const FALLBACK_MODEL = 'gemini-2.5-pro'
+const FALLBACK_MODEL = 'gemini-2.5-flash-8b'
 
 let _client: GoogleGenerativeAI | null = null
 
