@@ -603,11 +603,18 @@ Override brand colors to match the user's palette. Keep Inter font throughout.
 ${isDarkTheme ? `
 DARK THEME ENFORCEMENT — add this exact <style> block immediately after the Tailwind script:
 <style>
-  html, body { background-color: #0a0f1e !important; color: #ffffff; }
-  section, header, footer, nav, main, .section, [class*="py-"], [class*="px-"] { background-color: inherit; }
+  html, body { background-color: #0a0f1e !important; color: #ffffff !important; }
+  /* Override any light Tailwind bg classes Gemini may accidentally use */
+  .bg-white { background-color: #0f1629 !important; }
+  .bg-gray-50 { background-color: #0f1629 !important; }
+  .bg-gray-100 { background-color: #111827 !important; }
+  .bg-gray-200 { background-color: #1f2937 !important; }
+  /* Ensure text stays readable on dark */
+  .text-gray-900, .text-gray-800, .text-gray-700 { color: #f9fafb !important; }
+  .text-gray-600, .text-gray-500 { color: #9ca3af !important; }
 </style>
 Every top-level section wrapper MUST have one of: bg-[#0a0f1e] bg-[#0f1629] bg-gray-950 bg-gray-900 bg-slate-950
-NO white, NO bg-white, NO bg-gray-50, NO bg-gray-100, NO light backgrounds anywhere on the page.` : ''}
+NO bg-white, NO bg-gray-50, NO bg-gray-100 on any section — the CSS above overrides them but avoid them anyway.` : ''}
 
 ━━━ STYLE SIGNALS (detected from original — OBEY THESE STRICTLY) ━━━
 ${styleSignals}
@@ -819,11 +826,18 @@ Override brand colors to match the user's palette. Keep Inter font throughout.
 ${isDarkTheme ? `
 DARK THEME ENFORCEMENT — add this exact <style> block immediately after the Tailwind script:
 <style>
-  html, body { background-color: #0a0f1e !important; color: #ffffff; }
-  section, header, footer, nav, main, .section, [class*="py-"], [class*="px-"] { background-color: inherit; }
+  html, body { background-color: #0a0f1e !important; color: #ffffff !important; }
+  /* Override any light Tailwind bg classes Gemini may accidentally use */
+  .bg-white { background-color: #0f1629 !important; }
+  .bg-gray-50 { background-color: #0f1629 !important; }
+  .bg-gray-100 { background-color: #111827 !important; }
+  .bg-gray-200 { background-color: #1f2937 !important; }
+  /* Ensure text stays readable on dark */
+  .text-gray-900, .text-gray-800, .text-gray-700 { color: #f9fafb !important; }
+  .text-gray-600, .text-gray-500 { color: #9ca3af !important; }
 </style>
 Every top-level section wrapper MUST have one of: bg-[#0a0f1e] bg-[#0f1629] bg-gray-950 bg-gray-900 bg-slate-950
-NO white, NO bg-white, NO bg-gray-50, NO bg-gray-100, NO light backgrounds anywhere on the page.` : ''}
+NO bg-white, NO bg-gray-50, NO bg-gray-100 on any section — the CSS above overrides them but avoid them anyway.` : ''}
 
 ━━━ STYLE SIGNALS (detected from original — OBEY THESE STRICTLY) ━━━
 ${styleSignals}
