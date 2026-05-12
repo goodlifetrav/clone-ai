@@ -577,10 +577,11 @@ BENTO GRID — use for comparison/highlight sections when original has no clear 
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
+  const htmlForRebuild = stripCssForRebuild(currentHtml)
   const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND: ${userMessage}
 
 ━━━ ORIGINAL SITE HTML ━━━
-${currentHtml}
+${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
 Rebuild the page above for the brand described. Follow these priorities IN ORDER:
@@ -633,6 +634,19 @@ Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
 }
 
 /**
+ * Strip compiled CSS from HTML before sending to Gemini for brand rebuild.
+ * Framer/Next.js sites inline megabytes of compiled CSS that pushes the
+ * prompt over Gemini's 1M token limit. Gemini only needs the HTML structure
+ * and text content to understand layout — not the CSS rules.
+ * The rebuilt page uses Tailwind anyway so original CSS is irrelevant.
+ */
+function stripCssForRebuild(html: string): string {
+  return html
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '') // remove all <style> blocks
+    .replace(/\s+style="[^"]*"/gi, '')                 // remove inline style= attributes
+}
+
+/**
  * Non-streaming brand rebuild — used by the background job pattern.
  * Waits for the full Gemini response before returning, so there are no
  * streaming timeouts or partial-HTML issues.
@@ -663,6 +677,10 @@ export async function chatWithProjectGemini(
 
   if (isFirstMessage) {
     // ── FULL BRAND REBUILD ────────────────────────────────────────────────────
+    // Strip compiled CSS before sending — Framer/Next sites can exceed 1M tokens otherwise.
+    const htmlForRebuild = stripCssForRebuild(currentHtml)
+    console.log(`[gemini] rebuild — html: ${currentHtml.length} chars → ${htmlForRebuild.length} chars after CSS strip`)
+
     const systemPrompt = `You are an elite web designer rebuilding a cloned site for a new brand. Your #1 goal is HIGH VISUAL FIDELITY to the original site's layout — the rebuilt page must look structurally identical to the original, with only brand content, colors, and text swapped in.
 
 REQUIRED <head> — always include exactly:
@@ -742,7 +760,7 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
     const prompt = `BRAND: ${userMessage}
 
 ━━━ ORIGINAL SITE HTML ━━━
-${currentHtml}
+${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
 Rebuild the page above for the brand described. Follow these priorities IN ORDER:
