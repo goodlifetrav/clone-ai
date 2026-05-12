@@ -192,6 +192,15 @@ function extractStyleSignals(html: string): string {
   const htmlTagMatch = html.match(/<html[^>]*>/i)?.[0] ?? ''
   const headStyles = html.match(/<style[^>]*>([\s\S]*?)<\/style>/gi)?.join('') ?? ''
 
+  // Check for explicit dark theme attributes on html/body (Framer sites use data-framer-theme="dark")
+  const hasDarkAttr =
+    /data-(?:framer-)?theme="dark"/i.test(bodyMatch + htmlTagMatch) ||
+    /\bclass="[^"]*\bdark\b/i.test(bodyMatch + htmlTagMatch)
+
+  // Check body's inline style for dark background
+  const bodyStyleMatch = bodyMatch.match(/style="([^"]*)"/i)?.[1] ?? ''
+  const hasDarkInlineStyle = /background(?:-color)?:\s*(?:#(?:0[0-9a-f]{5}|1[0-2][0-9a-f]{4})|rgb\(\s*[0-2]\d,)/i.test(bodyStyleMatch)
+
   const darkIndicators = [
     /class="[^"]*bg-(?:black|gray-900|gray-950|neutral-900|neutral-950|slate-900|zinc-900)/i,
     /background(?:-color)?:\s*(?:#0[0-9a-f]{5}|#1[0-9a-f]{5}|rgb\(\s*[0-2]\d,)/i,
@@ -202,11 +211,15 @@ function extractStyleSignals(html: string): string {
     html.match(/background(?:-color)?:\s*(?:#fff(?:fff)?|white|#f[0-9a-f]{5})/i) ||
     html.match(/--(?:background|bg-color|color-bg|page-background)[^:]*:\s*(?:#fff(?:fff)?|white|#f[0-9a-f]{5})/i) ||
     html.match(/body[^{]*\{[^}]*background[^:]*:\s*(?:#fff(?:fff)?|white|#f[0-9a-f]{5})/i)
-  // Only use dark indicator matches from the body/html tags and head styles (not full doc — compiled CSS has dark vars for dark-mode support even on light sites)
-  const looksLikeDark = darkIndicators.some((re) => re.test(bodyMatch + htmlTagMatch + headStyles.slice(0, 2000)))
+
+  // Scan first 10KB of styles for dark background (Framer/Next inline all CSS — dark bg rule may not be in first 2KB)
+  const looksLikeDark =
+    hasDarkAttr ||
+    hasDarkInlineStyle ||
+    darkIndicators.some((re) => re.test(bodyMatch + htmlTagMatch + headStyles.slice(0, 10000)))
 
   if (looksLikeDark && !looksLightBg) {
-    signals.push('DARK THEME: The original site uses a dark background (near-black or very dark). Your rebuild MUST use a dark theme — dark body/sections, light text.')
+    signals.push('DARK THEME: The original site uses a dark background (near-black or very dark #0f0f0f–#1a1a2e range). Your rebuild MUST use a PURE DARK theme throughout — near-black body (#0f0f0f or #111111), all sections dark, light/white text. NO light-background sections.')
   } else {
     signals.push('LIGHT THEME: The original site uses a light/white background. Your rebuild MUST use a light theme — white or very light gray body background (#ffffff or #f8fafc), dark text.')
   }
@@ -508,6 +521,21 @@ export async function chatWithProjectStreamingGemini(
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n')
 
+  // Analyze original HTML (before CSS strip) for theme and layout signals
+  const styleSignals = extractStyleSignals(currentHtml)
+  const siteStructure = describeSiteStructure(currentHtml)
+  const isDarkTheme = styleSignals.startsWith('DARK THEME')
+
+  const uiMockupExample = isDarkTheme
+    ? `<div class="bg-gray-900 rounded-2xl border border-gray-700 p-6">
+  <div class="flex gap-2 mb-4"><div class="w-3 h-3 rounded-full bg-red-500"></div><div class="w-3 h-3 rounded-full bg-yellow-500"></div><div class="w-3 h-3 rounded-full bg-green-500"></div></div>
+  <div class="space-y-3"><div class="h-4 bg-gray-700 rounded w-3/4"></div><div class="h-32 bg-gray-800 rounded-xl flex items-center justify-center text-brand-500 border border-gray-700"><i class="fas fa-chart-bar text-5xl"></i></div></div>
+</div>`
+    : `<div class="bg-white rounded-2xl shadow-2xl border border-gray-200 p-6">
+  <div class="flex gap-2 mb-4"><div class="w-3 h-3 rounded-full bg-red-400"></div><div class="w-3 h-3 rounded-full bg-yellow-400"></div><div class="w-3 h-3 rounded-full bg-green-400"></div></div>
+  <div class="space-y-3"><div class="h-4 bg-gray-100 rounded w-3/4"></div><div class="h-32 bg-gray-50 rounded-xl flex items-center justify-center text-gray-300 border border-gray-100"><i class="fas fa-chart-bar text-5xl"></i></div></div>
+</div>`
+
   const systemPrompt = `You are an elite web designer rebuilding a cloned site for a new brand. Your #1 goal is HIGH VISUAL FIDELITY to the original site's layout — the rebuilt page must look structurally identical to the original, with only brand content, colors, and text swapped in.
 
 REQUIRED <head> — always include exactly:
@@ -524,6 +552,9 @@ tailwind.config = {
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
 Override brand colors to match the user's palette. Keep Inter font throughout.
+
+━━━ STYLE SIGNALS (detected from original — OBEY THESE STRICTLY) ━━━
+${styleSignals}
 
 ━━━ YOUR PRIMARY DIRECTIVE ━━━
 The original HTML is your layout blueprint. Replicate every section EXACTLY as structured in the original:
@@ -552,26 +583,28 @@ PRESERVE (replicate from original):
 When the original has an image, replace it with one of:
 1. A gradient div in brand colors: <div class="w-full h-64 rounded-2xl bg-gradient-to-br from-[brand-color] to-[brand-color2]"></div>
 2. A Font Awesome icon centered in a colored background
-3. A UI skeleton mockup (gray boxes + brand icon) for product screenshots
+3. A UI skeleton mockup (browser chrome + content skeleton) for product screenshots
 4. An SVG geometric shape or abstract illustration in brand colors
 Never use picsum.photos or random external images.
+UI mockup style for THIS site:
+${uiMockupExample}
 
 ━━━ FALLBACK PATTERNS (use only when original has no equivalent section) ━━━
 
 ICON FEATURE GRID — use for generic feature lists when original has no clear layout:
 <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
-  <div class="space-y-3"><div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600"><i class="fas fa-bolt text-xl"></i></div><h3 class="text-lg font-semibold text-gray-900">Feature</h3><p class="text-gray-500">Description.</p></div>
+  <div class="space-y-3"><div class="w-10 h-10 rounded-xl ${isDarkTheme ? 'bg-gray-800 text-brand-400' : 'bg-indigo-50 text-indigo-600'} flex items-center justify-center"><i class="fas fa-bolt text-xl"></i></div><h3 class="text-lg font-semibold ${isDarkTheme ? 'text-white' : 'text-gray-900'}">Feature</h3><p class="${isDarkTheme ? 'text-gray-400' : 'text-gray-500'}">Description.</p></div>
 </div>
 
 BENTO GRID — use for comparison/highlight sections when original has no clear layout:
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-  <div class="bg-gray-900 rounded-3xl p-10 text-white"><h3 class="text-3xl font-bold mb-4">Heading</h3><p class="text-gray-400">Text.</p></div>
-  <div class="bg-white rounded-3xl p-10 border border-gray-100 space-y-4"></div>
+  <div class="${isDarkTheme ? 'bg-gray-800 border border-gray-700' : 'bg-gray-900'} rounded-3xl p-10 text-white"><h3 class="text-3xl font-bold mb-4">Heading</h3><p class="text-gray-400">Text.</p></div>
+  <div class="${isDarkTheme ? 'bg-gray-900 border border-gray-700' : 'bg-white border border-gray-100'} rounded-3xl p-10 space-y-4"></div>
 </div>
 
 ━━━ RULES ━━━
 - NO external stock photos (no picsum). Replace with gradient divs, icons, or UI mockups.
-- Buttons: rounded-lg, dark bg-gray-900 primary, white border secondary
+- Buttons: rounded-lg, brand-colored primary, white/gray border secondary
 - Mobile responsive on every section
 - Original compelling copy — no Lorem ipsum
 
@@ -580,14 +613,18 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
   const htmlForRebuild = stripCssForRebuild(currentHtml)
   const prompt = `${historyContext ? `Previous conversation:\n${historyContext}\n\n` : ''}BRAND: ${userMessage}
 
-━━━ ORIGINAL SITE HTML ━━━
+━━━ ORIGINAL SITE SECTION STRUCTURE (use this to guide your rebuild) ━━━
+${siteStructure}
+
+━━━ ORIGINAL SITE HTML (CSS stripped for token efficiency — use section structure above as your layout guide) ━━━
 ${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
 Rebuild the page above for the brand described. Follow these priorities IN ORDER:
-1. REPLICATE the original's exact section structure — same order, same layout types, same decorative elements
-2. REPLACE colors with the brand palette, text with brand copy, external photos with gradient/icon placeholders
-3. Use the fallback patterns from the system prompt ONLY for sections where the original has no clear structure
+1. REPLICATE the original's exact section structure — match every section in the structure map above
+2. APPLY the style signals: ${isDarkTheme ? 'DARK THEME — near-black background throughout, all sections dark' : 'LIGHT THEME — white/light gray background'}
+3. REPLACE colors with the brand palette, text with brand copy, external photos with gradient/icon/mockup placeholders
+4. Use the fallback patterns from the system prompt ONLY for sections where the original has no clear structure
 
 The rebuilt page should look like the same website redesigned for a new brand — NOT a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
@@ -677,9 +714,26 @@ export async function chatWithProjectGemini(
 
   if (isFirstMessage) {
     // ── FULL BRAND REBUILD ────────────────────────────────────────────────────
+    // Analyze the original HTML (before CSS strip) for theme and layout signals
+    const styleSignals = extractStyleSignals(currentHtml)
+    const siteStructure = describeSiteStructure(currentHtml)
+
     // Strip compiled CSS before sending — Framer/Next sites can exceed 1M tokens otherwise.
     const htmlForRebuild = stripCssForRebuild(currentHtml)
     console.log(`[gemini] rebuild — html: ${currentHtml.length} chars → ${htmlForRebuild.length} chars after CSS strip`)
+
+    // Detect dark theme from style signals (check first signal line)
+    const isDarkTheme = styleSignals.startsWith('DARK THEME')
+
+    const uiMockupExample = isDarkTheme
+      ? `<div class="bg-gray-900 rounded-2xl border border-gray-700 p-6">
+  <div class="flex gap-2 mb-4"><div class="w-3 h-3 rounded-full bg-red-500"></div><div class="w-3 h-3 rounded-full bg-yellow-500"></div><div class="w-3 h-3 rounded-full bg-green-500"></div></div>
+  <div class="space-y-3"><div class="h-4 bg-gray-700 rounded w-3/4"></div><div class="h-32 bg-gray-800 rounded-xl flex items-center justify-center text-gray-600 border border-gray-700"><i class="fas fa-chart-bar text-5xl text-brand-500"></i></div></div>
+</div>`
+      : `<div class="bg-white rounded-2xl shadow-2xl border border-gray-200 p-6">
+  <div class="flex gap-2 mb-4"><div class="w-3 h-3 rounded-full bg-red-400"></div><div class="w-3 h-3 rounded-full bg-yellow-400"></div><div class="w-3 h-3 rounded-full bg-green-400"></div></div>
+  <div class="space-y-3"><div class="h-4 bg-gray-100 rounded w-3/4"></div><div class="h-32 bg-gray-50 rounded-xl flex items-center justify-center text-gray-300 border border-gray-100"><i class="fas fa-chart-bar text-5xl"></i></div></div>
+</div>`
 
     const systemPrompt = `You are an elite web designer rebuilding a cloned site for a new brand. Your #1 goal is HIGH VISUAL FIDELITY to the original site's layout — the rebuilt page must look structurally identical to the original, with only brand content, colors, and text swapped in.
 
@@ -697,6 +751,9 @@ tailwind.config = {
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
 Override brand colors to match the user's palette. Keep Inter font throughout.
+
+━━━ STYLE SIGNALS (detected from original — OBEY THESE STRICTLY) ━━━
+${styleSignals}
 
 ━━━ YOUR PRIMARY DIRECTIVE ━━━
 The original HTML is your layout blueprint. Replicate every section EXACTLY as structured in the original:
@@ -725,32 +782,28 @@ PRESERVE (replicate from original):
 When the original has an image, replace it with one of:
 1. A gradient div in brand colors: <div class="w-full h-64 rounded-2xl bg-gradient-to-br from-[brand-color] to-[brand-color2]"></div>
 2. A Font Awesome icon centered in a colored background
-3. A UI skeleton mockup (gray boxes + brand icon) for product screenshots
+3. A UI skeleton mockup (browser chrome + content skeleton) for product screenshots
 4. An SVG geometric shape or abstract illustration in brand colors
 Never use picsum.photos or random external images.
+UI mockup style for THIS site:
+${uiMockupExample}
 
 ━━━ FALLBACK PATTERNS (use only when original has no equivalent section) ━━━
 
 ICON FEATURE GRID — 3 columns with FA icons (use for generic feature lists):
 <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
-  <div class="space-y-3"><div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600"><i class="fas fa-bolt text-xl"></i></div><h3 class="text-lg font-semibold text-gray-900">Feature</h3><p class="text-gray-500">Description.</p></div>
+  <div class="space-y-3"><div class="w-10 h-10 rounded-xl ${isDarkTheme ? 'bg-gray-800 text-brand-400' : 'bg-indigo-50 text-indigo-600'} flex items-center justify-center"><i class="fas fa-bolt text-xl"></i></div><h3 class="text-lg font-semibold ${isDarkTheme ? 'text-white' : 'text-gray-900'}">Feature</h3><p class="${isDarkTheme ? 'text-gray-400' : 'text-gray-500'}">Description.</p></div>
 </div>
 
-BENTO GRID — dark + light card pair (use for comparison/highlight sections):
+BENTO GRID — card pair (use for comparison/highlight sections):
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-  <div class="bg-gray-900 rounded-3xl p-10 text-white"><h3 class="text-3xl font-bold mb-4">Heading</h3><p class="text-gray-400">Text.</p></div>
-  <div class="bg-white rounded-3xl p-10 border border-gray-100 space-y-4"></div>
-</div>
-
-UI MOCKUP — product screenshot placeholder (use in hero when original has a product screenshot):
-<div class="bg-white rounded-2xl shadow-2xl border border-gray-200 p-6">
-  <div class="flex gap-2 mb-4"><div class="w-3 h-3 rounded-full bg-red-400"></div><div class="w-3 h-3 rounded-full bg-yellow-400"></div><div class="w-3 h-3 rounded-full bg-green-400"></div></div>
-  <div class="space-y-3"><div class="h-4 bg-gray-100 rounded w-3/4"></div><div class="h-32 bg-gray-50 rounded-xl flex items-center justify-center text-gray-300 border border-gray-100"><i class="fas fa-chart-bar text-5xl"></i></div></div>
+  <div class="${isDarkTheme ? 'bg-gray-900 border border-gray-800' : 'bg-gray-900'} rounded-3xl p-10 text-white"><h3 class="text-3xl font-bold mb-4">Heading</h3><p class="text-gray-400">Text.</p></div>
+  <div class="${isDarkTheme ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'} rounded-3xl p-10 space-y-4"></div>
 </div>
 
 ━━━ RULES ━━━
 - NO external stock photos (no picsum). Replace with gradient divs, icons, or UI mockups.
-- Buttons: rounded-lg, dark bg-gray-900 primary, white border secondary
+- Buttons: rounded-lg, brand-colored primary, white/gray border secondary
 - Mobile responsive on every section
 - Original compelling copy — no Lorem ipsum
 - Output a complete, self-contained page
@@ -759,14 +812,18 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
 
     const prompt = `BRAND: ${userMessage}
 
-━━━ ORIGINAL SITE HTML ━━━
+━━━ ORIGINAL SITE SECTION STRUCTURE (use this to guide your rebuild) ━━━
+${siteStructure}
+
+━━━ ORIGINAL SITE HTML (CSS stripped for token efficiency — use section structure above as your layout guide) ━━━
 ${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
 Rebuild the page above for the brand described. Follow these priorities IN ORDER:
-1. REPLICATE the original's exact section structure — same order, same layout types, same decorative elements
-2. REPLACE colors with the brand palette, text with brand copy, external photos with gradient/icon placeholders
-3. Use the fallback patterns from the system prompt ONLY for sections where the original has no clear structure
+1. REPLICATE the original's exact section structure — match every section in the structure map above
+2. APPLY the style signals: ${isDarkTheme ? 'DARK THEME — near-black background throughout, all sections dark' : 'LIGHT THEME — white/light gray background'}
+3. REPLACE colors with the brand palette, text with brand copy, external photos with gradient/icon/mockup placeholders
+4. Use the fallback patterns from the system prompt ONLY for sections where the original has no clear structure
 
 The rebuilt page should look like the same website redesigned for a new brand — NOT a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
