@@ -420,11 +420,22 @@ function describeSiteStructure(html: string): string {
   }
 
   // ── INTERIOR SECTIONS ────────────────────────────────────────────────────
-  // Match <section> tags; fall back to large top-level divs if no <section> tags found
+  // Match <section> tags; fall back to Shopify div sections, then h2/h3 splits
   const sectionMatches: string[] = []
   const secRegex = /<section\b[^>]*>([\s\S]*?)<\/section>/gi
   let m: RegExpExecArray | null
   while ((m = secRegex.exec(cleaned)) !== null) sectionMatches.push(m[0])
+
+  // Shopify uses <div id="shopify-section-*"> as top-level section containers.
+  // Match from each shopify-section div to the start of the next one so we get
+  // the full section content (including carousels) as a single chunk — this prevents
+  // the h2/h3 fallback from splitting carousel items into separate sections.
+  if (sectionMatches.length < 2) {
+    const shopifyRe = /<div\b[^>]*\bid="shopify-section[^"]*"[^>]*>([\s\S]*?)(?=<div\b[^>]*\bid="shopify-section|<footer\b|<\/body>|$)/gi
+    while ((m = shopifyRe.exec(cleaned)) !== null) {
+      if (m[0].length > 300) sectionMatches.push(m[0])
+    }
+  }
 
   // Framer and many modern sites don't use <section> — detect by h2/h3 headings instead.
   // Each major content section almost always has a heading, so split around them.
@@ -472,7 +483,9 @@ function describeSiteStructure(html: string): string {
     const isQuote = /blockquote|testimonial|review|"[^"]{20,}"/i.test(sec)
     // Logo bar: many images, minimal text — trusted-by / partner strip
     const isLogoBar = totalImgs >= 4 && sec.length < 4000 && (getText(sec).length < 150 || /trusted|partner|customer|used by|powered by/i.test(sec))
-    const isCta = totalImgs === 0 && sec.length < 800 && /button|btn|get.{0,10}start|sign.{0,5}up|try.{0,5}free/i.test(sec)
+    // Announcement/promo bar: short section, no images, promotional text (discount, free shipping)
+    const isAnnouncementBar = totalImgs === 0 && sec.length < 600 && /\d+%\s*off|free\s*ship|promo|sale|announce|% off/i.test(sec)
+    const isCta = !isAnnouncementBar && totalImgs === 0 && sec.length < 800 && /button|btn|get.{0,10}start|sign.{0,5}up|try.{0,5}free/i.test(sec)
     // Product grid: multiple images + price tags + add-to-cart signals (e-commerce product collection)
     const isProductGrid = totalImgs >= 3 && /\$\d|add.{0,5}cart|shop.{0,10}now|buy.{0,5}now/i.test(sec)
     // Pricing grid: SaaS plan cards — price + plan/monthly signals but NOT an e-commerce product grid
@@ -484,7 +497,10 @@ function describeSiteStructure(html: string): string {
     const isSplit = totalImgs >= 1 && totalImgs <= 2 && headingText.length > 0 && !isPricingGrid && !isProductGrid
 
     let layout: string
-    if (isLogoBar) {
+    if (isAnnouncementBar) {
+      const barText = getText(sec).slice(0, 60)
+      layout = `ANNOUNCEMENT BAR — thin full-width bar at top of page (above nav). Dark background, centered promotional text ("${barText}"), small font. Height ~40px.`
+    } else if (isLogoBar) {
       layout = `LOGO BAR — ${totalImgs} brand logos in a horizontal row (social proof / trusted-by strip)`
     } else if (isCta) {
       layout = `CTA SECTION — centered heading, 1-2 buttons, no images`
@@ -500,6 +516,11 @@ function describeSiteStructure(html: string): string {
       const side = secNum % 2 === 0 ? 'RIGHT text, LEFT image' : 'LEFT text, RIGHT image'
       layout = `SPLIT LAYOUT — 50/50 flex row: ${side}. Text side is ${secAlignment}. LARGE heading (text-5xl+), paragraph, optional button. ${totalImgs > 1 ? totalImgs + ' images' : '1 large image or UI screenshot'} on image side.`
       if (videoCount > 0) layout += ` + ${videoCount} video`
+    } else if (totalImgs >= 3 && (sec.match(/<h[2-3]\b/gi) ?? []).length >= 3) {
+      // Many headings + many images in one section = a carousel/slider (e.g. fragrance carousel)
+      const itemCount = (sec.match(/<h[2-3]\b/gi) ?? []).length
+      const firstHeading = sec.match(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/i)?.[1]?.replace(/<[^>]+>/g, '').trim().slice(0, 40) ?? ''
+      layout = `PRODUCT/CONTENT CAROUSEL — horizontal scroll carousel with ${itemCount} items. Each item: product image placeholder, bold product name (first item: "${firstHeading}"), short description, "Shop" link. Show 1-2 items visible at a time, others hinted by partial overflow.`
     } else if (totalImgs >= 5 || (totalImgs >= 3 && hasGrid)) {
       layout = `IMAGE GRID — ${totalImgs} images in a ${Math.ceil(totalImgs / 2)}-column mosaic or gallery grid`
     } else if ((listItemCount >= 3 || cardPatterns >= 2) && hasGrid) {
@@ -543,22 +564,33 @@ function extractHeadingChecklist(html: string): string {
 
   const getText = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 
-  const headings: string[] = []
-  const seen = new Set<string>()
-
-  // Capture h1–h6 tags
-  const headingRegex = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi
+  // Collect all h1-h3 headings with their byte positions
+  const allHeadings: Array<{text: string; index: number; level: number}> = []
+  const headingRegex = /<h([1-3])\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi
   let m: RegExpExecArray | null
   while ((m = headingRegex.exec(cleaned)) !== null) {
     const text = getText(m[2]).slice(0, 80)
-    if (text.length > 2 && !seen.has(text)) { seen.add(text); headings.push(text) }
+    if (text.length > 2) allHeadings.push({ text, index: m.index, level: parseInt(m[1]) })
   }
 
-  // Also capture marquee/ticker text (Shopify uses these for section banners like "OUR CORE VALUES")
-  const marqueeRegex = /<(?:marquee|[a-z-]+[^>]*class="[^"]*(?:marquee|ticker|announcement|scrolling-text)[^"]*")[^>]*>([\s\S]*?)<\/[a-z-]+>/gi
-  while ((m = marqueeRegex.exec(cleaned)) !== null) {
-    const text = getText(m[1]).slice(0, 80)
-    if (text.length > 2 && !seen.has(text)) { seen.add(text); headings.push(text) }
+  if (allHeadings.length === 0) return ''
+
+  // Filter out carousel/slider items — a genuine page-section heading appears at least
+  // 3000 chars away from the previous same-level heading.  When a site like Shopify puts
+  // 9 fragrance names as h2s inside a single carousel, they're all < 3000 chars apart
+  // and get dropped.  Widely-spaced h2s (separate page sections) pass through fine.
+  const MIN_SECTION_GAP = 3000
+  const lastIndexByLevel: Record<number, number> = {}
+  const seen = new Set<string>()
+  const headings: string[] = []
+
+  for (const h of allHeadings) {
+    const last = lastIndexByLevel[h.level] ?? -Infinity
+    if (h.index - last >= MIN_SECTION_GAP && !seen.has(h.text)) {
+      seen.add(h.text)
+      headings.push(h.text)
+      lastIndexByLevel[h.level] = h.index
+    }
   }
 
   if (headings.length === 0) return ''
