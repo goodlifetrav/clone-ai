@@ -1180,15 +1180,39 @@ REMINDER: The brand name is "${brandName}". Do not change it or any other text. 
       return { html: currentHtml, message: 'Could not apply the change. Please try again.', tokensUsed, estimatedCost: cost }
     }
 
-    // Guard: if Gemini renamed the brand, restore the original name.
-    // Compare the <title> of the output to the original — if different, replace all
-    // occurrences of the hallucinated name back to the correct brand name.
+    // Guard: if Gemini renamed the brand, restore every occurrence.
+    // Strategy: count how many times the correct brandName appears in the original vs the output.
+    // If the output has fewer occurrences, Gemini renamed some of them — find the new name via
+    // the <title>, <h1>, or nav logo text, then replace all instances back to brandName.
     if (brandName && brandName !== 'the current brand') {
-      const newTitle = cleaned.match(/<title[^>]*>([^<]{1,60})<\/title>/i)?.[1]?.split(/[|–\-·]/)[0]?.trim() ?? ''
-      if (newTitle && newTitle !== brandName) {
-        const escaped = newTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        cleaned = cleaned.replace(new RegExp(escaped, 'gi'), brandName)
-        console.log(`[gemini] edit — brand name drift detected ("${newTitle}" → "${brandName}"), restored`)
+      const brandRe = new RegExp(brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+      const originalCount = (currentHtml.match(brandRe) ?? []).length
+      const outputCount = (cleaned.match(brandRe) ?? []).length
+
+      if (outputCount < originalCount) {
+        // Find what Gemini renamed it to — check title, h1, and nav text
+        const candidates: string[] = []
+        const newTitle = cleaned.match(/<title[^>]*>([^<]{1,60})<\/title>/i)?.[1]?.split(/[|–\-·]/)[0]?.trim() ?? ''
+        if (newTitle && newTitle !== brandName) candidates.push(newTitle)
+
+        const newH1 = cleaned.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, '').trim().slice(0, 30) ?? ''
+        if (newH1 && newH1 !== brandName && newH1.length <= 30 && /^[A-Z]/i.test(newH1)) candidates.push(newH1)
+
+        // Also scan nav for a short capitalized word/phrase that replaced the brand name
+        const navHtml = cleaned.match(/<nav\b[^>]*>[\s\S]*?<\/nav>/i)?.[0] ?? ''
+        const navLogoText = navHtml.match(/class="[^"]*(?:logo|brand|site-name)[^"]*"[^>]*>([^<]{1,30})</i)?.[1]?.trim() ?? ''
+        if (navLogoText && navLogoText !== brandName && navLogoText.length <= 30) candidates.push(navLogoText)
+
+        for (const candidate of candidates) {
+          if (!candidate || candidate === brandName) continue
+          const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const replaced = cleaned.replace(new RegExp(escaped, 'gi'), brandName)
+          if (replaced !== cleaned) {
+            cleaned = replaced
+            console.log(`[gemini] edit — brand name drift ("${candidate}" → "${brandName}"), restored`)
+            break
+          }
+        }
       }
     }
 
