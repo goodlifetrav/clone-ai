@@ -265,6 +265,33 @@ function extractStyleSignals(html: string): string {
     signals.push('GLASS/TRANSPARENCY: The original uses glass-effect cards or semi-transparent overlays. Use backdrop-blur and bg-opacity utilities in your rebuild.')
   }
 
+  // ── Font detection ───────────────────────────────────────────────────────
+  // Extract Google Fonts URLs from the original HTML so the rebuild uses the same typeface
+  const googleFontRe = /fonts\.googleapis\.com\/css[^"'>\s)]+/gi
+  const googleFontUrls = [...(html.matchAll(googleFontRe) ?? [])].map(m => m[0]).slice(0, 3)
+
+  if (googleFontUrls.length > 0) {
+    // Site already uses Google Fonts — include those exact URLs
+    const linkTags = googleFontUrls.map(u => `<link href="https://${u}" rel="stylesheet">`).join('\n')
+    signals.push(`FONTS: The original uses Google Fonts. Add these to your rebuild <head> (in ADDITION to the required Tailwind/FA scripts):\n${linkTags}\nThen use those font families in your CSS via font-family or Tailwind's fontFamily config.`)
+  } else {
+    // Detect font style from CSS to recommend the closest Google Font alternative
+    const hasCondensed = /condensed|narrow|compressed/i.test(html)
+    const hasSerif = /\bserif\b/i.test(html.slice(0, 50000)) && !/sans-serif/i.test(html.slice(0, 1000))
+    const hasMonospace = /monospace|mono\b/i.test(html)
+    const customFontName = html.match(/@font-face[^}]*font-family:\s*['"]([^'"]+)['"]/i)?.[1] ?? ''
+
+    if (hasCondensed || /helvetica|haas|grotesk|neue/i.test(customFontName)) {
+      signals.push(`FONTS: The original uses a CONDENSED/COMPRESSED bold typeface (like Helvetica Neue or similar). Add to <head>: <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;0,900;1,700;1,800;1,900&display=swap" rel="stylesheet"> — then use font-family: 'Barlow Condensed' for ALL headings and nav text. This closely matches the original's compressed headline style.`)
+    } else if (hasSerif || /playfair|georgia|times|merriweather/i.test(customFontName)) {
+      signals.push(`FONTS: The original uses a SERIF typeface. Add to <head>: <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&display=swap" rel="stylesheet"> — use 'Playfair Display' for headings.`)
+    } else if (hasMonospace) {
+      signals.push(`FONTS: The original uses a monospace/code font. Add to <head>: <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"> — use 'JetBrains Mono' for headings.`)
+    } else {
+      signals.push('FONTS: Use Inter (already included in head requirements) for all text.')
+    }
+  }
+
   return signals.join('\n')
 }
 
