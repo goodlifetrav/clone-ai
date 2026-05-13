@@ -447,21 +447,28 @@ function describeSiteStructure(html: string): string {
   }
 
   // ── INTERIOR SECTIONS ────────────────────────────────────────────────────
-  // Match <section> tags; fall back to Shopify div sections, then h2/h3 splits
+  // Priority 1: Shopify section divs FIRST — most reliable for Shopify sites.
+  // Each shopify-section div spans exactly one page section (product grid,
+  // carousel, etc.) so this avoids the nested-<section> miscount problem.
   const sectionMatches: string[] = []
-  const secRegex = /<section\b[^>]*>([\s\S]*?)<\/section>/gi
   let m: RegExpExecArray | null
-  while ((m = secRegex.exec(cleaned)) !== null) sectionMatches.push(m[0])
 
-  // Shopify uses <div id="shopify-section-*" class="shopify-section"> as top-level containers.
-  // Match from each shopify-section div to the start of the next one so the entire
-  // fragrances carousel (with 9 sub-headings) stays as ONE chunk, preventing the
-  // h2/h3 fallback from splitting carousel items into separate sections.
+  // Match on EITHER id="shopify-section..." OR class="...shopify-section..."
+  const shopifyRe = /<div\b[^>]*(?:id="shopify-section[^"]*"|class="[^"]*\bshopify-section\b[^"]*")[^>]*>([\s\S]*?)(?=<div\b[^>]*(?:id="shopify-section|class="[^"]*\bshopify-section\b)|<footer\b|<\/body>|$)/gi
+  while ((m = shopifyRe.exec(cleaned)) !== null) {
+    if (m[0].length > 300) sectionMatches.push(m[0])
+  }
+
+  // Priority 2: HTML5 <section> tags — but ONLY if count is reasonable.
+  // Too many (>12) means nested carousel/card sections, not top-level page sections.
+  // Too small (avg < 800 chars) means the same thing. Skip noisy results.
   if (sectionMatches.length < 2) {
-    // Match on EITHER id="shopify-section..." OR class="...shopify-section..."
-    const shopifyRe = /<div\b[^>]*(?:id="shopify-section[^"]*"|class="[^"]*\bshopify-section\b[^"]*")[^>]*>([\s\S]*?)(?=<div\b[^>]*(?:id="shopify-section|class="[^"]*\bshopify-section\b)|<footer\b|<\/body>|$)/gi
-    while ((m = shopifyRe.exec(cleaned)) !== null) {
-      if (m[0].length > 300) sectionMatches.push(m[0])
+    const secRegex = /<section\b[^>]*>([\s\S]*?)<\/section>/gi
+    const tempSections: string[] = []
+    while ((m = secRegex.exec(cleaned)) !== null) tempSections.push(m[0])
+    const avgSize = tempSections.reduce((s, t) => s + t.length, 0) / (tempSections.length || 1)
+    if (tempSections.length >= 2 && tempSections.length <= 12 && avgSize > 800) {
+      sectionMatches.push(...tempSections)
     }
   }
 
