@@ -861,6 +861,7 @@ LAYOUT RULES FOR SPECIFIC SECTION TYPES:
 - HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.
 - CAROUSEL: each card MUST have a fixed width (max-w-xs or w-72) and flex-shrink-0 so exactly 2-3 cards are visible. Outer container: overflow-x-auto. Inner: flex gap-4. Partial overflow on last card hints at scrollability.
 - SCROLLING MARQUEE TICKER: use CSS @keyframes marquee with translateX(-50%) and a duplicated list of phrases for seamless looping.
+- LIFESTYLE PHOTO STRIP: heading MUST be a brand values or mission statement (e.g., "OUR CORE VALUES: [VALUE] • [VALUE] • [VALUE]" or "BUILT ON [VALUE], [VALUE], [VALUE]"). NEVER use "Join Our Community", "Join the Community", "Our Community", or any community-CTA heading — those belong in the footer, not as a mid-page section heading.
 
 The rebuilt page must look like the SAME website redesigned for a new brand — not a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
@@ -1094,6 +1095,7 @@ LAYOUT RULES FOR SPECIFIC SECTION TYPES:
 - HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.
 - CAROUSEL: each card MUST have a fixed width (max-w-xs or w-72) and flex-shrink-0 so exactly 2-3 cards are visible. Outer container: overflow-x-auto. Inner: flex gap-4. Partial overflow on last card hints at scrollability.
 - SCROLLING MARQUEE TICKER: use CSS @keyframes marquee with translateX(-50%) and a duplicated list of phrases for seamless looping.
+- LIFESTYLE PHOTO STRIP: heading MUST be a brand values or mission statement (e.g., "OUR CORE VALUES: [VALUE] • [VALUE] • [VALUE]" or "BUILT ON [VALUE], [VALUE], [VALUE]"). NEVER use "Join Our Community", "Join the Community", "Our Community", or any community-CTA heading — those belong in the footer, not as a mid-page section heading.
 
 The rebuilt page must look like the SAME website redesigned for a new brand — not a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
