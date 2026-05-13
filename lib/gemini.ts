@@ -915,9 +915,23 @@ Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
  * The rebuilt page uses Tailwind anyway so original CSS is irrelevant.
  */
 function stripCssForRebuild(html: string): string {
-  return html
+  let stripped = html
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '') // remove all <style> blocks
     .replace(/\s+style="[^"]*"/gi, '')                 // remove inline style= attributes
+
+  // Gemini 2.5 Flash hard limit is ~1M tokens (~750KB of text).
+  // For very large sites (Apple, HubSpot), truncate to 600KB so we stay well under.
+  // describeSiteStructure + headingChecklist already give Gemini the full layout map —
+  // the raw HTML is just a supplementary reference, so truncation is safe.
+  const MAX_CHARS = 600_000
+  if (stripped.length > MAX_CHARS) {
+    // Cut at the last complete tag boundary before the limit
+    const cutPoint = stripped.lastIndexOf('>', MAX_CHARS)
+    stripped = stripped.slice(0, cutPoint > 0 ? cutPoint + 1 : MAX_CHARS)
+    stripped += '\n<!-- HTML truncated for token limit — section structure above is the authoritative layout guide -->'
+  }
+
+  return stripped
 }
 
 /**

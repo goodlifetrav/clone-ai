@@ -27,7 +27,13 @@ export async function extractSite(url: string): Promise<string> {
 
     const page = await context.newPage()
 
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 })
+    // Try networkidle first (best quality), fall back to load if it times out
+    try {
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 })
+    } catch {
+      // Site has too many long-running requests (HubSpot, Apple, etc.) — use load event instead
+      await page.goto(url, { waitUntil: 'load', timeout: 30000 })
+    }
 
     // Scroll the full page height to trigger lazy-loaded images and JS sections
     await page.evaluate(async () => {
