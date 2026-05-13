@@ -454,8 +454,13 @@ function describeSiteStructure(html: string): string {
   let m: RegExpExecArray | null
 
   // Match on EITHER id="shopify-section..." OR class="...shopify-section..."
+  // Skip review-widget sections — they are valid Shopify sections but are NOT homepage layout sections.
+  const reviewSectionRe = /id="shopify-section[^"]*(?:review|testimonial|loox|yotpo|judgeme|stamped|okendo|fera|rivyo|ali-review)[^"]*"/i
   const shopifyRe = /<div\b[^>]*(?:id="shopify-section[^"]*"|class="[^"]*\bshopify-section\b[^"]*")[^>]*>([\s\S]*?)(?=<div\b[^>]*(?:id="shopify-section|class="[^"]*\bshopify-section\b)|<footer\b|<\/body>|$)/gi
   while ((m = shopifyRe.exec(cleaned)) !== null) {
+    // Extract the opening div tag to check its id/class for review signals
+    const openTag = m[0].slice(0, 200)
+    if (reviewSectionRe.test(openTag)) continue // skip review widgets
     if (m[0].length > 300) sectionMatches.push(m[0])
   }
 
@@ -496,6 +501,12 @@ function describeSiteStructure(html: string): string {
   // No section count cap — build every single section no matter how many
   let secNum = 1
   for (const sec of sectionMatches) {
+    // Skip review-dump sections: high quote density + large size = embedded review widget
+    // (Yotpo, Loox, Judge.me, etc.) — these are valid Shopify sections but not homepage layout sections
+    const isQuickReviewDump = /blockquote|testimonial|review|"[^"]{20,}"/i.test(sec)
+      && Math.round(sec.length / 400) > 8
+    if (isQuickReviewDump) continue
+
     const imgCount = (sec.match(/<img\b/gi) ?? []).length
     const bgImgCount = (sec.match(/background-image/gi) ?? []).length
     const totalImgs = imgCount + bgImgCount
@@ -545,17 +556,22 @@ function describeSiteStructure(html: string): string {
       layout = `PRICING SECTION — 2-3 plan cards with price, features list, CTA button`
     } else if (isLifestyleStrip) {
       layout = `LIFESTYLE PHOTO STRIP — ${totalImgs} full-width editorial/lifestyle photos in a horizontal row. NO heading text. Full viewport width. Each photo is very tall (min-height: 400px). Use tall gradient placeholder divs in brand colors with a person silhouette icon (fas fa-person or fa-user). No text overlay, no captions.`
+    } else if (totalImgs >= 3 && (sec.match(/<h[2-3]\b/gi) ?? []).length >= 3) {
+      // Many headings + many images in one section = a carousel/slider (e.g. fragrance carousel)
+      const itemCount = (sec.match(/<h[2-3]\b/gi) ?? []).length
+      const firstHeading = sec.match(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/i)?.[1]?.replace(/<[^>]+>/g, '').trim().slice(0, 40) ?? ''
+      layout = `PRODUCT/CONTENT CAROUSEL — horizontal scroll carousel with ${itemCount} items. Each item: product image placeholder, bold product name (first item: "${firstHeading}"), short description, "Shop" link. Show 1-2 items visible at a time, others hinted by partial overflow.`
+    } else if ((sec.match(/<h[2-3]\b/gi) ?? []).length >= 3) {
+      // Many headings, few/no images = text carousel or fragrance/product list carousel
+      const itemCount = (sec.match(/<h[2-3]\b/gi) ?? []).length
+      const firstHeading = sec.match(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/i)?.[1]?.replace(/<[^>]+>/g, '').trim().slice(0, 40) ?? ''
+      layout = `PRODUCT/CONTENT CAROUSEL — horizontal scroll carousel with ${itemCount} items. Each item: bold item name (first item: "${firstHeading}"), short description, metadata rows, "Shop" link. Dark full-bleed background image placeholder behind each card.`
     } else if (isQuote) {
       layout = `TESTIMONIALS — ${Math.max(1, Math.round(sec.length / 400))} quote cards with author name and role`
     } else if (isSplit) {
       const side = secNum % 2 === 0 ? 'RIGHT text, LEFT image' : 'LEFT text, RIGHT image'
       layout = `SPLIT LAYOUT — 50/50 flex row: ${side}. Text side is ${secAlignment}. LARGE heading (text-5xl+), paragraph, optional button. ${totalImgs > 1 ? totalImgs + ' images' : '1 large image or UI screenshot'} on image side.`
       if (videoCount > 0) layout += ` + ${videoCount} video`
-    } else if (totalImgs >= 3 && (sec.match(/<h[2-3]\b/gi) ?? []).length >= 3) {
-      // Many headings + many images in one section = a carousel/slider (e.g. fragrance carousel)
-      const itemCount = (sec.match(/<h[2-3]\b/gi) ?? []).length
-      const firstHeading = sec.match(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/i)?.[1]?.replace(/<[^>]+>/g, '').trim().slice(0, 40) ?? ''
-      layout = `PRODUCT/CONTENT CAROUSEL — horizontal scroll carousel with ${itemCount} items. Each item: product image placeholder, bold product name (first item: "${firstHeading}"), short description, "Shop" link. Show 1-2 items visible at a time, others hinted by partial overflow.`
     } else if (totalImgs >= 5 || (totalImgs >= 3 && hasGrid)) {
       layout = `IMAGE GRID — ${totalImgs} images in a ${Math.ceil(totalImgs / 2)}-column mosaic or gallery grid`
     } else if ((listItemCount >= 3 || cardPatterns >= 2) && hasGrid) {
