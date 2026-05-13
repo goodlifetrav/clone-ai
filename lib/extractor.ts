@@ -27,7 +27,7 @@ export async function extractSite(url: string): Promise<string> {
 
     const page = await context.newPage()
 
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 })
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 })
 
     // Scroll the full page height to trigger lazy-loaded images and JS sections
     await page.evaluate(async () => {
