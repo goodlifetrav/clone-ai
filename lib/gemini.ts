@@ -659,6 +659,8 @@ export async function chatWithProjectStreamingGemini(
   const siteStructure = describeSiteStructure(currentHtml)
   const headingChecklist = buildHeadingChecklist(siteStructure, currentHtml)
   const isDarkTheme = styleSignals.startsWith('DARK THEME')
+  console.log('[brand-rebuild] siteStructure:\n', siteStructure)
+  console.log('[brand-rebuild] headingChecklist:\n', headingChecklist)
 
   const uiMockupExample = isDarkTheme
     ? `<div class="bg-gray-900 rounded-2xl border border-gray-700 p-6">
@@ -885,6 +887,8 @@ export async function chatWithProjectGemini(
     const styleSignals = extractStyleSignals(currentHtml)
     const siteStructure = describeSiteStructure(currentHtml)
     const headingChecklist = buildHeadingChecklist(siteStructure, currentHtml)
+    console.log('[brand-rebuild] siteStructure:\n', siteStructure)
+    console.log('[brand-rebuild] headingChecklist:\n', headingChecklist)
 
     // Strip compiled CSS before sending — Framer/Next sites can exceed 1M tokens otherwise.
     const htmlForRebuild = stripCssForRebuild(currentHtml)
