@@ -501,16 +501,22 @@ function describeSiteStructure(html: string): string {
   // No section count cap — build every single section no matter how many
   let secNum = 1
   for (const sec of sectionMatches) {
-    // Skip review-dump sections: high quote density + large size = embedded review widget
-    // (Yotpo, Loox, Judge.me, etc.) — these are valid Shopify sections but not homepage layout sections
-    const isQuickReviewDump = /blockquote|testimonial|review|"[^"]{20,}"/i.test(sec)
-      && Math.round(sec.length / 400) > 8
-    if (isQuickReviewDump) continue
-
     const imgCount = (sec.match(/<img\b/gi) ?? []).length
     const bgImgCount = (sec.match(/background-image/gi) ?? []).length
     const totalImgs = imgCount + bgImgCount
     const videoCount = (sec.match(/<video\b/gi) ?? []).length
+    const h2h3Count = (sec.match(/<h[2-3]\b/gi) ?? []).length
+
+    // Skip review-dump sections: high density of review/blockquote content, large size, and no
+    // real content signals (product grid, carousel headings, or lifestyle images).
+    // "long quoted strings in HTML" pattern is NOT used here — attribute values also match it.
+    const hasProductSignalsQuick = /\$\d|add.{0,5}cart|shop.{0,10}now|buy.{0,5}now/i.test(sec)
+    const isQuickReviewDump = !hasProductSignalsQuick
+      && totalImgs < 3        // exclude image-heavy sections (lifestyle strips)
+      && h2h3Count < 3        // exclude carousels (many sub-headings)
+      && /\bblockquote\b|class="[^"]*\b(?:review|testimonial|yotpo|loox|stamped|okendo|spr-)\b/i.test(sec)
+      && Math.round(sec.length / 400) > 8
+    if (isQuickReviewDump) continue
 
     // Heading text
     const headingMatch = sec.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i)
@@ -526,21 +532,26 @@ function describeSiteStructure(html: string): string {
     const hasGrid = /grid/i.test(sec)
     const listItemCount = (sec.match(/<li\b/gi) ?? []).length
     const cardPatterns = (sec.match(/<(?:article|figure)\b|class="[^"]*card/gi) ?? []).length
-    const isQuote = /blockquote|testimonial|review|"[^"]{20,}"/i.test(sec)
+    // isQuote: check text content only (strip tags so HTML attribute values don't trigger it)
+    const secText = sec.replace(/<[^>]+>/g, ' ')
+    const isQuote = /\bblockquote\b|class="[^"]*\b(?:review|testimonial)\b/i.test(sec)
+      || (secText.match(/"[^"]{20,}"/g) ?? []).length >= 2
     // Logo bar: many images, minimal text — trusted-by / partner strip
     const isLogoBar = totalImgs >= 4 && sec.length < 4000 && (getText(sec).length < 150 || /trusted|partner|customer|used by|powered by/i.test(sec))
     // Announcement/promo bar: short section, no images, promotional text (discount, free shipping)
     const isAnnouncementBar = totalImgs === 0 && sec.length < 600 && /\d+%\s*off|free\s*ship|promo|sale|announce|% off/i.test(sec)
     const isCta = !isAnnouncementBar && totalImgs === 0 && sec.length < 800 && /button|btn|get.{0,10}start|sign.{0,5}up|try.{0,5}free/i.test(sec)
+    // Newsletter signup: has email input — check before isQuote so newsletter sections aren't misclassified
+    const isNewsletter = /type="email"|name="email"|newsletter|subscribe/i.test(sec) && !hasProductSignalsQuick
     // Product grid: multiple images + price tags + add-to-cart signals (e-commerce product collection)
-    const isProductGrid = totalImgs >= 3 && /\$\d|add.{0,5}cart|shop.{0,10}now|buy.{0,5}now/i.test(sec)
+    const isProductGrid = totalImgs >= 3 && hasProductSignalsQuick
     // Pricing grid: SaaS plan cards — price + plan/monthly signals but NOT an e-commerce product grid
     const isPricingGrid = !isProductGrid && /price|\$\d|\bplan\b|\bmonthly\b/i.test(sec)
-    // Lifestyle photo strip: multiple large images, no heading — full-bleed editorial/people photos
-    const isLifestyleStrip = totalImgs >= 2 && totalImgs <= 6 && headingText.length === 0 && !isProductGrid
+    // Lifestyle photo strip: multiple images — editorial/people photos. Allow headings (e.g. "OUR CORE VALUES")
+    const isLifestyleStrip = totalImgs >= 2 && totalImgs <= 8 && !isProductGrid && !isPricingGrid && h2h3Count < 3
     // Split layout: section has a heading + 1-2 images = text on one side, image/screenshot on other.
     // 1-2 images is the key signal — card grids have many small icons, split layouts have 1 large screenshot.
-    const isSplit = totalImgs >= 1 && totalImgs <= 2 && headingText.length > 0 && !isPricingGrid && !isProductGrid
+    const isSplit = totalImgs >= 1 && totalImgs <= 2 && headingText.length > 0 && !isPricingGrid && !isProductGrid && !isLifestyleStrip
 
     let layout: string
     if (isAnnouncementBar) {
@@ -554,16 +565,19 @@ function describeSiteStructure(html: string): string {
       layout = `PRODUCT GRID — ${totalImgs} product cards in a ${Math.min(4, Math.ceil(totalImgs / 2))}-column grid. Each card: square product image placeholder, product name, price ($XX.XX), "Add to Cart" button`
     } else if (isPricingGrid) {
       layout = `PRICING SECTION — 2-3 plan cards with price, features list, CTA button`
+    } else if (isNewsletter) {
+      layout = `NEWSLETTER SIGNUP — large bold heading${headingText ? ` ("${headingText}")` : ''}, optional subtext, email input field + submit button. Full-width section, minimal layout.`
     } else if (isLifestyleStrip) {
-      layout = `LIFESTYLE PHOTO STRIP — ${totalImgs} full-width editorial/lifestyle photos in a horizontal row. NO heading text. Full viewport width. Each photo is very tall (min-height: 400px). Use tall gradient placeholder divs in brand colors with a person silhouette icon (fas fa-person or fa-user). No text overlay, no captions.`
-    } else if (totalImgs >= 3 && (sec.match(/<h[2-3]\b/gi) ?? []).length >= 3) {
+      const stripHeading = headingText ? ` heading: "${headingText}",` : ' NO heading text.'
+      layout = `LIFESTYLE PHOTO STRIP —${stripHeading} ${totalImgs} full-width editorial/lifestyle photos in a horizontal row. Full viewport width. Each photo is very tall (min-height: 400px). Use tall gradient placeholder divs in brand colors with a person silhouette icon. Optional CTA button.`
+    } else if (totalImgs >= 3 && h2h3Count >= 3) {
       // Many headings + many images in one section = a carousel/slider (e.g. fragrance carousel)
-      const itemCount = (sec.match(/<h[2-3]\b/gi) ?? []).length
+      const itemCount = h2h3Count
       const firstHeading = sec.match(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/i)?.[1]?.replace(/<[^>]+>/g, '').trim().slice(0, 40) ?? ''
       layout = `PRODUCT/CONTENT CAROUSEL — horizontal scroll carousel with ${itemCount} items. Each item: product image placeholder, bold product name (first item: "${firstHeading}"), short description, "Shop" link. Show 1-2 items visible at a time, others hinted by partial overflow.`
-    } else if ((sec.match(/<h[2-3]\b/gi) ?? []).length >= 3) {
+    } else if (h2h3Count >= 3) {
       // Many headings, few/no images = text carousel or fragrance/product list carousel
-      const itemCount = (sec.match(/<h[2-3]\b/gi) ?? []).length
+      const itemCount = h2h3Count
       const firstHeading = sec.match(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/i)?.[1]?.replace(/<[^>]+>/g, '').trim().slice(0, 40) ?? ''
       layout = `PRODUCT/CONTENT CAROUSEL — horizontal scroll carousel with ${itemCount} items. Each item: bold item name (first item: "${firstHeading}"), short description, metadata rows, "Shop" link. Dark full-bleed background image placeholder behind each card.`
     } else if (isQuote) {
