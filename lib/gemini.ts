@@ -602,7 +602,15 @@ function describeSiteStructure(html: string): string {
     } else if (totalImgs >= 1) {
       layout = `CONTENT SECTION with ${totalImgs} image(s), ${secAlignment} — mixed text and images`
     } else {
-      layout = `TEXT SECTION — ${secAlignment} heading, paragraph, optional button`
+      // Check if this is a scrolling marquee/ticker before classifying as plain TEXT SECTION
+      const bulletCount = (secText.match(/[•·|→]/g) ?? []).length
+      const isMarqueeTicker = bulletCount >= 3 && totalImgs === 0 && headingText.length === 0 && sec.length < 2000
+      if (isMarqueeTicker) {
+        const sampleText = secText.replace(/\s+/g, ' ').trim().slice(0, 80)
+        layout = `SCROLLING MARQUEE TICKER — full-width infinite horizontal scroll (CSS animation translateX). Repeating ALL-CAPS brand phrases separated by bullets/dots: "${sampleText}...". Dark background, small uppercase text, continuous loop.`
+      } else {
+        layout = `TEXT SECTION — ${secAlignment} heading, paragraph, optional button`
+      }
     }
 
     // ── Post-classification filters — skip sections that are clearly widget/plugin noise ──
@@ -849,6 +857,11 @@ Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
 6. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
 7. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
+LAYOUT RULES FOR SPECIFIC SECTION TYPES:
+- HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.
+- CAROUSEL: each card MUST have a fixed width (max-w-xs or w-72) and flex-shrink-0 so exactly 2-3 cards are visible. Outer container: overflow-x-auto. Inner: flex gap-4. Partial overflow on last card hints at scrollability.
+- SCROLLING MARQUEE TICKER: use CSS @keyframes marquee with translateX(-50%) and a duplicated list of phrases for seamless looping.
+
 The rebuilt page must look like the SAME website redesigned for a new brand — not a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
 
@@ -1076,6 +1089,11 @@ Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
 5. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
 6. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
 7. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
+
+LAYOUT RULES FOR SPECIFIC SECTION TYPES:
+- HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.
+- CAROUSEL: each card MUST have a fixed width (max-w-xs or w-72) and flex-shrink-0 so exactly 2-3 cards are visible. Outer container: overflow-x-auto. Inner: flex gap-4. Partial overflow on last card hints at scrollability.
+- SCROLLING MARQUEE TICKER: use CSS @keyframes marquee with translateX(-50%) and a duplicated list of phrases for seamless looping.
 
 The rebuilt page must look like the SAME website redesigned for a new brand — not a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
