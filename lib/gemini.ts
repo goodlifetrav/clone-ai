@@ -566,7 +566,7 @@ function describeSiteStructure(html: string): string {
     } else if (isPricingGrid) {
       layout = `PRICING SECTION — 2-3 plan cards with price, features list, CTA button`
     } else if (isNewsletter) {
-      layout = `NEWSLETTER SIGNUP — large bold heading${headingText ? ` ("${headingText}")` : ''}, optional subtext, email input field + submit button. Full-width section, minimal layout.`
+      layout = `NEWSLETTER SIGNUP — INLINE LAYOUT: large bold condensed heading${headingText ? ` ("${headingText}")` : ''} on the LEFT, email input field + submit button inline on the RIGHT — all on the same row using flexbox. No stacking. Minimal, full-width section.`
     } else if (isLifestyleStrip) {
       const stripHeading = headingText ? ` heading: "${headingText}",` : ' NO heading text.'
       layout = `LIFESTYLE PHOTO STRIP —${stripHeading} ${totalImgs} full-width editorial/lifestyle photos in a horizontal row. Full viewport width. Each photo is very tall (min-height: 400px). Use tall gradient placeholder divs in brand colors with a person silhouette icon. Optional CTA button.`
@@ -603,8 +603,12 @@ function describeSiteStructure(html: string): string {
     if (layout.startsWith('PRICING') && headingText.length > 30) continue
     // 3. Empty low-signal sections (no heading, no images, small size) = spacers or hidden Shopify app widgets
     if ((layout.startsWith('TEXT SECTION') || layout.startsWith('CONTENT SECTION')) && headingText.length === 0 && totalImgs === 0 && sec.length < 1500) continue
-    // 4. CONTENT SECTION with 1 image and no heading after the newsletter = likely blog/social widget
+    // 4. CONTENT SECTION with 1 image and no heading = likely blog/social widget
     if (layout.startsWith('CONTENT SECTION') && headingText.length === 0 && totalImgs <= 1) continue
+    // 5. SPLIT LAYOUT with a single-word heading = brand name used as section heading (Shopify brand-story widget).
+    //    Real split-layout headings are phrases ("Why Choose Us", "Built Different"). Single-word headings like
+    //    "Beardbrand" are the site's own name injected by a theme section, not real page content.
+    if (layout.startsWith('SPLIT LAYOUT') && headingText.length > 0 && !headingText.includes(' ')) continue
 
     parts.push(`• SECTION ${secNum}: ${layout}${headingText ? ` — heading: "${headingText}"` : ''}`)
     secNum++
