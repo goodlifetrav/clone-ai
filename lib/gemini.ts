@@ -461,7 +461,9 @@ function describeSiteStructure(html: string): string {
     // Extract the opening div tag to check its id/class for review signals
     const openTag = m[0].slice(0, 200)
     if (reviewSectionRe.test(openTag)) continue // skip review widgets
-    if (m[0].length > 300) sectionMatches.push(m[0])
+    // Include small sections that look like announcement bars even if < 300 chars
+    const isSmallAnnouncementBar = m[0].length < 300 && /\d+%\s*off|free\s*ship|promo|sale|announce|% off/i.test(m[0])
+    if (m[0].length > 300 || isSmallAnnouncementBar) sectionMatches.push(m[0])
   }
 
   // Priority 2: HTML5 <section> tags — but ONLY if count is reasonable.
@@ -574,7 +576,9 @@ function describeSiteStructure(html: string): string {
       layout = `NEWSLETTER SIGNUP — INLINE LAYOUT: large bold condensed heading${headingText ? ` ("${headingText}")` : ''} on the LEFT, email input field + submit button inline on the RIGHT — all on the same row using flexbox. No stacking. Minimal, full-width section.`
     } else if (isLifestyleStrip) {
       const stripHeading = headingText ? ` heading: "${headingText}",` : ' NO heading text.'
-      layout = `LIFESTYLE PHOTO STRIP —${stripHeading} ${totalImgs} full-width editorial/lifestyle photos in a horizontal row. Full viewport width. Each photo is very tall (min-height: 400px). Use tall gradient placeholder divs in brand colors with a person silhouette icon. Optional CTA button.`
+      const hasMarquee = /marquee|ticker|data-marquee|js-marquee|overflow.{0,20}hidden.{0,100}white-space:\s*nowrap|animation.*translate/i.test(sec)
+      const marqueeText = hasMarquee ? ' PRECEDED BY a full-width scrolling marquee ticker bar (infinite horizontal scroll animation) repeating short ALL-CAPS brand phrases separated by bullets (e.g. "FORGE YOUR PATH • CRAFT YOUR LEGACY • UNLEASH YOUR POTENTIAL •"). Dark background, small uppercase text.' : ''
+      layout = `LIFESTYLE PHOTO STRIP —${stripHeading} ${totalImgs} full-width editorial/lifestyle photos in a horizontal row. Full viewport width. Each photo is very tall (min-height: 400px). Use tall gradient placeholder divs in brand colors with a person silhouette icon. Optional CTA button.${marqueeText}`
     } else if (totalImgs >= 3 && h2h3Count >= 3) {
       // Many headings + many images = product/fragrance carousel
       const itemCount = h2h3Count
@@ -789,6 +793,7 @@ For every image in the original, replace it with one of these — pick based on 
 4. LOGO/ICON → inline SVG or Font Awesome icon in brand colors
 
 ALWAYS include a Font Awesome icon inside gradient placeholders so they are never blank.
+EXCEPTION: The HERO background div (full-bleed section behind the headline) must be a plain dark gradient — NO icon inside it. The hero IS the headline text. A large icon in the hero background looks like a mistake.
 Never use picsum.photos or random external images.
 UI mockup style for THIS site:
 ${uiMockupExample}
@@ -1024,6 +1029,7 @@ For every image in the original, replace it with one of these — pick based on 
 4. LOGO/ICON → inline SVG or Font Awesome icon in brand colors
 
 ALWAYS include a Font Awesome icon inside gradient placeholders so they are never blank.
+EXCEPTION: The HERO background div (full-bleed section behind the headline) must be a plain dark gradient — NO icon inside it. The hero IS the headline text. A large icon in the hero background looks like a mistake.
 Never use picsum.photos or random external images.
 UI mockup style for THIS site:
 ${uiMockupExample}
