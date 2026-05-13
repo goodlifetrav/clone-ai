@@ -565,8 +565,8 @@ function describeSiteStructure(html: string): string {
       layout = `CTA SECTION — centered heading, 1-2 buttons, no images`
     } else if (isProductGrid) {
       if (totalImgs >= 7) {
-        // Many images = Shopify mosaic/featured-collection layout: large product images on left, product cards on right
-        layout = `PRODUCT MOSAIC GRID — 2-column asymmetric layout (lg:grid-cols-3). LEFT two-thirds: tight 3×2 mosaic of ${Math.min(6, totalImgs)} large square product image placeholders (no text, just brand-gradient image squares packed together). RIGHT one-third: ${Math.max(1, totalImgs - 6)} stacked product cards, each with a small product image, product name (bold), price range "$XX–$XX", short 1-line description. Section has a centered uppercase heading above the grid.`
+        // Many images = Shopify featured-collection mosaic: tight full-width product image grid, NO sidebar
+        layout = `PRODUCT MOSAIC GRID — full-width 3-column grid (grid-cols-3). ${Math.min(6, totalImgs)} large square product image placeholders packed tightly into a 3×2 grid with minimal or zero gaps — edge-to-edge, spanning full container width. Each placeholder: dark gradient square with a centered thematic icon (fa-flask, fa-leaf, fa-spray-can, etc.). NO sidebar. NO product list panel on the side. Just the image grid, full width. Section has a centered uppercase heading above the grid.`
       } else {
         layout = `PRODUCT GRID — ${totalImgs} product cards in a ${Math.min(4, Math.ceil(totalImgs / 2))}-column grid. Each card: square product image placeholder, product name, price ($XX.XX), "Add to Cart" button`
       }
