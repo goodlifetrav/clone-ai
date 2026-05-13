@@ -61,6 +61,20 @@ export async function extractSite(url: string): Promise<string> {
     })
 
     // Dismiss cookie banners before capturing
+    // First try clicking Accept buttons on consent dialogs
+    await page.evaluate(() => {
+      const acceptSelectors = [
+        'button[id*="accept"]', 'button[class*="accept"]',
+        'button[id*="Accept"]', 'button[class*="Accept"]',
+        'a[id*="accept"]', 'a[class*="accept"]',
+        '[data-testid*="accept"]', '[aria-label*="accept" i]',
+      ]
+      for (const sel of acceptSelectors) {
+        const btn = document.querySelector(sel) as HTMLElement | null
+        if (btn) { btn.click(); break }
+      }
+    })
+
     await page.evaluate(() => {
       const selectors = [
         '[id*="cookie"]', '[class*="cookie"]',
@@ -89,6 +103,17 @@ export async function extractSite(url: string): Promise<string> {
       ].forEach(sel => {
         document.querySelectorAll(sel).forEach(el => el.remove())
       })
+
+      // Remove consent-blocking body classes that hide all page content.
+      // Some consent implementations add classes like "consent-required" or
+      // "no-consent" to <body> and use CSS to hide everything until accepted.
+      const consentBodyClasses = ['consent-required', 'no-consent', 'gdpr-required', 'cookie-required', 'privacy-required']
+      consentBodyClasses.forEach(cls => document.body.classList.remove(cls))
+
+      // Force body and html visible — catches any remaining display:none on root
+      document.body.style.removeProperty('display')
+      document.body.style.removeProperty('visibility')
+      document.documentElement.style.removeProperty('overflow')
     })
 
     // Brief pause for the style injection to apply

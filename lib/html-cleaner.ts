@@ -47,6 +47,11 @@ export function cleanHtml(html: string): string {
   // Remove live chat widgets (Intercom, Drift, Crisp, HubSpot, Zendesk)
   $('[id*="intercom"], [class*="intercom"], [id*="drift"], [class*="drift"], [id*="crisp"], [id*="hubspot"], [class*="hubspot"], [id*="launcher"], iframe[src*="intercom"], iframe[src*="drift"], iframe[src*="crisp"]').remove()
 
+  // Remove consent-blocking body classes that hide page content
+  const bodyEl = $('body')
+  const consentClasses = ['consent-required', 'no-consent', 'gdpr-required', 'cookie-required', 'privacy-required']
+  consentClasses.forEach(cls => bodyEl.removeClass(cls))
+
   // Remove SEO / crawl-directive tags that serve no purpose in a standalone clone
   $('link[rel="canonical"]').remove()
   $('meta[name="robots"]').remove()
