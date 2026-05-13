@@ -70,6 +70,10 @@ export async function extractSite(url: string): Promise<string> {
         '[id*="cc-"]', '[class*="cc-banner"]',
         '[id*="CookieBanner"]', '[class*="CookieBanner"]',
         '[id*="cookiebanner"]', '[class*="cookiebanner"]',
+        // Shopify Privacy & Compliance banner
+        '[id*="shopify-pc"]', '[class*="shopify-pc"]',
+        '[id*="shopify-privacy"]', '[class*="shopify-privacy"]',
+        '[id*="privacy-bar"]', '[class*="privacy-bar"]',
       ]
       selectors.forEach(sel => {
         document.querySelectorAll(sel).forEach(el => el.remove())
