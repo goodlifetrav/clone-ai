@@ -595,20 +595,26 @@ function describeSiteStructure(html: string): string {
  * (e.g. very minimal single-page sites).
  */
 function buildHeadingChecklist(siteStructure: string, html: string): string {
-  // Count total sections from the structure (each starts with "• Section N:" or "• HERO" or "• ANNOUNCEMENT")
-  const totalSections = (siteStructure.match(/^•\s+(?:Section\s+\d+|HERO|ANNOUNCEMENT|FOOTER)/gm) ?? []).length
+  // Extract ALL bullet-point lines from the structure — each represents one real section.
+  // Format emitted by describeSiteStructure: "• HERO — ...", "• Section N: TYPE — ..."
+  const sectionLines = siteStructure.split('\n').filter(line => /^\s*•\s+/.test(line))
 
-  // Extract headings already identified by describeSiteStructure (format: — heading: "...")
-  const fromStructure = [...siteStructure.matchAll(/— heading: "([^"]+)"/g)].map(m => m[1])
+  if (sectionLines.length >= 2) {
+    // Build a human-readable label for each section:
+    // If it has a heading, use that. Otherwise use the section type.
+    const labels = sectionLines.map((line, i) => {
+      const headingMatch = line.match(/—\s*heading:\s*"([^"]+)"/i)
+      if (headingMatch) return `${i + 1}. "${headingMatch[1]}"`
+      // Extract the section type from the bullet (e.g. "HERO", "ANNOUNCEMENT BAR", "PRODUCT GRID")
+      const typeMatch = line.match(/^\s*•\s+(?:Section\s+\d+:\s*)?([\w\/\s\-]+?)(?:\s+—|\s*$)/i)
+      const label = typeMatch ? typeMatch[1].trim() : `Section ${i + 1}`
+      return `${i + 1}. [${label}] (no heading — this section has images/content but no text heading)`
+    })
 
-  if (fromStructure.length > 0) {
-    const countLine = totalSections > 0
-      ? `The original has EXACTLY ${totalSections} sections total (including hero, announcement bar, and footer). Output EXACTLY ${totalSections} sections — not one more, not one less.`
-      : ''
-    return `REQUIRED SECTIONS — these are the headings detected in the original (${fromStructure.length} named sections). You MUST include a section for EVERY heading below, in this exact order. DO NOT add any sections not in this list — no testimonials, no reviews, no social proof, no feature grids, no community sections unless they appear here. No invented sections. No skipped sections:\n${fromStructure.map((h, i) => `${i + 1}. "${h}"`).join('\n')}${countLine ? `\n\n${countLine}` : ''}`
+    return `REQUIRED SECTIONS — the original has EXACTLY ${sectionLines.length} sections. Output EXACTLY these ${sectionLines.length} sections in this exact order. NO MORE, NO FEWER:\n${labels.join('\n')}\n\nCRITICAL: DO NOT add testimonial sections, review sections, social proof sections, pricing/plan sections, accessibility sections, community sections, or ANY section not listed above. If a section type above has no heading, reproduce its layout (product grid, lifestyle photo strip, carousel, etc.) without inventing a new section around it.`
   }
 
-  // Fallback: scan raw HTML for h1-h3 headings (used when structure has no named sections)
+  // Fallback: scan raw HTML for h1-h3 headings (used when structure has no section bullets)
   const cleaned = html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -623,10 +629,7 @@ function buildHeadingChecklist(siteStructure: string, html: string): string {
     if (text.length > 2 && !seen.has(text)) { seen.add(text); headings.push(text) }
   }
   if (headings.length === 0) return ''
-  const countLine = totalSections > 0
-    ? `\n\nThe original has EXACTLY ${totalSections} sections total. Output EXACTLY ${totalSections} sections — not one more, not one less.`
-    : ''
-  return `REQUIRED SECTIONS — these are the EXACT headings from the original HTML (${headings.length} total). You MUST output a section for EVERY heading below, in this exact order. DO NOT add any sections not in this list. No invented sections. No skipped sections:\n${headings.map((h, i) => `${i + 1}. "${h}"`).join('\n')}${countLine}`
+  return `REQUIRED SECTIONS — these are the EXACT headings from the original HTML (${headings.length} total). You MUST output a section for EVERY heading below, in this exact order. DO NOT add any sections not in this list. No invented sections. No skipped sections:\n${headings.map((h, i) => `${i + 1}. "${h}"`).join('\n')}`
 }
 
 export async function chatWithProjectStreamingGemini(
