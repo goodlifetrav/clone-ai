@@ -1133,15 +1133,20 @@ Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
     // Detect if this is a color change request so we can add specific color-swap instructions
     const isColorChange = /change.*color|color.*change|swap.*color|color.*swap|replace.*color|color.*to\s+#/i.test(userMessage)
 
+    // Detect if the user explicitly wants to rename the brand (skip name-protection rules if so)
+    const isIntentionalRename = /(?:change|rename|update|set|make)[\s\S]{0,30}(?:brand|company|site|logo|nav)\s*name|brand\s*name[\s\S]{0,20}(?:to|=)\s*["']?\w/i.test(userMessage)
+
     const systemPrompt = `You are a precise HTML editor. The user wants to make a specific, targeted change to an existing webpage.
 
-THE BRAND NAME IS: "${brandName}"
-DO NOT change this brand name or any other text/copy under any circumstances.
+${isIntentionalRename
+  ? `THE USER WANTS TO RENAME THE BRAND. Apply the brand name change everywhere it appears: nav logo, <title>, headings, footer copyright, and any other brand name references.`
+  : `THE BRAND NAME IS: "${brandName}"
+DO NOT change this brand name or any other text/copy under any circumstances.`}
 
 CRITICAL RULES:
 - Make ONLY the change the user explicitly requests — nothing else
-- NEVER change the brand name, company name, logo text, headings, body copy, or ANY text content
-- NEVER invent a new brand name or rewrite content — every word in the HTML is sacred
+${isIntentionalRename ? '' : `- NEVER change the brand name, company name, logo text, headings, body copy, or ANY text content
+- NEVER invent a new brand name or rewrite content — every word in the HTML is sacred`}
 - Do NOT change fonts, layout, or anything not mentioned by the user
 - Do NOT "improve", "clean up", or "modernize" anything
 - Preserve every class, style, attribute, and element exactly as-is except the one thing being changed
@@ -1182,7 +1187,6 @@ REMINDER: The brand name is "${brandName}". Do not change it or any other text. 
 
     // Guard: if Gemini renamed the brand, restore every occurrence.
     // Skip this guard if the user explicitly asked to change the brand/company name.
-    const isIntentionalRename = /(?:change|rename|update|set|make)[\s\S]{0,30}(?:brand|company|site|logo|nav)\s*name|brand\s*name[\s\S]{0,20}(?:to|=)\s*["']?\w/i.test(userMessage)
     if (!isIntentionalRename && brandName && brandName !== 'the current brand') {
       const brandRe = new RegExp(brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
       const originalCount = (currentHtml.match(brandRe) ?? []).length
