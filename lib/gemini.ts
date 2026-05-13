@@ -426,12 +426,13 @@ function describeSiteStructure(html: string): string {
   let m: RegExpExecArray | null
   while ((m = secRegex.exec(cleaned)) !== null) sectionMatches.push(m[0])
 
-  // Shopify uses <div id="shopify-section-*"> as top-level section containers.
-  // Match from each shopify-section div to the start of the next one so we get
-  // the full section content (including carousels) as a single chunk — this prevents
-  // the h2/h3 fallback from splitting carousel items into separate sections.
+  // Shopify uses <div id="shopify-section-*" class="shopify-section"> as top-level containers.
+  // Match from each shopify-section div to the start of the next one so the entire
+  // fragrances carousel (with 9 sub-headings) stays as ONE chunk, preventing the
+  // h2/h3 fallback from splitting carousel items into separate sections.
   if (sectionMatches.length < 2) {
-    const shopifyRe = /<div\b[^>]*\bid="shopify-section[^"]*"[^>]*>([\s\S]*?)(?=<div\b[^>]*\bid="shopify-section|<footer\b|<\/body>|$)/gi
+    // Match on EITHER id="shopify-section..." OR class="...shopify-section..."
+    const shopifyRe = /<div\b[^>]*(?:id="shopify-section[^"]*"|class="[^"]*\bshopify-section\b[^"]*")[^>]*>([\s\S]*?)(?=<div\b[^>]*(?:id="shopify-section|class="[^"]*\bshopify-section\b)|<footer\b|<\/body>|$)/gi
     while ((m = shopifyRe.exec(cleaned)) !== null) {
       if (m[0].length > 300) sectionMatches.push(m[0])
     }
@@ -552,49 +553,36 @@ function describeSiteStructure(html: string): string {
 }
 
 /**
- * Extract every h1/h2/h3 heading from the original HTML as a numbered required-section checklist.
- * This gives Gemini a concrete, ordered list of sections it cannot ignore or replace with
- * invented content (like extra testimonial sections).
+ * Derive a heading checklist directly from describeSiteStructure()'s output string.
+ * This guarantees the checklist always matches the section map — no risk of carousel
+ * items in the checklist disagreeing with the structure description.
+ *
+ * Falls back to raw h1-h3 HTML scanning when describeSiteStructure finds no headings
+ * (e.g. very minimal single-page sites).
  */
-function extractHeadingChecklist(html: string): string {
+function buildHeadingChecklist(siteStructure: string, html: string): string {
+  // Extract headings already identified by describeSiteStructure (format: — heading: "...")
+  const fromStructure = [...siteStructure.matchAll(/— heading: "([^"]+)"/g)].map(m => m[1])
+
+  if (fromStructure.length > 0) {
+    return `REQUIRED SECTIONS — these are the headings detected in the original (${fromStructure.length} named sections). You MUST output a section for EVERY heading below, in this exact order. No invented sections. No skipped sections:\n${fromStructure.map((h, i) => `${i + 1}. "${h}"`).join('\n')}`
+  }
+
+  // Fallback: scan raw HTML for h1-h3 headings (used when structure has no named sections)
   const cleaned = html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '')
-
   const getText = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-
-  // Collect all h1-h3 headings with their byte positions
-  const allHeadings: Array<{text: string; index: number; level: number}> = []
+  const headings: string[] = []
+  const seen = new Set<string>()
   const headingRegex = /<h([1-3])\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi
   let m: RegExpExecArray | null
   while ((m = headingRegex.exec(cleaned)) !== null) {
     const text = getText(m[2]).slice(0, 80)
-    if (text.length > 2) allHeadings.push({ text, index: m.index, level: parseInt(m[1]) })
+    if (text.length > 2 && !seen.has(text)) { seen.add(text); headings.push(text) }
   }
-
-  if (allHeadings.length === 0) return ''
-
-  // Filter out carousel/slider items — a genuine page-section heading appears at least
-  // 3000 chars away from the previous same-level heading.  When a site like Shopify puts
-  // 9 fragrance names as h2s inside a single carousel, they're all < 3000 chars apart
-  // and get dropped.  Widely-spaced h2s (separate page sections) pass through fine.
-  const MIN_SECTION_GAP = 3000
-  const lastIndexByLevel: Record<number, number> = {}
-  const seen = new Set<string>()
-  const headings: string[] = []
-
-  for (const h of allHeadings) {
-    const last = lastIndexByLevel[h.level] ?? -Infinity
-    if (h.index - last >= MIN_SECTION_GAP && !seen.has(h.text)) {
-      seen.add(h.text)
-      headings.push(h.text)
-      lastIndexByLevel[h.level] = h.index
-    }
-  }
-
   if (headings.length === 0) return ''
-
   return `REQUIRED SECTIONS — these are the EXACT headings from the original HTML (${headings.length} total). You MUST output a section for EVERY heading below, in this exact order. No invented sections. No skipped sections:\n${headings.map((h, i) => `${i + 1}. "${h}"`).join('\n')}`
 }
 
@@ -623,7 +611,7 @@ export async function chatWithProjectStreamingGemini(
   // Analyze original HTML (before CSS strip) for theme and layout signals
   const styleSignals = extractStyleSignals(currentHtml)
   const siteStructure = describeSiteStructure(currentHtml)
-  const headingChecklist = extractHeadingChecklist(currentHtml)
+  const headingChecklist = buildHeadingChecklist(siteStructure, currentHtml)
   const isDarkTheme = styleSignals.startsWith('DARK THEME')
 
   const uiMockupExample = isDarkTheme
@@ -848,7 +836,7 @@ export async function chatWithProjectGemini(
     // Analyze the original HTML (before CSS strip) for theme and layout signals
     const styleSignals = extractStyleSignals(currentHtml)
     const siteStructure = describeSiteStructure(currentHtml)
-    const headingChecklist = extractHeadingChecklist(currentHtml)
+    const headingChecklist = buildHeadingChecklist(siteStructure, currentHtml)
 
     // Strip compiled CSS before sending — Framer/Next sites can exceed 1M tokens otherwise.
     const htmlForRebuild = stripCssForRebuild(currentHtml)
