@@ -562,7 +562,12 @@ function describeSiteStructure(html: string): string {
     } else if (isCta) {
       layout = `CTA SECTION — centered heading, 1-2 buttons, no images`
     } else if (isProductGrid) {
-      layout = `PRODUCT GRID — ${totalImgs} product cards in a ${Math.min(4, Math.ceil(totalImgs / 2))}-column grid. Each card: square product image placeholder, product name, price ($XX.XX), "Add to Cart" button`
+      if (totalImgs >= 7) {
+        // Many images = Shopify mosaic/featured-collection layout: large product images on left, product cards on right
+        layout = `PRODUCT MOSAIC GRID — 2-column asymmetric layout (lg:grid-cols-3). LEFT two-thirds: tight 3×2 mosaic of ${Math.min(6, totalImgs)} large square product image placeholders (no text, just brand-gradient image squares packed together). RIGHT one-third: ${Math.max(1, totalImgs - 6)} stacked product cards, each with a small product image, product name (bold), price range "$XX–$XX", short 1-line description. Section has a centered uppercase heading above the grid.`
+      } else {
+        layout = `PRODUCT GRID — ${totalImgs} product cards in a ${Math.min(4, Math.ceil(totalImgs / 2))}-column grid. Each card: square product image placeholder, product name, price ($XX.XX), "Add to Cart" button`
+      }
     } else if (isPricingGrid) {
       layout = `PRICING SECTION — 2-3 plan cards with price, features list, CTA button`
     } else if (isNewsletter) {
@@ -571,15 +576,15 @@ function describeSiteStructure(html: string): string {
       const stripHeading = headingText ? ` heading: "${headingText}",` : ' NO heading text.'
       layout = `LIFESTYLE PHOTO STRIP —${stripHeading} ${totalImgs} full-width editorial/lifestyle photos in a horizontal row. Full viewport width. Each photo is very tall (min-height: 400px). Use tall gradient placeholder divs in brand colors with a person silhouette icon. Optional CTA button.`
     } else if (totalImgs >= 3 && h2h3Count >= 3) {
-      // Many headings + many images in one section = a carousel/slider (e.g. fragrance carousel)
+      // Many headings + many images = product/fragrance carousel
       const itemCount = h2h3Count
       const firstHeading = sec.match(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/i)?.[1]?.replace(/<[^>]+>/g, '').trim().slice(0, 40) ?? ''
-      layout = `PRODUCT/CONTENT CAROUSEL — horizontal scroll carousel with ${itemCount} items. Each item: product image placeholder, bold product name (first item: "${firstHeading}"), short description, "Shop" link. Show 1-2 items visible at a time, others hinted by partial overflow.`
+      layout = `PRODUCT/CONTENT CAROUSEL — horizontal scroll, showing 2-3 items at once with partial overflow hint. CRITICAL: every card is FULLY DARK (bg-gray-900 or bg-[#0f0f0f]) top to bottom — NO white or light backgrounds anywhere in the card or carousel. Card structure: (1) full-width dark image placeholder with thematic icon, (2) small "COLOGNE ONLY" or category label, (3) large bold item name (first: "${firstHeading}"), (4) description paragraph, (5) PRIMARY NOTES / FRAGRANCE FAMILY / FRAGRANCE TYPE bold-label + value rows, (6) gold "SHOP [NAME]" link.`
     } else if (h2h3Count >= 3) {
-      // Many headings, few/no images = text carousel or fragrance/product list carousel
+      // Many headings, no images = fragrance/product list carousel (images loaded by JS)
       const itemCount = h2h3Count
       const firstHeading = sec.match(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/i)?.[1]?.replace(/<[^>]+>/g, '').trim().slice(0, 40) ?? ''
-      layout = `PRODUCT/CONTENT CAROUSEL — horizontal scroll carousel with ${itemCount} items. Each item: bold item name (first item: "${firstHeading}"), short description, metadata rows, "Shop" link. Dark full-bleed background image placeholder behind each card.`
+      layout = `PRODUCT/CONTENT CAROUSEL — horizontal scroll, showing 2-3 items at once with partial overflow hint. CRITICAL: every card is FULLY DARK (bg-gray-900 or bg-[#0f0f0f]) top to bottom — NO white or light backgrounds. Card structure: (1) full-width dark image placeholder with thematic icon, (2) small category label, (3) large bold item name (first: "${firstHeading}"), (4) description paragraph, (5) PRIMARY NOTES / FRAGRANCE FAMILY / FRAGRANCE TYPE metadata rows, (6) gold "SHOP [NAME]" link.`
     } else if (isQuote) {
       layout = `TESTIMONIALS — ${Math.max(1, Math.round(sec.length / 400))} quote cards with author name and role`
     } else if (isSplit) {
