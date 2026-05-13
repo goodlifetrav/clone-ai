@@ -961,6 +961,9 @@ Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
       : (h1Text.length > 0 && h1Text.length <= 30) ? h1Text
       : titleText.slice(0, 30) || 'the current brand'
 
+    // Detect if this is a color change request so we can add specific color-swap instructions
+    const isColorChange = /change.*color|color.*change|swap.*color|color.*swap|replace.*color|color.*to\s+#/i.test(userMessage)
+
     const systemPrompt = `You are a precise HTML editor. The user wants to make a specific, targeted change to an existing webpage.
 
 THE BRAND NAME IS: "${brandName}"
@@ -970,10 +973,18 @@ CRITICAL RULES:
 - Make ONLY the change the user explicitly requests — nothing else
 - NEVER change the brand name, company name, logo text, headings, body copy, or ANY text content
 - NEVER invent a new brand name or rewrite content — every word in the HTML is sacred
-- Do NOT change fonts, colors, layout, or anything not mentioned by the user
+- Do NOT change fonts, layout, or anything not mentioned by the user
 - Do NOT "improve", "clean up", or "modernize" anything
 - Preserve every class, style, attribute, and element exactly as-is except the one thing being changed
 - If the user says "change X to Y", change ONLY X
+${isColorChange ? `
+COLOR CHANGE INSTRUCTIONS — for color changes you MUST do a COMPLETE global replacement:
+- Replace EVERY Tailwind color class: text-*, bg-*, border-*, ring-*, from-*, to-*, via-*, fill-*, stroke-*
+- Replace EVERY hex value in style attributes and <style> blocks
+- Replace EVERY rgb()/rgba() color value
+- Replace color names in the tailwind.config colors section
+- Scan the ENTIRE document top to bottom — do not stop after the first few matches
+- A partial color change is a failure — every single instance must be updated` : ''}
 
 Output ONLY the complete raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
