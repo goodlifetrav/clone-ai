@@ -413,7 +413,8 @@ function describeSiteStructure(html: string): string {
     if (hasAnnouncementPill) heroDesc += ', announcement pill/badge link alongside subtext'
     if (imgCount >= 6 && hasGrid) heroDesc += `, IMAGE MOSAIC GRID (${imgCount} images in multi-column grid)`
     else if (imgCount >= 3) heroDesc += `, ${imgCount} embedded images in grid`
-    else if (imgCount > 0) heroDesc += `, full-width product screenshot below headline`
+    else if (imgCount === 1) heroDesc += ', FULL-BLEED BACKGROUND IMAGE — text is overlaid ON TOP of the image (not below it). Use a tall dark gradient div (min-height:80vh) as the image placeholder with the headline text centered/left-aligned INSIDE it. Do NOT place a UI mockup here.'
+    else if (imgCount === 2) heroDesc += ', 2 images alongside headline'
     heroDesc += ', CTA buttons'
     parts.push(`• ${heroDesc}`)
   }
@@ -476,6 +477,8 @@ function describeSiteStructure(html: string): string {
     const isProductGrid = totalImgs >= 3 && /\$\d|add.{0,5}cart|shop.{0,10}now|buy.{0,5}now/i.test(sec)
     // Pricing grid: SaaS plan cards — price + plan/monthly signals but NOT an e-commerce product grid
     const isPricingGrid = !isProductGrid && /price|\$\d|\bplan\b|\bmonthly\b/i.test(sec)
+    // Lifestyle photo strip: multiple large images, no heading — full-bleed editorial/people photos
+    const isLifestyleStrip = totalImgs >= 2 && totalImgs <= 6 && headingText.length === 0 && !isProductGrid
     // Split layout: section has a heading + 1-2 images = text on one side, image/screenshot on other.
     // 1-2 images is the key signal — card grids have many small icons, split layouts have 1 large screenshot.
     const isSplit = totalImgs >= 1 && totalImgs <= 2 && headingText.length > 0 && !isPricingGrid && !isProductGrid
@@ -489,6 +492,8 @@ function describeSiteStructure(html: string): string {
       layout = `PRODUCT GRID — ${totalImgs} product cards in a ${Math.min(4, Math.ceil(totalImgs / 2))}-column grid. Each card: square product image placeholder, product name, price ($XX.XX), "Add to Cart" button`
     } else if (isPricingGrid) {
       layout = `PRICING SECTION — 2-3 plan cards with price, features list, CTA button`
+    } else if (isLifestyleStrip) {
+      layout = `LIFESTYLE PHOTO STRIP — ${totalImgs} full-width editorial/lifestyle photos in a horizontal row. NO heading text. Full viewport width. Each photo is very tall (min-height: 400px). Use tall gradient placeholder divs in brand colors with a person silhouette icon (fas fa-person or fa-user). No text overlay, no captions.`
     } else if (isQuote) {
       layout = `TESTIMONIALS — ${Math.max(1, Math.round(sec.length / 400))} quote cards with author name and role`
     } else if (isSplit) {
@@ -539,11 +544,21 @@ function extractHeadingChecklist(html: string): string {
   const getText = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 
   const headings: string[] = []
-  const headingRegex = /<h([1-3])\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi
+  const seen = new Set<string>()
+
+  // Capture h1–h6 tags
+  const headingRegex = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi
   let m: RegExpExecArray | null
   while ((m = headingRegex.exec(cleaned)) !== null) {
     const text = getText(m[2]).slice(0, 80)
-    if (text.length > 2) headings.push(text)
+    if (text.length > 2 && !seen.has(text)) { seen.add(text); headings.push(text) }
+  }
+
+  // Also capture marquee/ticker text (Shopify uses these for section banners like "OUR CORE VALUES")
+  const marqueeRegex = /<(?:marquee|[a-z-]+[^>]*class="[^"]*(?:marquee|ticker|announcement|scrolling-text)[^"]*")[^>]*>([\s\S]*?)<\/[a-z-]+>/gi
+  while ((m = marqueeRegex.exec(cleaned)) !== null) {
+    const text = getText(m[1]).slice(0, 80)
+    if (text.length > 2 && !seen.has(text)) { seen.add(text); headings.push(text) }
   }
 
   if (headings.length === 0) return ''
