@@ -1181,10 +1181,9 @@ REMINDER: The brand name is "${brandName}". Do not change it or any other text. 
     }
 
     // Guard: if Gemini renamed the brand, restore every occurrence.
-    // Strategy: count how many times the correct brandName appears in the original vs the output.
-    // If the output has fewer occurrences, Gemini renamed some of them — find the new name via
-    // the <title>, <h1>, or nav logo text, then replace all instances back to brandName.
-    if (brandName && brandName !== 'the current brand') {
+    // Skip this guard if the user explicitly asked to change the brand/company name.
+    const isIntentionalRename = /(?:change|rename|update|set|make)[\s\S]{0,30}(?:brand|company|site|logo|nav)\s*name|brand\s*name[\s\S]{0,20}(?:to|=)\s*["']?\w/i.test(userMessage)
+    if (!isIntentionalRename && brandName && brandName !== 'the current brand') {
       const brandRe = new RegExp(brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
       const originalCount = (currentHtml.match(brandRe) ?? []).length
       const outputCount = (cleaned.match(brandRe) ?? []).length
