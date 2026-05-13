@@ -595,11 +595,17 @@ function describeSiteStructure(html: string): string {
  * (e.g. very minimal single-page sites).
  */
 function buildHeadingChecklist(siteStructure: string, html: string): string {
+  // Count total sections from the structure (each starts with "• Section N:" or "• HERO" or "• ANNOUNCEMENT")
+  const totalSections = (siteStructure.match(/^•\s+(?:Section\s+\d+|HERO|ANNOUNCEMENT|FOOTER)/gm) ?? []).length
+
   // Extract headings already identified by describeSiteStructure (format: — heading: "...")
   const fromStructure = [...siteStructure.matchAll(/— heading: "([^"]+)"/g)].map(m => m[1])
 
   if (fromStructure.length > 0) {
-    return `REQUIRED SECTIONS — these are the headings detected in the original (${fromStructure.length} named sections). You MUST output a section for EVERY heading below, in this exact order. No invented sections. No skipped sections:\n${fromStructure.map((h, i) => `${i + 1}. "${h}"`).join('\n')}`
+    const countLine = totalSections > 0
+      ? `The original has EXACTLY ${totalSections} sections total (including hero, announcement bar, and footer). Output EXACTLY ${totalSections} sections — not one more, not one less.`
+      : ''
+    return `REQUIRED SECTIONS — these are the headings detected in the original (${fromStructure.length} named sections). You MUST include a section for EVERY heading below, in this exact order. DO NOT add any sections not in this list — no testimonials, no reviews, no social proof, no feature grids, no community sections unless they appear here. No invented sections. No skipped sections:\n${fromStructure.map((h, i) => `${i + 1}. "${h}"`).join('\n')}${countLine ? `\n\n${countLine}` : ''}`
   }
 
   // Fallback: scan raw HTML for h1-h3 headings (used when structure has no named sections)
@@ -617,7 +623,10 @@ function buildHeadingChecklist(siteStructure: string, html: string): string {
     if (text.length > 2 && !seen.has(text)) { seen.add(text); headings.push(text) }
   }
   if (headings.length === 0) return ''
-  return `REQUIRED SECTIONS — these are the EXACT headings from the original HTML (${headings.length} total). You MUST output a section for EVERY heading below, in this exact order. No invented sections. No skipped sections:\n${headings.map((h, i) => `${i + 1}. "${h}"`).join('\n')}`
+  const countLine = totalSections > 0
+    ? `\n\nThe original has EXACTLY ${totalSections} sections total. Output EXACTLY ${totalSections} sections — not one more, not one less.`
+    : ''
+  return `REQUIRED SECTIONS — these are the EXACT headings from the original HTML (${headings.length} total). You MUST output a section for EVERY heading below, in this exact order. DO NOT add any sections not in this list. No invented sections. No skipped sections:\n${headings.map((h, i) => `${i + 1}. "${h}"`).join('\n')}${countLine}`
 }
 
 export async function chatWithProjectStreamingGemini(
@@ -773,11 +782,13 @@ ${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
 Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
-1. OUTPUT EVERY SECTION from the checklist above — every heading = one section. Same order. No additions, no deletions, no substitutions.
-2. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
-3. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
-4. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
-5. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
+1. SECTION COUNT IS FIXED — the original has a specific number of sections listed in the structure above. Output THAT EXACT number of sections. Count them. Do not add sections. Do not remove sections.
+2. ONLY the sections listed in the REQUIRED SECTION CHECKLIST above may appear. NEVER invent a testimonial section, review section, social proof section, community section, or feature grid that does not appear in the checklist. If the original has no testimonials, your output has no testimonials.
+3. PRESERVE SECTION ORDER — output sections in the same order they appear in the original structure. The first section in the original must be the first section in your output.
+4. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
+5. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
+6. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
+7. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
 The rebuilt page must look like the SAME website redesigned for a new brand — not a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
@@ -996,11 +1007,13 @@ ${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
 Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
-1. OUTPUT EVERY SECTION from the checklist above — every heading = one section. Same order. No additions, no deletions, no substitutions.
-2. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
-3. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
-4. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
-5. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
+1. SECTION COUNT IS FIXED — the original has a specific number of sections listed in the structure above. Output THAT EXACT number of sections. Count them. Do not add sections. Do not remove sections.
+2. ONLY the sections listed in the REQUIRED SECTION CHECKLIST above may appear. NEVER invent a testimonial section, review section, social proof section, community section, or feature grid that does not appear in the checklist. If the original has no testimonials, your output has no testimonials.
+3. PRESERVE SECTION ORDER — output sections in the same order they appear in the original structure. The first section in the original must be the first section in your output.
+4. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
+5. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
+6. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
+7. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
 The rebuilt page must look like the SAME website redesigned for a new brand — not a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
