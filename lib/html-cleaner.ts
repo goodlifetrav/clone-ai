@@ -39,6 +39,9 @@ export function cleanHtml(html: string): string {
   // Remove cookie consent banners / GDPR popups
   $('[id*="cookie"], [class*="cookie"], [id*="consent"], [class*="consent"], [id*="gdpr"], [class*="gdpr"], [id*="privacy-banner"], [class*="privacy-banner"], [id*="cc-"], [class*="cc-banner"], [id*="CookieBanner"], [class*="CookieBanner"], [id*="cookiebanner"], [class*="cookiebanner"], [id*="shopify-pc"], [class*="shopify-pc"], [id*="shopify-privacy"], [class*="shopify-privacy"], [id*="privacy-bar"], [class*="privacy-bar"]').remove()
 
+  // Remove country/region selector overlays (Apple-style geo-redirect banners)
+  $('[id*="country"], [class*="country-selector"], [class*="locale-selector"], [id*="locale"], [class*="region-selector"], [id*="region-selector"], [class*="geo-"], [id*="geo-banner"], [class*="country-banner"]').remove()
+
   // Remove modal backdrops left behind by cookie banners or popups.
   // Only target elements whose id/class explicitly signals a modal/popup backdrop —
   // NOT generic "overlay" which Framer and other frameworks use for real layout containers.

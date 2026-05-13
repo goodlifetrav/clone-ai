@@ -88,6 +88,10 @@ export async function extractSite(url: string): Promise<string> {
         '[id*="shopify-pc"]', '[class*="shopify-pc"]',
         '[id*="shopify-privacy"]', '[class*="shopify-privacy"]',
         '[id*="privacy-bar"]', '[class*="privacy-bar"]',
+        // Country/region selector overlays (Apple-style geo-redirect banners)
+        '[id*="country"]', '[class*="country-selector"]', '[class*="locale-selector"]',
+        '[id*="locale"]', '[class*="region-selector"]', '[id*="region-selector"]',
+        '[class*="geo-"]', '[id*="geo-banner"]', '[class*="country-banner"]',
       ]
       selectors.forEach(sel => {
         document.querySelectorAll(sel).forEach(el => el.remove())
