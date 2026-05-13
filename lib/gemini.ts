@@ -596,6 +596,16 @@ function describeSiteStructure(html: string): string {
       layout = `TEXT SECTION — ${secAlignment} heading, paragraph, optional button`
     }
 
+    // ── Post-classification filters — skip sections that are clearly widget/plugin noise ──
+    // 1. Accessibility plugin sections (Shopify app that injects an accessibility widget)
+    if (/accessibility|shoppers.{0,8}with.{0,8}disabilit|ada.{0,5}compli|toggle.{0,20}accessibility/i.test(headingText)) continue
+    // 2. Pricing section with a long garbled heading = a UI accordion/toggle widget, not a real section
+    if (layout.startsWith('PRICING') && headingText.length > 30) continue
+    // 3. Empty low-signal sections (no heading, no images, small size) = spacers or hidden Shopify app widgets
+    if ((layout.startsWith('TEXT SECTION') || layout.startsWith('CONTENT SECTION')) && headingText.length === 0 && totalImgs === 0 && sec.length < 1500) continue
+    // 4. CONTENT SECTION with 1 image and no heading after the newsletter = likely blog/social widget
+    if (layout.startsWith('CONTENT SECTION') && headingText.length === 0 && totalImgs <= 1) continue
+
     parts.push(`• SECTION ${secNum}: ${layout}${headingText ? ` — heading: "${headingText}"` : ''}`)
     secNum++
   }
