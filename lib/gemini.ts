@@ -472,16 +472,21 @@ function describeSiteStructure(html: string): string {
     // Logo bar: many images, minimal text — trusted-by / partner strip
     const isLogoBar = totalImgs >= 4 && sec.length < 4000 && (getText(sec).length < 150 || /trusted|partner|customer|used by|powered by/i.test(sec))
     const isCta = totalImgs === 0 && sec.length < 800 && /button|btn|get.{0,10}start|sign.{0,5}up|try.{0,5}free/i.test(sec)
-    const isPricingGrid = /price|\$\d|\bplan\b|\bmonthly\b/i.test(sec)
+    // Product grid: multiple images + price tags + add-to-cart signals (e-commerce product collection)
+    const isProductGrid = totalImgs >= 3 && /\$\d|add.{0,5}cart|shop.{0,10}now|buy.{0,5}now/i.test(sec)
+    // Pricing grid: SaaS plan cards — price + plan/monthly signals but NOT an e-commerce product grid
+    const isPricingGrid = !isProductGrid && /price|\$\d|\bplan\b|\bmonthly\b/i.test(sec)
     // Split layout: section has a heading + 1-2 images = text on one side, image/screenshot on other.
     // 1-2 images is the key signal — card grids have many small icons, split layouts have 1 large screenshot.
-    const isSplit = totalImgs >= 1 && totalImgs <= 2 && headingText.length > 0 && !isPricingGrid
+    const isSplit = totalImgs >= 1 && totalImgs <= 2 && headingText.length > 0 && !isPricingGrid && !isProductGrid
 
     let layout: string
     if (isLogoBar) {
       layout = `LOGO BAR — ${totalImgs} brand logos in a horizontal row (social proof / trusted-by strip)`
     } else if (isCta) {
       layout = `CTA SECTION — centered heading, 1-2 buttons, no images`
+    } else if (isProductGrid) {
+      layout = `PRODUCT GRID — ${totalImgs} product cards in a ${Math.min(4, Math.ceil(totalImgs / 2))}-column grid. Each card: square product image placeholder, product name, price ($XX.XX), "Add to Cart" button`
     } else if (isPricingGrid) {
       layout = `PRICING SECTION — 2-3 plan cards with price, features list, CTA button`
     } else if (isQuote) {
