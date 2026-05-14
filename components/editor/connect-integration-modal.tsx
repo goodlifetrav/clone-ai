@@ -328,7 +328,9 @@ function ShopifyPanel({
   userPlan?: string
   onClose: () => void
 }) {
-  const [shop, setShop] = useState('')
+  const [shop, setShop] = useState(() =>
+    typeof window !== 'undefined' ? localStorage.getItem('shopify_shop') ?? '' : ''
+  )
   const [accessToken, setAccessToken] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem('shopify_token') ?? '' : ''
   )
@@ -402,7 +404,10 @@ function ShopifyPanel({
     setLoading(true)
     setError('')
     try {
-      if (typeof window !== 'undefined') localStorage.setItem('shopify_token', accessToken)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('shopify_token', accessToken)
+        localStorage.setItem('shopify_shop', shop)
+      }
 
       const res = await fetch('/api/integrations/shopify/push', {
         method: 'POST',
