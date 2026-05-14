@@ -38,10 +38,12 @@ function countImages(html: string): number {
   const imgTags = (html.match(/<img[\s>]/gi) ?? []).length
   const bgImages = (html.match(/url\(["']?https?:/gi) ?? []).length
   const gradients = (html.match(/linear-gradient|radial-gradient/gi) ?? []).length
-  // IgualAI rebuilt pages use Tailwind tall containers as product image placeholders (h-48, h-56, h-64 etc.)
-  // and aspect-ratio containers. Count each as a visual image.
+  // Tailwind fixed-height containers (h-48..h-96, aspect-*) — product image placeholders
   const tailwindPlaceholders = (html.match(/class="[^"]*\b(?:h-(?:48|56|64|72|80|96)|aspect-(?:square|video|ratio))\b/gi) ?? []).length
-  return imgTags + bgImages + gradients + tailwindPlaceholders
+  // Full-width gradient blocks — IgualAI card image placeholder pattern: "w-full ... bg-gradient-to-*"
+  // These are the tall card image areas in rebuilt lifestyle/product sections (distinct from small w-10/w-12 icon backgrounds)
+  const fullWidthGradients = (html.match(/class="[^"]*w-full[^"]*bg-gradient-to-/gi) ?? []).length
+  return imgTags + bgImages + gradients + tailwindPlaceholders + fullWidthGradients
 }
 
 /** Count repeated card-like children (for detecting product/content grids) */
