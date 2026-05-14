@@ -33,13 +33,15 @@ function bodyHtml($: CheerioAPI): string {
   return $('body').html() ?? ''
 }
 
-/** Count visual "images" — both <img> tags and CSS background-image/gradient URLs */
+/** Count visual "images" — img tags, CSS backgrounds, gradients, and IgualAI product card placeholders */
 function countImages(html: string): number {
   const imgTags = (html.match(/<img[\s>]/gi) ?? []).length
   const bgImages = (html.match(/url\(["']?https?:/gi) ?? []).length
   const gradients = (html.match(/linear-gradient|radial-gradient/gi) ?? []).length
-  // Count each gradient separately — 6 card gradients = 6 visual "images"
-  return imgTags + bgImages + gradients
+  // IgualAI rebuilt pages use Tailwind tall containers as product image placeholders (h-48, h-56, h-64 etc.)
+  // and aspect-ratio containers. Count each as a visual image.
+  const tailwindPlaceholders = (html.match(/class="[^"]*\b(?:h-(?:48|56|64|72|80|96)|aspect-(?:square|video|ratio))\b/gi) ?? []).length
+  return imgTags + bgImages + gradients + tailwindPlaceholders
 }
 
 /** Count repeated card-like children (for detecting product/content grids) */
@@ -86,6 +88,7 @@ function classifySection(html: string, isFirst: boolean): string {
 
   // Newsletter: has an email input field
   if (lower.includes('type="email"') || lower.includes("type='email'") ||
+      /placeholder=["'][^"']*email/i.test(html) ||
       (lower.includes('subscribe') && lower.includes('<input')) ||
       (lower.includes('newsletter') && lower.includes('<input'))) return 'newsletter'
 
@@ -318,41 +321,39 @@ ${schemaTag(buildHeaderSchema(d))}`
   return { liquid, defaults: d }
 }
 
-function buildFooterSection(footerHtml: string): string {
-  const $ = load(footerHtml)
+function buildFooterSection(rawFooterHtml: string): string {
   const d: { newsletterHeading?: string; subscribeBtn?: string } = {}
+  let footerHtml = rawFooterHtml
 
-  // Only liquidify newsletter content if the footer contains an actual email input
-  const hasEmailInput = $('input[type="email"], input[name="email"]').length > 0
-  if (hasEmailInput) {
-    // Find the heading that's closest (in DOM order) to the email input — not column headers
-    const emailEl = $('input[type="email"], input[name="email"]').first()
-    const emailParent = emailEl.closest('div, section, form')
-    // Look for heading inside the email's container, or just before it
-    let newsletterH = emailParent.find('h1, h2, h3, h4').first()
-    if (!newsletterH.length) {
-      // Try previous sibling containers
-      newsletterH = emailParent.prevAll().find('h1, h2, h3, h4').last()
-    }
-    if (newsletterH.length) {
-      d.newsletterHeading = newsletterH.text().trim()
-      newsletterH.html('{{ section.settings.newsletter_heading }}')
+  // Detect email input in footer
+  const emailPos = rawFooterHtml.search(/type=["']email["']|name=["']email["']|placeholder=["'][^"']*email/i)
+  if (emailPos > 0) {
+    // Find the LAST heading that appears BEFORE the email input in raw HTML order.
+    // This is the newsletter heading — column headers come AFTER the email form.
+    const beforeEmail = rawFooterHtml.slice(0, emailPos)
+    const headingMatches = [...beforeEmail.matchAll(/<(h[1-4])[^>]*>([\s\S]*?)<\/h[1-4]>/gi)]
+    if (headingMatches.length > 0) {
+      const lastMatch = headingMatches[headingMatches.length - 1]
+      const tag = lastMatch[1]
+      const headingText = lastMatch[2].replace(/<[^>]+>/g, '').trim()
+      if (headingText) {
+        d.newsletterHeading = headingText
+        footerHtml = footerHtml.replace(lastMatch[0], `<${tag}>{{ section.settings.newsletter_heading }}</${tag}>`)
+      }
     }
 
-    // Liquidify subscribe button text
-    const subscribeBtn = $('button, [class*="btn"], [class*="button"]').filter((_, el) => {
-      return /subscribe|sign.?up|join|submit/i.test($(el).text())
-    }).first()
-    if (subscribeBtn.length) {
-      d.subscribeBtn = subscribeBtn.text().trim()
-      subscribeBtn.html('{{ section.settings.subscribe_btn }}')
-    }
+    // Find subscribe button (search full HTML, replace text content only)
+    footerHtml = footerHtml.replace(
+      /(<(?:button|a)[^>]*>)([\s\S]*?SUBSCRIBE[\s\S]*?)(<\/(?:button|a)>)/i,
+      (_, open, text, close) => {
+        d.subscribeBtn = text.trim()
+        return `${open}{{ section.settings.subscribe_btn }}${close}`
+      }
+    )
   }
 
-  const liquidHtml = $('body').html() ?? footerHtml
-
   return `<div style="background-color:{{ section.settings.bg_color }};color:{{ section.settings.text_color }}">
-${liquidHtml}
+${footerHtml}
 </div>
 ${schemaTag(buildFooterSchema(d))}`
 }
