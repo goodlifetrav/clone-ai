@@ -88,7 +88,7 @@ function classifySection(html: string, isFirst: boolean): string {
   // Check for explicit data-igualai-section attribute set by Gemini during brand rebuild
   const dataAttr = html.match(/data-igualai-section="([^"]+)"/i)?.[1]
   if (dataAttr) {
-    const valid = ['announcement-bar', 'hero', 'product-grid', 'testimonials', 'features', 'lifestyle', 'newsletter', 'content']
+    const valid = ['announcement-bar', 'hero', 'product-grid', 'collection-list', 'testimonials', 'features', 'lifestyle', 'newsletter', 'content']
     if (valid.includes(dataAttr)) return dataAttr
   }
 
@@ -102,6 +102,11 @@ function classifySection(html: string, isFirst: boolean): string {
     lower.includes('limited time') || lower.includes('today only') ||
     (isFirst && textLen < 120 && !lower.includes('<nav'))
   )) return 'announcement-bar'
+
+  // Collection list: multiple cards each linking to a /collections/ page
+  // This is distinct from product-grid (which shows products *within* one collection)
+  const collectionLinks = (html.match(/href=["'][^"']*\/collections\/[^"']+["']/gi) ?? []).length
+  if (collectionLinks >= 2 && imgCount >= 2) return 'collection-list'
 
   // Product / content grid: multiple images or card children — check BEFORE hero
   // (hero sections have 0–1 large images; 3+ visual images = card/product grid)
@@ -324,6 +329,60 @@ function productGridLiquid(heading: string): string {
 </div>`
 }
 
+// ── Collection list Liquid ───────────────────────────────────────────────────
+
+function collectionListLiquid(heading: string): string {
+  return `<div class="igualai-collection-list">
+  {% if section.settings.heading != blank %}
+    <h2 style="text-align:center;padding:2rem 1rem 0.5rem;font-size:1.75rem;font-weight:700">
+      {{ section.settings.heading }}
+    </h2>
+  {% endif %}
+  <div style="display:grid;grid-template-columns:repeat({{ section.settings.columns }},1fr);gap:1.5rem;padding:1.5rem 2rem;max-width:1280px;margin:0 auto">
+    {% for i in (1..4) %}
+      {%- assign coll_key = 'collection' | append: i -%}
+      {%- assign img_key  = 'image'      | append: i -%}
+      {%- assign lbl_key  = 'label'      | append: i -%}
+      {%- assign coll = collections[section.settings[coll_key]] -%}
+      {% if coll != blank %}
+      <a href="{{ coll.url }}" style="display:block;text-decoration:none;color:inherit;border-radius:12px;overflow:hidden;border:1px solid rgba(0,0,0,.08)">
+        <div style="aspect-ratio:1;overflow:hidden;background:#f5f5f5">
+          {% if section.settings[img_key] != blank %}
+            <img src="{{ section.settings[img_key] | img_url: '600x600' }}" alt="{{ coll.title }}" loading="lazy" style="width:100%;height:100%;object-fit:cover">
+          {% elsif coll.image %}
+            <img src="{{ coll.image | img_url: '600x600' }}" alt="{{ coll.title }}" loading="lazy" style="width:100%;height:100%;object-fit:cover">
+          {% endif %}
+        </div>
+        <div style="padding:.875rem">
+          <p style="font-weight:700;margin:0 0 .2rem;font-size:.95rem">{{ section.settings[lbl_key] | default: coll.title }}</p>
+          <p style="opacity:.6;margin:0;font-size:.8rem">Shop now &rarr;</p>
+        </div>
+      </a>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>`
+}
+
+function buildCollectionListSchema(heading: string, bg = '#ffffff') {
+  const slots = [1, 2, 3, 4].flatMap(i => [
+    { type: 'collection', id: `collection${i}`, label: `Collection ${i}` },
+    { type: 'image_picker', id: `image${i}`, label: `Collection ${i} image (optional override)` },
+    { type: 'text', id: `label${i}`, label: `Collection ${i} label (optional override)` },
+  ])
+  return {
+    name: 'Collection List',
+    settings: [
+      ...(heading ? [setting({ type: 'text', id: 'heading', label: 'Section heading' }, heading)] : [{ type: 'text', id: 'heading', label: 'Section heading' }]),
+      { type: 'range', id: 'columns', label: 'Columns', min: 2, max: 4, step: 1, default: 3 },
+      ...slots,
+      { type: 'color', id: 'bg_color', label: 'Background color', default: bg },
+      { type: 'color', id: 'text_color', label: 'Text color', default: bg === '#ffffff' ? '#111111' : '#ffffff' },
+    ],
+    presets: [{ name: 'Collection List' }],
+  }
+}
+
 // ── Header/Footer section builders ───────────────────────────────────────────
 
 function buildHeaderSection(announcementHtml: string, navHtml: string): { liquid: string; defaults: Record<string, string> } {
@@ -543,6 +602,10 @@ export async function htmlToShopifySections(html: string): Promise<ShopifySectio
     if (type === 'hero') {
       const { liquid, defaults } = liquidifyHero(chunkHtml)
       sectionContent = injectColorVars(liquid) + schemaTag(buildHeroSchema(defaults, bg))
+    } else if (type === 'collection-list') {
+      const $c = load(chunkHtml)
+      const heading = $c('h2, h3').first().text().trim()
+      sectionContent = injectColorVars(collectionListLiquid(heading)) + schemaTag(buildCollectionListSchema(heading, bg))
     } else if (type === 'product-grid') {
       const $c = load(chunkHtml)
       const heading = $c('h2, h3').first().text().trim()
