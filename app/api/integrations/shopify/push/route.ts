@@ -97,10 +97,10 @@ export async function POST(request: NextRequest) {
     // Use Gemini to convert HTML into editable Shopify sections
     const { htmlToShopifySections } = await import('@/lib/shopify-sectioner')
     console.log(`[Shopify] Sectioning HTML for project ${projectId}...`)
-    const { sections, order } = await htmlToShopifySections(project.html_content)
+    const { sections, order, headerHtml, footerHtml } = await htmlToShopifySections(project.html_content)
     console.log(`[Shopify] Generated ${order.length} sections: ${order.join(', ')}`)
 
-    // Build layout/theme.liquid
+    // Build layout/theme.liquid — header/footer extracted from HTML so they appear on every page
     const themeLiquid = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -112,7 +112,9 @@ ${headInner.trim()}
   {{ 'style.css' | asset_url | stylesheet_tag }}
 </head>
 <body>
+${headerHtml ? `  <!-- Header extracted from clone -->\n  ${headerHtml.trim()}` : ''}
   {{ content_for_layout }}
+${footerHtml ? `  <!-- Footer extracted from clone -->\n  ${footerHtml.trim()}` : ''}
 </body>
 </html>`
 
