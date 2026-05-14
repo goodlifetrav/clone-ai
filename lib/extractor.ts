@@ -27,12 +27,14 @@ export async function extractSite(url: string): Promise<string> {
 
     const page = await context.newPage()
 
-    // Try networkidle first (best quality), fall back to load if it times out
+    // Try networkidle first (best quality).
+    // If it times out (HubSpot, Apple — too many long-running 3rd-party requests),
+    // DON'T re-navigate — the page content is already rendered. Just wait for the
+    // load event on the current page state and continue from there.
     try {
       await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 })
     } catch {
-      // Site has too many long-running requests (HubSpot, Apple, etc.) — use load event instead
-      await page.goto(url, { waitUntil: 'load', timeout: 30000 })
+      await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {})
     }
 
     // Scroll the full page height to trigger lazy-loaded images and JS sections
