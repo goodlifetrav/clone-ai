@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
           {
             file: 'index.html',
             data: project.html_content,
-            encoding: 'utf8',
+            encoding: 'utf-8',
           },
         ],
         projectSettings: {
