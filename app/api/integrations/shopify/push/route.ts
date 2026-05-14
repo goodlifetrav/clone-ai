@@ -131,10 +131,18 @@ export async function POST(request: NextRequest) {
     // Extract CSS from HTML
     const { css, headInner } = extractStyles(project.html_content)
 
-    // Use Gemini to convert HTML into editable Shopify sections
+    // Detect which Shopify template this page belongs to
+    const pageType = detectPageType((project as { url?: string }).url, project.html_content)
+    const tmplPath = templatePath(pageType)
+    console.log(`[Shopify] Detected page type: ${pageType} → ${tmplPath}`)
+
+    // Use Gemini to convert HTML into editable Shopify sections.
+    // Prefix section names with page type (except index) to prevent collisions when
+    // multiple pages from the same site are pushed into the same theme.
     const { htmlToShopifySections } = await import('@/lib/shopify-sectioner')
+    const sectionPrefix = pageType === 'index' ? '' : pageType
     console.log(`[Shopify] Sectioning HTML for project ${projectId}...`)
-    const { sections, order, headerSectionName, footerSectionName } = await htmlToShopifySections(project.html_content)
+    const { sections, order, headerSectionName, footerSectionName } = await htmlToShopifySections(project.html_content, sectionPrefix)
     console.log(`[Shopify] Generated ${order.length} body sections: ${order.join(', ')}`)
 
     // layout/theme.liquid uses {% section %} tags for header/footer so they are
@@ -184,11 +192,6 @@ ${headInner.trim()}
   ${footerSectionName ? `{% section '${footerSectionName}' %}` : ''}
 </body>
 </html>`
-
-    // Detect which Shopify template this page belongs to
-    const pageType = detectPageType((project as { url?: string }).url, project.html_content)
-    const tmplPath = templatePath(pageType)
-    console.log(`[Shopify] Detected page type: ${pageType} → ${tmplPath}`)
 
     // Build template JSON (Shopify 2.0 format — lets editor add/remove/reorder sections)
     const sectionsJson: Record<string, unknown> = {}
@@ -259,18 +262,59 @@ ${headInner.trim()}
       ], null, 2),
     }
 
+    // Required theme files — Shopify shows errors on 404/password pages without these
+    themeFiles['templates/404.json'] = JSON.stringify({
+      sections: { main: { type: 'igualai-404', settings: {} } }, order: ['main'],
+    }, null, 2)
+    themeFiles['templates/password.json'] = JSON.stringify({
+      sections: { main: { type: 'igualai-password', settings: {} } }, order: ['main'],
+    }, null, 2)
+    themeFiles['sections/igualai-404.liquid'] = `<div style="text-align:center;padding:6rem 2rem">
+  <h1 style="font-size:4rem;font-weight:800;margin:0 0 1rem">404</h1>
+  <p style="font-size:1.2rem;opacity:.6;margin:0 0 2rem">Page not found</p>
+  <a href="/" style="display:inline-block;padding:.75rem 2rem;background:#111;color:#fff;text-decoration:none;border-radius:.5rem;font-weight:600">← Back to home</a>
+</div>
+{% schema %}{"name":"404 page"}{% endschema %}`
+    themeFiles['sections/igualai-password.liquid'] = `<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem">
+  <h1 style="font-size:2rem;font-weight:700;margin:0 0 .5rem">{{ shop.name }}</h1>
+  {% if shop.password_message != blank %}<p style="opacity:.6;margin:0 0 2rem">{{ shop.password_message }}</p>{% endif %}
+  {% form 'storefront_password' %}
+    <div style="display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap">
+      <input type="password" name="password" placeholder="Enter password" style="padding:.625rem 1rem;border:1px solid #ddd;border-radius:.375rem;font-size:1rem;min-width:200px">
+      <button type="submit" style="padding:.625rem 1.5rem;background:var(--color-button,#111);color:var(--color-button-text,#fff);border:none;border-radius:.375rem;font-size:1rem;cursor:pointer;font-weight:600">Enter</button>
+    </div>
+    {{ form.errors | default_errors }}
+  {% endform %}
+</div>
+{% schema %}{"name":"Password page"}{% endschema %}`
+    themeFiles['locales/en.default.json'] = JSON.stringify({
+      general: { password_page: { login_form_heading: 'Enter store password', login_form_password_label: 'Password', login_form_password_placeholder: 'Your password', login_form_submit: 'Enter', powered_by_shopify_html: 'This store will be powered by {{ shopify }}' } },
+    }, null, 2)
+
     // Add each section file
     for (const [name, content] of Object.entries(sections)) {
       themeFiles[`sections/${name}.liquid`] = content
     }
 
-    // Create a new unpublished theme
-    const themeData = await shopifyRequest(shopDomain, accessToken, 'POST', 'themes.json', {
-      theme: {
-        name: `IgualAI — ${project.name.slice(0, 40)}`,
-        role: 'unpublished',
-      },
-    })
+    // Create a new unpublished theme — detect theme limit exceeded (Shopify returns 422)
+    let themeData: { theme: { id: number } }
+    try {
+      themeData = await shopifyRequest(shopDomain, accessToken, 'POST', 'themes.json', {
+        theme: {
+          name: `IgualAI — ${project.name.slice(0, 40)}`,
+          role: 'unpublished',
+        },
+      })
+    } catch (err) {
+      const msg = (err as Error).message ?? ''
+      if (msg.includes('422') || msg.toLowerCase().includes('limit') || msg.toLowerCase().includes('maximum')) {
+        return NextResponse.json({
+          error: 'Your Shopify store has reached the maximum number of themes (usually 20). Please delete some unused themes at Shopify Admin → Online Store → Themes, then try again.',
+          themeLimitReached: true,
+        }, { status: 422 })
+      }
+      throw err
+    }
     const themeId = themeData.theme.id
 
     // Upload in dependency order: sections first, then templates that reference them
@@ -278,9 +322,12 @@ ${headInner.trim()}
       'layout/theme.liquid',
       'assets/style.css',
       'config/settings_schema.json',
-      // sections must exist before the template JSON references them
+      'locales/en.default.json',
+      // sections must exist before any template JSON references them
       ...Object.keys(themeFiles).filter(k => k.startsWith('sections/')),
       tmplPath,
+      'templates/404.json',
+      'templates/password.json',
     ]
 
     for (const key of uploadOrder) {

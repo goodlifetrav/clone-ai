@@ -52,10 +52,14 @@ function injectColorVars(html: string): string {
   const $ = load(html)
   const outer = $('body').children().first()
 
-  // Scoped style block: attribute selector handles any characters in section.id safely
+  // Scoped style block: attribute selector handles any characters in section.id safely.
+  // Buttons with solid Tailwind bg-* classes get global --color-button so theme color picker works.
+  // Outline/transparent buttons are excluded via :not([class*="bg-transparent"]).
   const styleBlock = `{%- style -%}
   [data-igualai-id="{{ section.id }}"] { background-color: {{ section.settings.bg_color }}; }
   [data-igualai-id="{{ section.id }}"] * { color: {{ section.settings.text_color }} !important; }
+  [data-igualai-id="{{ section.id }}"] a[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]),
+  [data-igualai-id="{{ section.id }}"] button[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]) { background-color: var(--color-button) !important; color: var(--color-button-text) !important; }
 {%- endstyle -%}`
 
   if (outer.length) {
@@ -528,7 +532,7 @@ function buildFooterSection(rawFooterHtml: string): string {
 
 // ── Main export ──────────────────────────────────────────────────────────────
 
-export async function htmlToShopifySections(html: string): Promise<ShopifySections> {
+export async function htmlToShopifySections(html: string, sectionPrefix = ''): Promise<ShopifySections> {
   const $ = load(html, { xmlMode: false } as never)
 
   // ── Extract footer ────────────────────────────────────────────────────────
@@ -606,7 +610,8 @@ export async function htmlToShopifySections(html: string): Promise<ShopifySectio
     }
 
     usedNames[type] = (usedNames[type] ?? 0) + 1
-    const name = usedNames[type] === 1 ? type : `${type}-${usedNames[type]}`
+    const baseName = usedNames[type] === 1 ? type : `${type}-${usedNames[type]}`
+    const name = sectionPrefix ? `${sectionPrefix}-${baseName}` : baseName
     const imgCount = countImages(chunkHtml)
 
     let sectionContent = ''
