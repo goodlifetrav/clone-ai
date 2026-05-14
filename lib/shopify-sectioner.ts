@@ -203,11 +203,39 @@ function liquidifyContent(chunkHtml: string): { liquid: string; defaults: Record
   const $ = load(chunkHtml)
   const d: Record<string, string> = {}
 
+  // Try heading tags first
   const h = $('h1, h2, h3').first()
-  if (h.length) { d.heading = h.text().trim(); h.html('{{ section.settings.heading }}') }
+  if (h.length) {
+    d.heading = h.text().trim()
+    h.html('{{ section.settings.heading }}')
+  } else {
+    // Fallback: find the first leaf element with substantial text (handles marquees, tickers, etc.)
+    let replaced = false
+    $('div, span, p, marquee, [class*="marquee"], [class*="ticker"], [class*="scroll"]').each((_, el) => {
+      if (replaced) return false
+      const $el = $(el)
+      const text = $el.text().trim()
+      // Only replace leaf/shallow nodes with meaningful text
+      if (text.length > 5 && $el.children('div, section, article').length === 0) {
+        d.heading = text.slice(0, 255)
+        // For marquees that repeat text, replace ALL direct text children
+        $el.contents().filter((_, n) => n.type === 'text').replaceWith('{{ section.settings.heading }}')
+        if (!$el.text().includes('section.settings.heading')) {
+          $el.html('{{ section.settings.heading }}')
+        }
+        replaced = true
+      }
+    })
+  }
 
-  const p = $('p').first()
-  if (p.length) { d.subheading = p.text().trim(); p.html('{{ section.settings.subheading }}') }
+  // Subheading from first <p> (if not already used)
+  if (!d.heading || d.subheading !== undefined) {
+    const p = $('p').first()
+    if (p.length && p.text().trim() !== d.heading) {
+      d.subheading = p.text().trim()
+      p.html('{{ section.settings.subheading }}')
+    }
+  }
 
   return { liquid: bodyHtml($), defaults: d }
 }
