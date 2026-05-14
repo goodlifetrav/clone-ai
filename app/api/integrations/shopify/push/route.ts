@@ -163,8 +163,19 @@ ${headInner.trim()}
     })
     const themeId = themeData.theme.id
 
-    // Upload all theme files
-    for (const [key, value] of Object.entries(themeFiles)) {
+    // Upload in dependency order: sections first, then templates that reference them
+    const uploadOrder = [
+      'layout/theme.liquid',
+      'assets/style.css',
+      'config/settings_schema.json',
+      // sections must exist before templates/index.json references them
+      ...Object.keys(themeFiles).filter(k => k.startsWith('sections/')),
+      'templates/index.json',
+    ]
+
+    for (const key of uploadOrder) {
+      const value = themeFiles[key]
+      if (!value) continue
       await shopifyRequest(shopDomain, accessToken, 'PUT', `themes/${themeId}/assets.json`, {
         asset: { key, value },
       })
