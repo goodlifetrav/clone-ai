@@ -450,6 +450,7 @@ export function SplitView({
       {showBrandWizard && (
         <BrandWizard
           projectId={project.id}
+          folderId={project.folder_id ?? undefined}
           onClose={() => setShowBrandWizard(false)}
           onRebuildStart={() => {
             rebuildHtmlRef.current = ''

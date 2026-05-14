@@ -22,6 +22,7 @@ interface BrandData {
 
 interface BrandWizardProps {
   projectId: string
+  folderId?: string
   onClose: () => void
   onRebuildStart: () => void
   onHtmlChunk: (chunk: string) => void
@@ -49,12 +50,14 @@ const DEFAULT_BRAND: BrandData = {
   ctaText: 'Get Started',
 }
 
-const BRAND_STORAGE_KEY = 'igualai_brand_profile'
+function brandStorageKey(folderId?: string): string {
+  return folderId ? `igualai_brand_folder_${folderId}` : 'igualai_brand_profile'
+}
 
-function loadSavedBrand(): BrandData {
+function loadSavedBrand(folderId?: string): BrandData {
   if (typeof window === 'undefined') return DEFAULT_BRAND
   try {
-    const saved = localStorage.getItem(BRAND_STORAGE_KEY)
+    const saved = localStorage.getItem(brandStorageKey(folderId))
     if (saved) return { ...DEFAULT_BRAND, ...JSON.parse(saved) }
   } catch { /* ignore */ }
   return DEFAULT_BRAND
@@ -62,6 +65,7 @@ function loadSavedBrand(): BrandData {
 
 export function BrandWizard({
   projectId,
+  folderId,
   onClose,
   onRebuildStart,
   onHtmlChunk,
@@ -70,7 +74,7 @@ export function BrandWizard({
   onImageGenStatus,
 }: BrandWizardProps) {
   const [step, setStep] = useState(1)
-  const [brand, setBrand] = useState<BrandData>(loadSavedBrand)
+  const [brand, setBrand] = useState<BrandData>(() => loadSavedBrand(folderId))
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const update = (key: keyof BrandData, value: string) =>
@@ -85,8 +89,8 @@ export function BrandWizard({
 
   const handleSubmit = async () => {
     setIsSubmitting(true)
-    // Save brand profile so it pre-fills on the next page rebuild
-    try { localStorage.setItem(BRAND_STORAGE_KEY, JSON.stringify(brand)) } catch { /* ignore */ }
+    // Save brand profile keyed by folder so each store has its own brand settings
+    try { localStorage.setItem(brandStorageKey(folderId), JSON.stringify(brand)) } catch { /* ignore */ }
     onRebuildStart()
     onClose()
 
