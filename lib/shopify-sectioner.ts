@@ -18,12 +18,17 @@ export interface ShopifySections {
 
 // ── Schema templates ───────────────────────────────────────────────────────
 
+function withDefault(base: object, key: string, val: string | undefined): object {
+  if (!val || val.trim() === '') return base
+  return { ...base, default: val.trim() }
+}
+
 function announcementSchema(defaults: Record<string, string>) {
   return {
     name: 'Announcement Bar',
     settings: [
-      { type: 'text', id: 'text', label: 'Announcement text', default: defaults.text ?? '' },
-      { type: 'color', id: 'bg_color', label: 'Background color', default: defaults.bg_color ?? '#1a5c3a' },
+      withDefault({ type: 'text', id: 'text', label: 'Announcement text' }, 'default', defaults.text),
+      { type: 'color', id: 'bg_color', label: 'Background color', default: '#1a5c3a' },
       { type: 'color', id: 'text_color', label: 'Text color', default: '#ffffff' },
     ],
     presets: [{ name: 'Announcement Bar' }],
@@ -34,11 +39,11 @@ function heroSchema(defaults: Record<string, string>) {
   return {
     name: 'Hero',
     settings: [
-      { type: 'text', id: 'heading', label: 'Heading', default: defaults.heading ?? '' },
-      { type: 'textarea', id: 'subheading', label: 'Subheading', default: defaults.subheading ?? '' },
-      { type: 'text', id: 'button_label', label: 'Primary button', default: defaults.button_label ?? '' },
+      withDefault({ type: 'text', id: 'heading', label: 'Heading' }, 'default', defaults.heading),
+      withDefault({ type: 'textarea', id: 'subheading', label: 'Subheading' }, 'default', defaults.subheading),
+      withDefault({ type: 'text', id: 'button_label', label: 'Primary button' }, 'default', defaults.button_label),
       { type: 'url', id: 'button_url', label: 'Primary button URL' },
-      { type: 'text', id: 'button2_label', label: 'Secondary button', default: defaults.button2_label ?? '' },
+      withDefault({ type: 'text', id: 'button2_label', label: 'Secondary button' }, 'default', defaults.button2_label),
       { type: 'url', id: 'button2_url', label: 'Secondary button URL' },
       { type: 'image_picker', id: 'bg_image', label: 'Background image' },
     ],
@@ -63,8 +68,8 @@ function contentSchema(name: string, defaults: Record<string, string>) {
   return {
     name,
     settings: [
-      { type: 'text', id: 'heading', label: 'Heading', default: defaults.heading ?? '' },
-      { type: 'textarea', id: 'subheading', label: 'Subheading', default: defaults.subheading ?? '' },
+      withDefault({ type: 'text', id: 'heading', label: 'Heading' }, 'default', defaults.heading),
+      withDefault({ type: 'textarea', id: 'subheading', label: 'Subheading' }, 'default', defaults.subheading),
       { type: 'color', id: 'bg_color', label: 'Background color', default: '#ffffff' },
     ],
     presets: [{ name }],
