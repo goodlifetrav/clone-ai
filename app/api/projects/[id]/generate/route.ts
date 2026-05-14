@@ -84,39 +84,81 @@ export async function GET(
 
   // ── Race-condition guard ───────────────────────────────────────────────
   // The DOM pipeline in /api/clone fires async and may finish before or after
-  // this request arrives.  Poll for up to 10 s (1 s intervals) before claiming
-  // the project.  If the DOM pipeline completes the project in that window we
-  // return its HTML immediately without running the screenshot pipeline at all.
+  // this request arrives. Poll for up to 90s (heavy sites like HubSpot need 60s+).
+  // Send progress events so the UI doesn't look frozen while waiting.
   {
-    const POLL_INTERVAL_MS = 1000
-    const POLL_MAX_MS = 10000
+    const POLL_INTERVAL_MS = 2000
+    const POLL_MAX_MS = 90000
     let waited = 0
-    while (waited < POLL_MAX_MS) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
-      waited += POLL_INTERVAL_MS
 
-      const { data: latest } = await supabase
-        .from('projects')
-        .select('status, html_content')
-        .eq('id', id)
-        .single()
+    const pollStream = new ReadableStream({
+      async start(controller) {
+        const send = (data: Record<string, unknown>) => {
+          try { controller.enqueue(makeEvent(data)) } catch { /* client disconnected */ }
+        }
 
-      if (latest?.status === 'complete') {
-        // DOM pipeline beat us — stream the finished HTML and exit
-        const stream = new ReadableStream({
-          start(controller) {
-            controller.enqueue(makeEvent({ done: true, html: latest.html_content }))
+        const progressMessages = [
+          'Connecting to site...',
+          'Loading page content...',
+          'Rendering JavaScript...',
+          'Capturing page sections...',
+          'Processing assets...',
+          'Finalizing clone...',
+        ]
+        let progressIdx = 0
+
+        while (waited < POLL_MAX_MS) {
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+          waited += POLL_INTERVAL_MS
+
+          // Send a progress heartbeat every 4 seconds
+          if (waited % 4000 === 0) {
+            send({ step: progressMessages[Math.min(progressIdx++, progressMessages.length - 1)] })
+          }
+
+          const { data: latest } = await supabase
+            .from('projects')
+            .select('status, html_content')
+            .eq('id', id)
+            .single()
+
+          if (latest?.status === 'complete') {
+            send({ done: true, html: latest.html_content })
             controller.close()
-          },
-        })
-        return new Response(stream, { headers: SSE_HEADERS })
-      }
+            return
+          }
 
-      // Still pending — keep waiting
-      if (latest?.status === 'pending') continue
+          if (latest?.status === 'pending') continue
+          break // error or processing state — fall through to screenshot
+        }
 
-      // Any other status (processing, error) — stop polling and fall through
-      break
+        controller.close()
+      },
+    })
+
+    // Check if DOM pipeline completed during our poll by reading the stream
+    const reader = pollStream.getReader()
+    let domCompleted = false
+    const chunks: Uint8Array[] = []
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      // Check if last chunk contained done:true
+      const text = new TextDecoder().decode(value)
+      if (text.includes('"done":true')) { domCompleted = true; break }
+    }
+
+    if (domCompleted) {
+      // DOM pipeline completed — replay all chunks to client
+      const replayStream = new ReadableStream({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(chunk)
+          controller.close()
+        },
+      })
+      return new Response(replayStream, { headers: SSE_HEADERS })
     }
   }
 
