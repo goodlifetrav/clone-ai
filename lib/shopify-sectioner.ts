@@ -56,6 +56,13 @@ function countCardChildren($el: ReturnType<CheerioAPI>): number {
 // ── Classifiers ─────────────────────────────────────────────────────────────
 
 function classifySection(html: string, isFirst: boolean): string {
+  // Check for explicit data-igualai-section attribute set by Gemini during brand rebuild
+  const dataAttr = html.match(/data-igualai-section="([^"]+)"/i)?.[1]
+  if (dataAttr) {
+    const valid = ['announcement-bar', 'hero', 'product-grid', 'testimonials', 'features', 'lifestyle', 'newsletter', 'content']
+    if (valid.includes(dataAttr)) return dataAttr
+  }
+
   const lower = html.toLowerCase()
   const textLen = html.replace(/<[^>]+>/g, '').trim().length
   const imgCount = countImages(html)
@@ -426,6 +433,18 @@ export async function htmlToShopifySections(html: string): Promise<ShopifySectio
       const $c = load(chunkHtml)
       const heading = $c('h2, h3').first().text().trim()
       sectionContent = productGridLiquid(heading) + schemaTag(buildProductGridSchema({ heading }))
+    } else if (type === 'newsletter') {
+      const { liquid, defaults } = liquidifyHero(chunkHtml)  // reuse — finds heading + button
+      sectionContent = liquid + schemaTag({
+        name: 'Newsletter',
+        settings: [
+          setting({ type: 'text', id: 'heading', label: 'Heading' }, defaults.heading),
+          setting({ type: 'text', id: 'btn1_label', label: 'Button text' }, defaults.btn1_label),
+          { type: 'color', id: 'bg_color', label: 'Background color', default: '#000000' },
+          { type: 'color', id: 'text_color', label: 'Text color', default: '#ffffff' },
+        ],
+        presets: [{ name: 'Newsletter' }],
+      })
     } else {
       const { liquid, defaults } = liquidifyContent(chunkHtml)
       const displayName = type.charAt(0).toUpperCase() + type.slice(1).replace(/-/g, ' ')

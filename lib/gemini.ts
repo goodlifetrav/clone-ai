@@ -824,6 +824,7 @@ BENTO GRID — use for comparison/highlight sections when original has no clear 
 - Buttons: rounded-lg, brand-colored primary, white/gray border secondary
 - Mobile responsive on every section
 - Original compelling copy — no Lorem ipsum
+- SHOPIFY SECTION TAGGING — add a data-igualai-section attribute to every top-level section wrapper div/section. Valid values: "announcement-bar" (thin promo bar above nav), "hero" (full hero with big heading + CTA), "product-grid" (product cards, collection grid), "features" (icon feature grid), "testimonials" (quote/review cards), "lifestyle" (photo editorial strip), "newsletter" (email signup form), "content" (anything else). Example: <section data-igualai-section="hero" class="...">
 - SPLIT LAYOUT structure — every split section MUST use this exact pattern, no exceptions:
   <section class="py-24 px-6 bg-[dark-or-light]">
     <div class="max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-16">
@@ -1080,6 +1081,7 @@ BENTO GRID — card pair (use for comparison/highlight sections):
 - Buttons: rounded-lg, brand-colored primary, white/gray border secondary
 - Mobile responsive on every section
 - Original compelling copy — no Lorem ipsum
+- SHOPIFY SECTION TAGGING — add a data-igualai-section attribute to every top-level section wrapper div/section. Valid values: "announcement-bar" (thin promo bar above nav), "hero" (full hero with big heading + CTA), "product-grid" (product cards, collection grid), "features" (icon feature grid), "testimonials" (quote/review cards), "lifestyle" (photo editorial strip), "newsletter" (email signup form), "content" (anything else). Example: <section data-igualai-section="hero" class="...">
 - Output a complete, self-contained page
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`

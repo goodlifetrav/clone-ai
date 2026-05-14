@@ -111,6 +111,35 @@ export async function POST(request: NextRequest) {
   {{ content_for_header }}
 ${headInner.trim()}
   {{ 'style.css' | asset_url | stylesheet_tag }}
+  <style>
+    {{ settings.heading_font | font_face }}
+    {{ settings.body_font | font_face }}
+    :root {
+      --color-primary: {{ settings.primary_color }};
+      --color-secondary: {{ settings.secondary_color }};
+      --color-accent: {{ settings.accent_color }};
+      --color-button: {{ settings.button_color }};
+      --color-button-text: {{ settings.button_text_color }};
+      --color-text: {{ settings.text_color }};
+      --color-page-bg: {{ settings.page_bg }};
+      --font-heading: {{ settings.heading_font.family }}, {{ settings.heading_font.fallback_families }};
+      --font-body: {{ settings.body_font.family }}, {{ settings.body_font.fallback_families }};
+      --font-size-body: {{ settings.body_font_size }}px;
+      --section-padding: {{ settings.section_padding }}px;
+      --content-max-width: {{ settings.content_max_width }}px;
+      {% case settings.heading_size %}
+        {% when 'small' %}--font-size-h1:2rem;--font-size-h2:1.5rem;--font-size-h3:1.25rem;
+        {% when 'large' %}--font-size-h1:3.5rem;--font-size-h2:2.5rem;--font-size-h3:2rem;
+        {% when 'xlarge' %}--font-size-h1:5rem;--font-size-h2:3.5rem;--font-size-h3:2.5rem;
+        {% else %}--font-size-h1:2.5rem;--font-size-h2:2rem;--font-size-h3:1.5rem;
+      {% endcase %}
+    }
+    body { font-family: var(--font-body); font-size: var(--font-size-body); color: var(--color-text); background-color: var(--color-page-bg); }
+    h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
+    h1 { font-size: var(--font-size-h1); }
+    h2 { font-size: var(--font-size-h2); }
+    h3 { font-size: var(--font-size-h3); }
+  </style>
 </head>
 <body>
   {% section '${headerSectionName}' %}
@@ -148,6 +177,42 @@ ${headInner.trim()}
           theme_version: '2.0.0',
           theme_support_url: 'https://igualai.com',
           theme_documentation_url: 'https://igualai.com/docs/shopify-integration',
+        },
+        {
+          name: 'Colors',
+          settings: [
+            { type: 'color', id: 'primary_color', label: 'Primary color', default: '#000000' },
+            { type: 'color', id: 'secondary_color', label: 'Secondary color', default: '#ffffff' },
+            { type: 'color', id: 'accent_color', label: 'Accent color', default: '#4a90e2' },
+            { type: 'color', id: 'button_color', label: 'Button color', default: '#1a5c3a' },
+            { type: 'color', id: 'button_text_color', label: 'Button text color', default: '#ffffff' },
+            { type: 'color', id: 'text_color', label: 'Body text color', default: '#111111' },
+            { type: 'color', id: 'page_bg', label: 'Page background', default: '#ffffff' },
+          ],
+        },
+        {
+          name: 'Typography',
+          settings: [
+            { type: 'font_picker', id: 'heading_font', label: 'Heading font', default: 'helvetica_n4' },
+            { type: 'font_picker', id: 'body_font', label: 'Body font', default: 'helvetica_n4' },
+            {
+              type: 'select', id: 'heading_size', label: 'Heading size', default: 'medium',
+              options: [
+                { value: 'small', label: 'Small' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'large', label: 'Large' },
+                { value: 'xlarge', label: 'Extra Large' },
+              ],
+            },
+            { type: 'range', id: 'body_font_size', label: 'Body font size', min: 12, max: 20, step: 1, default: 16, unit: 'px' },
+          ],
+        },
+        {
+          name: 'Spacing',
+          settings: [
+            { type: 'range', id: 'section_padding', label: 'Section vertical padding', min: 20, max: 120, step: 4, default: 60, unit: 'px' },
+            { type: 'range', id: 'content_max_width', label: 'Content max width', min: 800, max: 1600, step: 80, default: 1280, unit: 'px' },
+          ],
         },
       ], null, 2),
     }
