@@ -333,21 +333,48 @@ export async function htmlToShopifySections(html: string): Promise<ShopifySectio
 
   // ── Split body into chunks ────────────────────────────────────────────────
   const bodyChildren = $('body').children().toArray()
-  const chunks: string[] = []
+  const rawChunks: string[] = []
   let buffer = ''
 
   for (const el of bodyChildren) {
     const elHtml = $.html(el) ?? ''
     const tag = (el as { tagName?: string }).tagName?.toLowerCase() ?? ''
     if (['section', 'article', 'aside', 'main', 'div'].includes(tag) && elHtml.length > 200) {
-      if (buffer.trim()) { chunks.push(buffer); buffer = '' }
-      chunks.push(elHtml)
+      if (buffer.trim()) { rawChunks.push(buffer); buffer = '' }
+      rawChunks.push(elHtml)
     } else {
       buffer += elHtml
     }
   }
-  if (buffer.trim()) chunks.push(buffer)
-  if (chunks.length === 0) chunks.push($('body').html() ?? html)
+  if (buffer.trim()) rawChunks.push(buffer)
+  if (rawChunks.length === 0) rawChunks.push($('body').html() ?? html)
+
+  // ── Merge consecutive card-like chunks into product grids ─────────────────
+  // Gemini sometimes generates each product card as a separate top-level div.
+  // If 3+ consecutive "small" chunks each have 1-2 images, merge them.
+  const chunks: string[] = []
+  let cardBuffer: string[] = []
+
+  const flushCards = () => {
+    if (cardBuffer.length >= 3) {
+      chunks.push(cardBuffer.join('\n'))
+    } else {
+      chunks.push(...cardBuffer)
+    }
+    cardBuffer = []
+  }
+
+  for (const chunk of rawChunks) {
+    const imgs = countImages(chunk)
+    const isCardLike = imgs >= 1 && imgs <= 3 && chunk.length < 4000
+    if (isCardLike) {
+      cardBuffer.push(chunk)
+    } else {
+      flushCards()
+      chunks.push(chunk)
+    }
+  }
+  flushCards()
 
   // ── Build body sections ───────────────────────────────────────────────────
   const usedNames: Record<string, number> = {}
