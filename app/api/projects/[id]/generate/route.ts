@@ -215,6 +215,9 @@ export async function GET(
           }
         ))
 
+        // Log Claude cost (Sonnet 4.6 blended ~$9/1M — actual varies by input/output ratio)
+        console.log(`[claude] clone — tokens: ${tokensUsed}, est. cost: ~$${((tokensUsed * 9) / 1_000_000).toFixed(4)}`)
+
         // ── Persist final result ─────────────────────────────────────────
         // injectImageUrls was already called inside generateCloneStreaming, but
         // we call it again here as a guarantee — ensuring the DB save always
