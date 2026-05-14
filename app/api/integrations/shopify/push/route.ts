@@ -97,10 +97,11 @@ export async function POST(request: NextRequest) {
     // Use Gemini to convert HTML into editable Shopify sections
     const { htmlToShopifySections } = await import('@/lib/shopify-sectioner')
     console.log(`[Shopify] Sectioning HTML for project ${projectId}...`)
-    const { sections, order, headerHtml, footerHtml } = await htmlToShopifySections(project.html_content)
-    console.log(`[Shopify] Generated ${order.length} sections: ${order.join(', ')}`)
+    const { sections, order, headerSectionName, footerSectionName } = await htmlToShopifySections(project.html_content)
+    console.log(`[Shopify] Generated ${order.length} body sections: ${order.join(', ')}`)
 
-    // Build layout/theme.liquid — header/footer extracted from HTML so they appear on every page
+    // layout/theme.liquid uses {% section %} tags for header/footer so they are
+    // editable static sections that appear on every page in the Shopify editor.
     const themeLiquid = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -112,9 +113,9 @@ ${headInner.trim()}
   {{ 'style.css' | asset_url | stylesheet_tag }}
 </head>
 <body>
-${headerHtml ? `  <!-- Header extracted from clone -->\n  ${headerHtml.trim()}` : ''}
+  {% section '${headerSectionName}' %}
   {{ content_for_layout }}
-${footerHtml ? `  <!-- Footer extracted from clone -->\n  ${footerHtml.trim()}` : ''}
+  ${footerSectionName ? `{% section '${footerSectionName}' %}` : ''}
 </body>
 </html>`
 
