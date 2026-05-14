@@ -45,17 +45,30 @@ function detectBgColor(html: string): string {
   return '#ffffff'
 }
 
-/** Inject bg_color and text_color Liquid vars onto the outermost element's inline style.
- *  Inline style beats Tailwind utility classes so the picker always takes effect. */
+/** Inject bg_color and text_color Liquid vars using a scoped {% style %} block with !important.
+ *  !important is required because child elements often have Tailwind text-* classes that
+ *  would otherwise override inherited color values. */
 function injectColorVars(html: string): string {
   const $ = load(html)
   const outer = $('body').children().first()
+
+  // Scoped style block: attribute selector handles any characters in section.id safely
+  const styleBlock = `{%- style -%}
+  [data-igualai-id="{{ section.id }}"] { background-color: {{ section.settings.bg_color }}; }
+  [data-igualai-id="{{ section.id }}"] * { color: {{ section.settings.text_color }} !important; }
+{%- endstyle -%}`
+
   if (outer.length) {
-    const existing = (outer.attr('style') ?? '').replace(/;?\s*$/, '')
-    outer.attr('style', `${existing}${existing ? ';' : ''}background-color:{{ section.settings.bg_color }};color:{{ section.settings.text_color }}`)
-    return bodyHtml($)
+    outer.attr('data-igualai-id', '{{ section.id }}')
+    // Strip any hardcoded background-color from inline style so our scoped rule wins
+    const existingStyle = (outer.attr('style') ?? '')
+      .replace(/background(?:-color)?\s*:[^;]+;?\s*/gi, '')
+      .replace(/^\s*;?\s*|\s*;?\s*$/g, '')
+    if (existingStyle) outer.attr('style', existingStyle)
+    else outer.removeAttr('style')
+    return styleBlock + '\n' + bodyHtml($)
   }
-  return `<div style="background-color:{{ section.settings.bg_color }};color:{{ section.settings.text_color }}">${html}</div>`
+  return `${styleBlock}\n<div data-igualai-id="{{ section.id }}">${html}</div>`
 }
 
 /** Count visual "images" — img tags, CSS backgrounds, gradients, and IgualAI product card placeholders */
