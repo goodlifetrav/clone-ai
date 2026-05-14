@@ -150,13 +150,18 @@ function buildHeaderSchema(d: Record<string, string>) {
   }
 }
 
-function buildFooterSchema() {
+function buildFooterSchema(d: { newsletterHeading?: string; subscribeBtn?: string } = {}) {
   return {
     name: 'Footer',
     class: 'section-footer',
     settings: [
+      ...(d.newsletterHeading !== undefined ? [
+        setting({ type: 'text', id: 'newsletter_heading', label: 'Newsletter heading' }, d.newsletterHeading),
+        setting({ type: 'text', id: 'subscribe_btn', label: 'Subscribe button text' }, d.subscribeBtn),
+      ] : []),
       { type: 'link_list', id: 'menu1', label: 'Footer links column 1', default: 'footer' },
       { type: 'link_list', id: 'menu2', label: 'Footer links column 2' },
+      { type: 'link_list', id: 'menu3', label: 'Footer links column 3' },
       { type: 'text', id: 'copyright', label: 'Copyright text' },
       { type: 'color', id: 'bg_color', label: 'Background color', default: '#000000' },
       { type: 'color', id: 'text_color', label: 'Text color', default: '#ffffff' },
@@ -302,11 +307,31 @@ ${schemaTag(buildHeaderSchema(d))}`
 }
 
 function buildFooterSection(footerHtml: string): string {
-  // Keep original footer HTML but wrap with Liquid-controlled bg color and add schema
+  const $ = load(footerHtml)
+  const d: { newsletterHeading?: string; subscribeBtn?: string } = {}
+
+  // Liquidify newsletter/subscribe heading inside footer
+  const heading = $('h1, h2, h3, h4').first()
+  if (heading.length) {
+    d.newsletterHeading = heading.text().trim()
+    heading.html('{{ section.settings.newsletter_heading }}')
+  }
+
+  // Liquidify subscribe button text
+  const subscribeBtn = $('button, [class*="btn"], [class*="button"]').filter((_, el) => {
+    return /subscribe|sign.?up|join|submit/i.test($(el).text())
+  }).first()
+  if (subscribeBtn.length) {
+    d.subscribeBtn = subscribeBtn.text().trim()
+    subscribeBtn.html('{{ section.settings.subscribe_btn }}')
+  }
+
+  const liquidHtml = $('body').html() ?? footerHtml
+
   return `<div style="background-color:{{ section.settings.bg_color }};color:{{ section.settings.text_color }}">
-${footerHtml}
+${liquidHtml}
 </div>
-${schemaTag(buildFooterSchema())}`
+${schemaTag(buildFooterSchema(d))}`
 }
 
 // ── Main export ──────────────────────────────────────────────────────────────
