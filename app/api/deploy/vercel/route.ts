@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     const { userId } = await getAuth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { projectId } = await request.json()
+    const { projectId, token: userToken } = await request.json()
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
     const supabase = createServiceClient()
@@ -39,12 +39,12 @@ export async function POST(request: NextRequest) {
 
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
-    // Deploy to Vercel via their API
-    const vercelToken = process.env.VERCEL_TOKEN
+    // Use token from request (user's own Vercel access token)
+    const vercelToken = userToken?.trim()
     if (!vercelToken) {
       return NextResponse.json(
-        { error: 'Vercel integration not configured. Add VERCEL_TOKEN to .env.local' },
-        { status: 503 }
+        { error: 'Vercel access token is required' },
+        { status: 400 }
       )
     }
 

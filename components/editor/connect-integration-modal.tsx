@@ -207,18 +207,24 @@ function GitHubPanel({ projectId, onClose }: { projectId: string; onClose: () =>
 }
 
 function VercelPanel({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const [token, setToken] = useState(() =>
+    typeof window !== 'undefined' ? localStorage.getItem('vercel_token') ?? '' : ''
+  )
   const [loading, setLoading] = useState(false)
   const [deployUrl, setDeployUrl] = useState('')
   const [error, setError] = useState('')
 
   const handleDeploy = async () => {
+    if (!token.trim()) return
     setLoading(true)
     setError('')
     try {
+      if (typeof window !== 'undefined') localStorage.setItem('vercel_token', token)
+
       const res = await fetch('/api/deploy/vercel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({ projectId, token }),
       })
       const data = await res.json()
 
@@ -259,10 +265,32 @@ function VercelPanel({ projectId, onClose }: { projectId: string; onClose: () =>
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-neutral-600 dark:text-neutral-400">
-        Your project will be deployed as a static site to Vercel using your team&apos;s
-        connected Vercel account.
-      </p>
+      <div className="text-sm text-neutral-600 dark:text-neutral-400 space-y-1">
+        <p>
+          You need a{' '}
+          <a
+            href="https://vercel.com/account/tokens"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 dark:text-blue-400 underline"
+          >
+            Vercel access token
+          </a>{' '}
+          from your account settings.
+        </p>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1 block">
+          Access Token
+        </label>
+        <Input
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="xxxxxxxxxxxxxxxxxxxxxxxx"
+        />
+      </div>
 
       {error && (
         <div className="space-y-2">
@@ -275,16 +303,18 @@ function VercelPanel({ projectId, onClose }: { projectId: string; onClose: () =>
         </div>
       )}
 
-      {!error && (
-        <Button className="w-full gap-2" onClick={handleDeploy} disabled={loading}>
-          {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Rocket className="w-4 h-4" />
-          )}
-          Deploy to Vercel
-        </Button>
-      )}
+      <Button
+        className="w-full gap-2"
+        onClick={handleDeploy}
+        disabled={loading || !token.trim()}
+      >
+        {loading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Rocket className="w-4 h-4" />
+        )}
+        Deploy to Vercel
+      </Button>
     </div>
   )
 }
