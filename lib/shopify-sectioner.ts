@@ -67,18 +67,15 @@ function classifySection(html: string, isFirst: boolean): string {
     (isFirst && textLen < 120 && !lower.includes('<nav'))
   )) return 'announcement-bar'
 
+  // Product / content grid: multiple images or card children — check BEFORE hero
+  // (hero sections have 0–1 large images; 3+ visual images = card/product grid)
+  if (imgCount >= 3) return 'product-grid'
+
   // Hero: has a large heading + CTA button
   if (
     (lower.includes('<h1') || lower.includes('hero') || lower.includes('banner')) &&
     (lower.includes('btn') || lower.includes('button') || (lower.includes('<a ') && lower.includes('href')))
   ) return 'hero'
-
-  // Product / content grid: multiple images or card children
-  if (imgCount >= 3) {
-    const keywords = ['product', 'shop', 'collection', 'price', '$', 'fragrance', 'scent',
-                      'cologne', 'grooming', 'item', 'card', 'grid', 'mosaic', 'buy']
-    if (keywords.some(k => lower.includes(k)) || imgCount >= 4) return 'product-grid'
-  }
 
   // Testimonials
   if (lower.includes('review') || lower.includes('testimonial') || lower.includes('★')) return 'testimonials'
