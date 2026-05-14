@@ -2,61 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 
-// Convert a self-contained HTML clone into a minimal Shopify theme structure.
-// Returns an object keyed by the theme file path.
-function buildShopifyTheme(html: string, projectName: string): Record<string, string> {
-  // Extract <head> inner content (everything between <head> and </head>)
-  const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i)
-  let headInner = headMatch ? headMatch[1] : ''
-
-  // Extract <body> inner content
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
-  const bodyInner = bodyMatch ? bodyMatch[1] : html
-
-  // Pull out all <style> blocks — we'll put them in assets/style.css
-  const styleParts: string[] = []
-  headInner = headInner.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_, css) => {
-    styleParts.push(css)
-    return '' // remove from head
-  })
-
-  const css = styleParts.join('\n\n')
-
-  const themeLiquid = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ shop.name }}</title>
-  {{ content_for_header }}
-${headInner.trim()}
-  {{ 'style.css' | asset_url | stylesheet_tag }}
-</head>
-<body>
-  {{ content_for_layout }}
-</body>
-</html>`
-
-  const indexLiquid = `{% layout 'theme' %}
-${bodyInner.trim()}`
-
-  return {
-    'layout/theme.liquid': themeLiquid,
-    'templates/index.liquid': indexLiquid,
-    'assets/style.css': css || '/* No styles extracted */',
-    'config/settings_schema.json': JSON.stringify([
-      {
-        name: 'theme_info',
-        theme_name: projectName.slice(0, 25),
-        theme_author: 'IgualAI',
-        theme_version: '1.0.0',
-        theme_support_url: 'https://igualai.com',
-        theme_documentation_url: 'https://igualai.com/docs',
-      },
-    ], null, 2),
-  }
-}
-
 async function shopifyRequest(
   shop: string,
   accessToken: string,
@@ -74,9 +19,21 @@ async function shopifyRequest(
   })
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Shopify API error ${res.status}: ${text.slice(0, 200)}`)
+    throw new Error(`Shopify API error ${res.status}: ${text.slice(0, 300)}`)
   }
   return res.json()
+}
+
+/** Extract all <style> content from HTML, returning { css, htmlWithoutStyles } */
+function extractStyles(html: string): { css: string; headInner: string } {
+  const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i)
+  let headInner = headMatch ? headMatch[1] : ''
+  const styleParts: string[] = []
+  headInner = headInner.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_, css) => {
+    styleParts.push(css)
+    return ''
+  })
+  return { css: styleParts.join('\n\n'), headInner }
 }
 
 export async function POST(request: NextRequest) {
@@ -104,8 +61,9 @@ export async function POST(request: NextRequest) {
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
+    const { isAdminEmail } = await import('@/lib/admin')
     const allowedPlans = ['pro', 'growth', 'max']
-    if (!user.is_admin && !allowedPlans.includes(user.plan)) {
+    if (!user.is_admin && !isAdminEmail(user.email) && !allowedPlans.includes(user.plan)) {
       return NextResponse.json(
         { error: 'Shopify integration requires Pro plan or above.', upgradeRequired: true },
         { status: 403 }
@@ -130,22 +88,82 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid shop domain' }, { status: 400 })
     }
 
-    // Verify credentials by fetching shop info
+    // Verify credentials
     await shopifyRequest(shopDomain, accessToken, 'GET', 'shop.json')
 
-    // Build theme files
-    const themeFiles = buildShopifyTheme(project.html_content, project.name)
+    // Extract CSS from HTML
+    const { css, headInner } = extractStyles(project.html_content)
+
+    // Use Gemini to convert HTML into editable Shopify sections
+    const { htmlToShopifySections } = await import('@/lib/shopify-sectioner')
+    console.log(`[Shopify] Sectioning HTML for project ${projectId}...`)
+    const { sections, order } = await htmlToShopifySections(project.html_content)
+    console.log(`[Shopify] Generated ${order.length} sections: ${order.join(', ')}`)
+
+    // Build layout/theme.liquid
+    const themeLiquid = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title }} — {{ shop.name }}</title>
+  {{ content_for_header }}
+${headInner.trim()}
+  {{ 'style.css' | asset_url | stylesheet_tag }}
+</head>
+<body>
+  {{ content_for_layout }}
+</body>
+</html>`
+
+    // Build templates/index.json (Shopify 2.0 format — lets editor add/remove/reorder sections)
+    const sectionsJson: Record<string, unknown> = {}
+    const sectionOrder: string[] = []
+
+    for (const name of order) {
+      if (!sections[name]) continue
+      const id = `igualai-${name}`
+      sectionsJson[id] = { type: name, disabled: false, settings: {} }
+      sectionOrder.push(id)
+    }
+
+    const indexJson = JSON.stringify({
+      sections: sectionsJson,
+      order: sectionOrder,
+    }, null, 2)
+
+    // Assemble all theme files
+    const themeFiles: Record<string, string> = {
+      'layout/theme.liquid': themeLiquid,
+      'templates/index.json': indexJson,
+      'assets/style.css': css || '/* No styles extracted */',
+      'config/settings_schema.json': JSON.stringify([
+        {
+          name: 'theme_info',
+          theme_name: project.name.slice(0, 25),
+          theme_author: 'IgualAI',
+          theme_version: '2.0.0',
+          theme_support_url: 'https://igualai.com',
+          theme_documentation_url: 'https://igualai.com/docs/shopify-integration',
+        },
+      ], null, 2),
+    }
+
+    // Add each section file
+    for (const [name, content] of Object.entries(sections)) {
+      themeFiles[`sections/${name}.liquid`] = content
+    }
 
     // Create a new unpublished theme
     const themeData = await shopifyRequest(shopDomain, accessToken, 'POST', 'themes.json', {
       theme: {
-        name: `IgualAI — ${project.name}`,
+        name: `IgualAI — ${project.name.slice(0, 40)}`,
         role: 'unpublished',
       },
     })
     const themeId = themeData.theme.id
 
-    // Upload each theme file
+    // Upload all theme files
     for (const [key, value] of Object.entries(themeFiles)) {
       await shopifyRequest(shopDomain, accessToken, 'PUT', `themes/${themeId}/assets.json`, {
         asset: { key, value },
