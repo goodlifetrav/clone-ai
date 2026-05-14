@@ -38,7 +38,8 @@ function countImages(html: string): number {
   const imgTags = (html.match(/<img[\s>]/gi) ?? []).length
   const bgImages = (html.match(/url\(["']?https?:/gi) ?? []).length
   const gradients = (html.match(/linear-gradient|radial-gradient/gi) ?? []).length
-  return imgTags + bgImages + Math.floor(gradients / 2) // gradients count half (many are decorative)
+  // Count each gradient separately — 6 card gradients = 6 visual "images"
+  return imgTags + bgImages + gradients
 }
 
 /** Count repeated card-like children (for detecting product/content grids) */
