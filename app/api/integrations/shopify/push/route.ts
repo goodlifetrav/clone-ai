@@ -47,9 +47,11 @@ ${bodyInner.trim()}`
     'config/settings_schema.json': JSON.stringify([
       {
         name: 'theme_info',
-        theme_name: `IgualAI Clone — ${projectName}`,
+        theme_name: projectName.slice(0, 25),
         theme_author: 'IgualAI',
         theme_version: '1.0.0',
+        theme_support_url: 'https://igualai.com',
+        theme_documentation_url: 'https://igualai.com/docs',
       },
     ], null, 2),
   }
