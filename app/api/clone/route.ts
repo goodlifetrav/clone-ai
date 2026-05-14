@@ -179,10 +179,16 @@ async function runDomPipeline(projectId: string, url: string): Promise<void> {
     console.log(`[DOM] HTML cleaned — ${html.length} chars`)
 
     // 6. Save to database
-    await supabase
+    console.log(`[DOM] Saving ${html.length} chars to DB...`)
+    const { error: saveError } = await supabase
       .from('projects')
       .update({ html_content: html, status: 'complete', clone_method: 'dom' })
       .eq('id', projectId)
+
+    if (saveError) {
+      console.error(`[DOM] Supabase save FAILED for project ${projectId}:`, JSON.stringify(saveError))
+      throw new Error(`Supabase save failed: ${saveError.message}`)
+    }
 
     console.log(`[DOM] Project ${projectId} complete via DOM extraction`)
   } catch (err) {
