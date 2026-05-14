@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuth } from '@/lib/auth'
-import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase'
-import { scrapeWebsite } from '@/lib/playwright'
-import { generateCloneStreaming, injectImageUrls } from '@/lib/anthropic'
-import { extractDomain } from '@/lib/utils'
 import { reportError } from '@/lib/error-report'
 
 
@@ -39,26 +35,29 @@ export async function GET(
     return encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
   }
 
-  // Already complete — return current HTML immediately
-  if (project.status === 'complete') {
+  function sseResponse(data: Record<string, unknown>) {
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue(makeEvent({ done: true, html: project.html_content }))
+        controller.enqueue(makeEvent(data))
         controller.close()
       },
     })
     return new Response(stream, { headers: SSE_HEADERS })
   }
 
+  // Already complete — return current HTML immediately
+  if (project.status === 'complete') {
+    return sseResponse({ done: true, html: project.html_content })
+  }
+
   // Already processing (e.g. page refresh during generation) —
-  // send what's in DB so far, then let the hook fall back to fast polling
+  // signal client to poll for completion
   if (project.status === 'processing') {
     const stream = new ReadableStream({
       start(controller) {
         if (project.html_content) {
           controller.enqueue(makeEvent({ htmlChunk: project.html_content }))
         }
-        // Signal client to use polling for the rest
         controller.enqueue(makeEvent({ usePolling: true }))
         controller.close()
       },
@@ -68,13 +67,7 @@ export async function GET(
 
   // Error state
   if (project.status === 'error') {
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(makeEvent({ error: 'Generation previously failed' }))
-        controller.close()
-      },
-    })
-    return new Response(stream, { headers: SSE_HEADERS })
+    return sseResponse({ error: 'This site could not be cloned. It may have bot protection or take too long to load. Please try a different URL.' })
   }
 
   // Only start generation for 'pending' projects
@@ -82,36 +75,36 @@ export async function GET(
     return NextResponse.json({ error: 'Project is not pending' }, { status: 400 })
   }
 
-  // ── Race-condition guard ───────────────────────────────────────────────
-  // The DOM pipeline in /api/clone fires async and may finish before or after
-  // this request arrives. Poll for up to 90s (heavy sites like HubSpot need 60s+).
-  // Send progress events so the UI doesn't look frozen while waiting.
-  {
-    const POLL_INTERVAL_MS = 2000
-    const POLL_MAX_MS = 90000
-    let waited = 0
+  // ── DOM pipeline poll ──────────────────────────────────────────────────────
+  // The DOM pipeline in /api/clone fires async and may take up to 90s for heavy
+  // sites (HubSpot, Apple). Poll until it completes or times out.
+  // Stream progress events to the client so the UI doesn't look frozen.
+  const POLL_INTERVAL_MS = 2000
+  const POLL_MAX_MS = 90000
+  const progressMessages = [
+    'Connecting to site...',
+    'Loading page content...',
+    'Rendering JavaScript...',
+    'Capturing page sections...',
+    'Processing assets...',
+    'Finalizing clone...',
+  ]
 
-    const pollStream = new ReadableStream({
-      async start(controller) {
-        const send = (data: Record<string, unknown>) => {
-          try { controller.enqueue(makeEvent(data)) } catch { /* client disconnected */ }
-        }
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: Record<string, unknown>) => {
+        try { controller.enqueue(makeEvent(data)) } catch { /* client disconnected */ }
+      }
 
-        const progressMessages = [
-          'Connecting to site...',
-          'Loading page content...',
-          'Rendering JavaScript...',
-          'Capturing page sections...',
-          'Processing assets...',
-          'Finalizing clone...',
-        ]
+      try {
+        let waited = 0
         let progressIdx = 0
 
         while (waited < POLL_MAX_MS) {
           await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
           waited += POLL_INTERVAL_MS
 
-          // Send a progress heartbeat every 4 seconds
+          // Send progress heartbeat every 4s
           if (waited % 4000 === 0) {
             send({ step: progressMessages[Math.min(progressIdx++, progressMessages.length - 1)] })
           }
@@ -128,151 +121,20 @@ export async function GET(
             return
           }
 
-          if (latest?.status === 'pending') continue
-          break // error or processing state — fall through to screenshot
+          if (latest?.status === 'error') {
+            send({ error: 'This site could not be cloned. It may have bot protection or take too long to load. Please try a different URL.' })
+            controller.close()
+            return
+          }
+
+          // 'pending' — keep waiting. Any other status falls through.
+          if (latest?.status !== 'pending') break
         }
 
-        controller.close()
-      },
-    })
-
-    // Check if DOM pipeline completed during our poll by reading the stream
-    const reader = pollStream.getReader()
-    let domCompleted = false
-    const chunks: Uint8Array[] = []
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      chunks.push(value)
-      // Check if last chunk contained done:true
-      const text = new TextDecoder().decode(value)
-      if (text.includes('"done":true')) { domCompleted = true; break }
-    }
-
-    if (domCompleted) {
-      // DOM pipeline completed — replay all chunks to client
-      const replayStream = new ReadableStream({
-        start(controller) {
-          for (const chunk of chunks) controller.enqueue(chunk)
-          controller.close()
-        },
-      })
-      return new Response(replayStream, { headers: SSE_HEADERS })
-    }
-  }
-
-  // Claim the project — set status to 'processing'
-  await supabase.from('projects').update({ status: 'processing' }).eq('id', id)
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      function send(data: Record<string, unknown>) {
-        try {
-          controller.enqueue(makeEvent(data))
-        } catch {
-          // client disconnected — continue server-side processing
-        }
-      }
-
-      try {
-        const url = project.url
-
-        const { data: user } = await supabase
-          .from('users')
-          .select('id, tokens_used, clones_count, email, plan, free_clones_used')
-          .eq('id', project.user_id)
-          .single()
-
-        // ── Scrape (always fresh — no cache) ────────────────────────────
-        console.log(`[SCRAPE] Fresh scrape for ${url}`)
-        const scrapeResult = await scrapeWebsite(url, (step) => send({ step }), id)
-
-        // ── Generate with Claude ─────────────────────────────────────────
-        const screenshotBytes = Math.round(scrapeResult.screenshotBase64.length * 0.75)
-        console.log(`[GENERATE] Using screenshot approach - screenshot size: ${screenshotBytes} bytes`)
-        send({ step: 'Generating clone with AI...' })
-        let html: string
-        let tokensUsed: number
-        let tokenToUrl: Map<string, string>
-
-        ;({ html, tokensUsed, tokenToUrl } = await generateCloneStreaming(
-          scrapeResult.html,
-          scrapeResult.screenshotBase64,
-          url,
-          // Throttled DB save — partial text is raw Claude output (tokens not yet
-          // replaced). That is acceptable for mid-stream saves; the final save
-          // below always writes fully-resolved HTML.
-          async (partialText) => {
-            await supabase
-              .from('projects')
-              .update({ html_content: partialText })
-              .eq('id', id)
-          },
-          // Every single Claude delta → pushed to client in real time
-          (accumulated) => {
-            send({ htmlChunk: accumulated })
-          }
-        ))
-
-        // Log Claude cost (Sonnet 4.6 blended ~$9/1M — actual varies by input/output ratio)
-        console.log(`[claude] clone — tokens: ${tokensUsed}, est. cost: ~$${((tokensUsed * 9) / 1_000_000).toFixed(4)}`)
-
-        // ── Persist final result ─────────────────────────────────────────
-        // injectImageUrls was already called inside generateCloneStreaming, but
-        // we call it again here as a guarantee — ensuring the DB save always
-        // receives fully-resolved URLs regardless of any internal code path.
-        const finalHtml = injectImageUrls(html, tokenToUrl)
-
-        // Confirm R2 URLs are present before writing to DB
-        const r2Urls = [...tokenToUrl.values()]
-        const hasR2Urls = r2Urls.length === 0 || r2Urls.some((u) => finalHtml.includes(u))
-        console.log(`[DB SAVE] HTML contains R2 URLs: ${hasR2Urls}`)
-
-        const projectName = scrapeResult.title || extractDomain(url) || new URL(url).hostname
-
-        await supabase
-          .from('projects')
-          .update({ name: projectName, html_content: finalHtml, status: 'complete' })
-          .eq('id', id)
-
-        if (user) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const userUpdate: Record<string, any> = {
-            tokens_used: (user.tokens_used || 0) + tokensUsed,
-            clones_count: (user.clones_count || 0) + 1,
-          }
-          if (user.plan === 'free') {
-            userUpdate.free_clones_used = (user.free_clones_used || 0) + 1
-          }
-          await supabase.from('users').update(userUpdate).eq('id', user.id)
-        }
-
-        await supabase.from('project_versions').insert({
-          project_id: id,
-          html_content: finalHtml,
-          version_number: 1,
-        })
-
-        send({ done: true, html: finalHtml })
-
-        // Completion email (non-fatal)
-        const resendKey = process.env.RESEND_API_KEY
-        const userEmail = user?.email
-        if (resendKey && userEmail) {
-          try {
-            const resend = new Resend(resendKey)
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-            await resend.emails.send({
-              from: 'IgualAI <noreply@igualai.com>',
-              to: userEmail,
-              subject: 'Your clone is ready!',
-              html: `<p>Your clone of <strong>${url}</strong> is ready.</p><p><a href="${appUrl}/editor/${id}">Open in editor</a></p>`,
-            })
-          } catch {
-            // non-fatal
-          }
-        }
+        // Timed out — mark error and notify user
+        console.log(`[DOM] Timed out waiting for project ${id} — site could not be cloned`)
+        await supabase.from('projects').update({ status: 'error' }).eq('id', id)
+        send({ error: 'This site could not be cloned. It may have bot protection or take too long to load. Please try a different URL.' })
       } catch (err) {
         const error = err as Error
         console.error('Generate error:', error)
@@ -280,11 +142,7 @@ export async function GET(
         await supabase.from('projects').update({ status: 'error' }).eq('id', id)
         send({ error: error.message || 'Generation failed' })
       } finally {
-        try {
-          controller.close()
-        } catch {
-          // already closed
-        }
+        try { controller.close() } catch { /* already closed */ }
       }
     },
   })
