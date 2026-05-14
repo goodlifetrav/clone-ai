@@ -55,7 +55,7 @@ function brandStorageKey(folderId?: string): string {
 }
 
 function loadSavedBrand(folderId?: string): BrandData {
-  if (typeof window === 'undefined') return DEFAULT_BRAND
+  if (typeof window === 'undefined' || !folderId) return DEFAULT_BRAND
   try {
     const saved = localStorage.getItem(brandStorageKey(folderId))
     if (saved) return { ...DEFAULT_BRAND, ...JSON.parse(saved) }
@@ -203,6 +203,14 @@ export function BrandWizard({
 
           {step === 1 && (
             <>
+              {!folderId && (
+                <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-2.5">
+                  <span className="text-amber-500 mt-0.5 text-sm">💡</span>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                    Move this project into a folder to save your brand and auto-fill it on every other page in that folder.
+                  </p>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">Brand Name *</Label>
                 <Input
