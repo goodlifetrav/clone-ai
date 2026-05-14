@@ -7,7 +7,6 @@ import { Header } from '@/components/header'
 import { ProjectCard } from '@/components/project-card'
 import { UrlInput } from '@/components/url-input'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,7 +25,17 @@ import {
   Pencil,
   Trash2,
   FolderPlus,
+  ShoppingBag,
+  ExternalLink,
+  CheckCircle2,
 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import type { Project, Folder as FolderType } from '@/types'
 import { cn } from '@/lib/utils'
 import { DeleteConfirmDialog } from '@/components/ui/delete-confirm-dialog'
@@ -49,6 +58,14 @@ export default function DashboardPage() {
   const [deletingFolder, setDeletingFolder] = useState<FolderType | null>(null)
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null)
   const dragProjectId = useRef<string | null>(null)
+
+  // Folder → Shopify push modal
+  const [shopifyFolder, setShopifyFolder] = useState<FolderType | null>(null)
+  const [shopifyShop, setShopifyShop] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('shopify_shop') ?? '' : '')
+  const [shopifyToken, setShopifyToken] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('shopify_token') ?? '' : '')
+  const [shopifyLoading, setShopifyLoading] = useState(false)
+  const [shopifyError, setShopifyError] = useState('')
+  const [shopifyResult, setShopifyResult] = useState<{ themeEditorUrl: string; themePreviewUrl: string; pagesDeployed: string[] } | null>(null)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -187,6 +204,30 @@ export default function DashboardPage() {
   const handleDragEnd = () => {
     dragProjectId.current = null
     setDragOverFolder(null)
+  }
+
+  const handleFolderShopifyPush = async () => {
+    if (!shopifyFolder || !shopifyShop.trim() || !shopifyToken.trim()) return
+    setShopifyLoading(true)
+    setShopifyError('')
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('shopify_shop', shopifyShop)
+        localStorage.setItem('shopify_token', shopifyToken)
+      }
+      const res = await fetch('/api/integrations/shopify/push-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId: shopifyFolder.id, shop: shopifyShop.trim(), accessToken: shopifyToken.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Push failed')
+      setShopifyResult({ themeEditorUrl: data.themeEditorUrl, themePreviewUrl: data.themePreviewUrl, pagesDeployed: data.pagesDeployed ?? [] })
+    } catch (err) {
+      setShopifyError(err instanceof Error ? err.message : 'Push failed')
+    } finally {
+      setShopifyLoading(false)
+    }
   }
 
   // ── Filtering ────────────────────────────────────────────────────────────
@@ -394,6 +435,17 @@ export default function DashboardPage() {
                               Rename
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setShopifyFolder(folder)
+                                setShopifyError('')
+                                setShopifyResult(null)
+                              }}
+                            >
+                              <ShoppingBag className="w-4 h-4 mr-2" />
+                              Push to Shopify
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
                               className="text-red-600 dark:text-red-400"
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -486,6 +538,68 @@ export default function DashboardPage() {
           onCancel={() => setDeletingFolder(null)}
         />
       )}
+
+      {/* Folder → Shopify push modal */}
+      <Dialog open={!!shopifyFolder} onOpenChange={(open) => { if (!open) { setShopifyFolder(null); setShopifyResult(null); setShopifyError('') } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingBag className="w-5 h-5" />
+              Push &ldquo;{shopifyFolder?.name}&rdquo; to Shopify
+            </DialogTitle>
+          </DialogHeader>
+
+          {shopifyResult ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                <CheckCircle2 className="w-5 h-5" />
+                <span className="font-medium">Theme pushed successfully!</span>
+              </div>
+              {shopifyResult.pagesDeployed.length > 0 && (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Pages deployed: {shopifyResult.pagesDeployed.join(', ')}
+                </p>
+              )}
+              <div className="space-y-2">
+                <a href={shopifyResult.themeEditorUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 underline">
+                  <ExternalLink className="w-3 h-3" /> Open Theme Editor
+                </a>
+                <a href={shopifyResult.themePreviewUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 underline">
+                  <ExternalLink className="w-3 h-3" /> Preview Theme
+                </a>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  The theme is unpublished. Publish it from Shopify when ready.
+                </p>
+              </div>
+              <Button className="w-full" onClick={() => { setShopifyFolder(null); setShopifyResult(null) }}>Done</Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                All completed pages in this folder will be pushed into one Shopify theme — home page, product pages, collection pages, and more.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1 block">Store URL</label>
+                  <Input value={shopifyShop} onChange={(e) => setShopifyShop(e.target.value)} placeholder="mystore.myshopify.com" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1 block">Admin API Access Token</label>
+                  <Input type="password" value={shopifyToken} onChange={(e) => setShopifyToken(e.target.value)} placeholder="shpat_xxxxxxxxxxxx" />
+                </div>
+              </div>
+              {shopifyError && <p className="text-xs text-red-500 dark:text-red-400">{shopifyError}</p>}
+              <Button className="w-full gap-2" onClick={handleFolderShopifyPush}
+                disabled={shopifyLoading || !shopifyShop.trim() || !shopifyToken.trim()}>
+                {shopifyLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingBag className="w-4 h-4" />}
+                {shopifyLoading ? 'Pushing all pages…' : 'Push All Pages to Shopify'}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
