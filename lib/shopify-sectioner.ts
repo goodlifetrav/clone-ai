@@ -105,13 +105,19 @@ function classifySection(html: string, isFirst: boolean): string {
   // Check for explicit data-igualai-section attribute set by Gemini during brand rebuild
   const dataAttr = html.match(/data-igualai-section="([^"]+)"/i)?.[1]
   if (dataAttr) {
-    const valid = ['announcement-bar', 'hero', 'product-grid', 'collection-list', 'testimonials', 'features', 'lifestyle', 'newsletter', 'content']
+    const valid = ['announcement-bar', 'hero', 'product-grid', 'product-main', 'collection-list', 'testimonials', 'features', 'lifestyle', 'newsletter', 'content']
     if (valid.includes(dataAttr)) return dataAttr
   }
 
   const lower = html.toLowerCase()
   const textLen = html.replace(/<[^>]+>/g, '').trim().length
   const imgCount = countImages(html)
+
+  // Product main section: has price + add-to-cart indicators
+  if (
+    (lower.includes('add to cart') || lower.includes('add-to-cart') || lower.includes('addtocart')) &&
+    (lower.match(/\$[\d,]+\.\d{2}/) || lower.includes('product__price') || lower.includes('product-price') || lower.includes('price'))
+  ) return 'product-main'
 
   // Announcement bar: very short text content
   if (textLen < 200 && (
@@ -400,6 +406,177 @@ function buildCollectionListSchema(heading: string, bg = '#ffffff') {
   }
 }
 
+// ── Product main Liquid ──────────────────────────────────────────────────────
+
+function productMainLiquid(bg = '#ffffff'): string {
+  const textColor = bg === '#ffffff' || bg === '#fff' ? '#111111' : '#ffffff'
+  return `<div data-igualai-id="{{ section.id }}" style="background-color:{{ section.settings.bg_color }};color:{{ section.settings.text_color }};padding:{{ section.settings.section_padding }}px 2rem">
+  <div style="max-width:1280px;margin:0 auto;display:flex;flex-wrap:wrap;gap:3rem;align-items:flex-start">
+
+    {%- comment -%}── Product gallery ─────────────────────────────────────{%- endcomment -%}
+    <div style="flex:1;min-width:280px">
+      <div style="aspect-ratio:1;overflow:hidden;border-radius:12px;background:#f5f5f5;margin-bottom:.75rem">
+        <img id="igualai-main-img-{{ section.id }}"
+          src="{{ product.featured_image | img_url: 'master' }}"
+          alt="{{ product.title | escape }}"
+          style="width:100%;height:100%;object-fit:cover;display:block">
+      </div>
+      {% if product.images.size > 1 %}
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        {% for image in product.images limit: 6 %}
+        <button type="button"
+          onclick="document.getElementById('igualai-main-img-{{ section.id }}').src='{{ image | img_url: '800x800' }}'"
+          style="width:calc(16.666% - .5rem);aspect-ratio:1;overflow:hidden;border-radius:6px;cursor:pointer;border:2px solid transparent;padding:0;background:none">
+          <img src="{{ image | img_url: '120x120', crop: 'center' }}" alt="{{ product.title | escape }}" style="width:100%;height:100%;object-fit:cover;display:block">
+        </button>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    {%- comment -%}── Product info ─────────────────────────────────────────{%- endcomment -%}
+    <div style="flex:1;min-width:280px">
+      {% if product.vendor != blank %}
+      <p style="font-size:.8rem;text-transform:uppercase;letter-spacing:.1em;opacity:.55;margin:0 0 .5rem">{{ product.vendor }}</p>
+      {% endif %}
+      <h1 style="font-size:clamp(1.5rem,3vw,2.25rem);font-weight:800;margin:0 0 1rem;line-height:1.15;font-family:var(--font-heading,inherit)">{{ product.title }}</h1>
+
+      <div style="margin-bottom:1.5rem;display:flex;align-items:baseline;gap:.75rem">
+        <span id="igualai-price-{{ section.id }}" style="font-size:1.75rem;font-weight:700">
+          {{ product.selected_or_first_available_variant.price | money }}
+        </span>
+        {% if product.compare_at_price > product.price %}
+        <span style="font-size:1rem;text-decoration:line-through;opacity:.45">
+          {{ product.compare_at_price | money }}
+        </span>
+        <span style="font-size:.8rem;font-weight:700;color:#e53e3e;background:#fff5f5;padding:.2rem .5rem;border-radius:4px">
+          SALE
+        </span>
+        {% endif %}
+      </div>
+
+      {% form 'product', product, id: 'igualai-product-form-{{ section.id }}', novalidate: true %}
+        <input type="hidden" name="id" id="igualai-variant-id-{{ section.id }}"
+          value="{{ product.selected_or_first_available_variant.id }}">
+
+        {% unless product.has_only_default_variant %}
+          {% for option in product.options_with_values %}
+          <div style="margin-bottom:1rem">
+            <label style="display:block;font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.7;margin-bottom:.375rem">
+              {{ option.name }}
+            </label>
+            <div style="display:flex;flex-wrap:wrap;gap:.5rem" data-option-index="{{ forloop.index0 }}">
+              {% for value in option.values %}
+              <button type="button"
+                class="igualai-opt-{{ section.id }}-{{ forloop.parentloop.index0 }}"
+                data-value="{{ value }}"
+                style="padding:.4rem .9rem;border:1.5px solid rgba(0,0,0,.2);border-radius:.375rem;font-size:.875rem;cursor:pointer;background:transparent;color:inherit;transition:border-color .15s">
+                {{ value }}
+              </button>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        {% endunless %}
+
+        <button type="submit" name="add"
+          {% unless product.available %}disabled{% endunless %}
+          style="width:100%;padding:.9rem 1.5rem;margin-top:.75rem;background:var(--color-button,#111);color:var(--color-button-text,#fff);border:none;border-radius:.5rem;font-size:1rem;font-weight:700;cursor:pointer;letter-spacing:.04em;transition:opacity .15s;{% unless product.available %}opacity:.5;cursor:not-allowed;{% endunless %}">
+          {% if product.available %}
+            {{ section.settings.add_to_cart_text }}
+          {% else %}
+            {{ section.settings.sold_out_text }}
+          {% endif %}
+        </button>
+      {% endform %}
+
+      {% if product.description != blank %}
+      <div style="margin-top:2rem;padding-top:1.5rem;border-top:1px solid rgba(128,128,128,.15);font-size:.9375rem;line-height:1.75;opacity:.85">
+        {{ product.description }}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var sid = {{ section.id | json }};
+  var variants = {{ product.variants | json }};
+  var numOptions = {{ product.options.size }};
+  var selected = {};
+
+  // Pre-select first value of each option
+  for (var i = 0; i < numOptions; i++) {
+    var btns = document.querySelectorAll('.igualai-opt-' + sid + '-' + i);
+    if (btns.length) { selected[i] = btns[0].getAttribute('data-value'); styleBtn(btns[0], true); }
+  }
+
+  function styleBtn(btn, active) {
+    btn.style.borderColor = active ? 'var(--color-button,#111)' : 'rgba(0,0,0,.2)';
+    btn.style.fontWeight = active ? '700' : 'normal';
+  }
+
+  for (var oi = 0; oi < numOptions; oi++) {
+    (function(optIndex) {
+      var btns = document.querySelectorAll('.igualai-opt-' + sid + '-' + optIndex);
+      btns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          btns.forEach(function(b) { styleBtn(b, false); });
+          styleBtn(btn, true);
+          selected[optIndex] = btn.getAttribute('data-value');
+          updateVariant();
+        });
+      });
+    })(oi);
+  }
+
+  function updateVariant() {
+    var variant = variants.find(function(v) {
+      return v.options.every(function(opt, i) { return opt === selected[i]; });
+    });
+    if (!variant) return;
+    var idInput = document.getElementById('igualai-variant-id-' + sid);
+    if (idInput) idInput.value = variant.id;
+    var priceEl = document.getElementById('igualai-price-' + sid);
+    if (priceEl && variant.price != null) {
+      priceEl.textContent = formatMoney(variant.price);
+    }
+    var addBtn = document.querySelector('#igualai-product-form-' + sid + ' button[name="add"]');
+    if (addBtn) {
+      if (variant.available) {
+        addBtn.disabled = false; addBtn.style.opacity = '1';
+        addBtn.textContent = {{ section.settings.add_to_cart_text | json }};
+      } else {
+        addBtn.disabled = true; addBtn.style.opacity = '.5';
+        addBtn.textContent = {{ section.settings.sold_out_text | json }};
+      }
+    }
+  }
+
+  function formatMoney(cents) {
+    return '$' + (cents / 100).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');
+  }
+})();
+</script>`
+}
+
+function buildProductMainSchema(bg = '#ffffff') {
+  const textColor = bg === '#ffffff' || bg === '#fff' ? '#111111' : '#ffffff'
+  return {
+    name: 'Product',
+    tag: 'section',
+    settings: [
+      { type: 'text', id: 'add_to_cart_text', label: 'Add to cart button text', default: 'Add to Cart' },
+      { type: 'text', id: 'sold_out_text', label: 'Sold out button text', default: 'Sold Out' },
+      { type: 'range', id: 'section_padding', label: 'Section padding', min: 20, max: 120, step: 4, default: 60, unit: 'px' },
+      { type: 'color', id: 'bg_color', label: 'Background color', default: bg },
+      { type: 'color', id: 'text_color', label: 'Text color', default: textColor },
+    ],
+    presets: [{ name: 'Product' }],
+  }
+}
+
 // ── Header/Footer section builders ───────────────────────────────────────────
 
 function buildHeaderSection(announcementHtml: string, navHtml: string): { liquid: string; defaults: Record<string, string> } {
@@ -638,6 +815,8 @@ export async function htmlToShopifySections(html: string, sectionPrefix = ''): P
       const $c = load(chunkHtml)
       const heading = $c('h2, h3').first().text().trim()
       sectionContent = injectColorVars(collectionListLiquid(heading)) + schemaTag(buildCollectionListSchema(heading, bg))
+    } else if (type === 'product-main') {
+      sectionContent = productMainLiquid(bg) + schemaTag(buildProductMainSchema(bg))
     } else if (type === 'product-grid') {
       const $c = load(chunkHtml)
       const heading = $c('h2, h3').first().text().trim()
