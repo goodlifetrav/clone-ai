@@ -431,7 +431,7 @@ function ShopifyPanel({
         <p>
           You need a{' '}
           <a
-            href="https://help.shopify.com/en/manual/apps/app-types/custom-apps"
+            href="/docs/shopify-integration"
             target="_blank"
             rel="noopener noreferrer"
             className="text-blue-600 dark:text-blue-400 underline"
