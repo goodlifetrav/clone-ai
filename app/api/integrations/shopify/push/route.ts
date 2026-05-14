@@ -24,6 +24,43 @@ async function shopifyRequest(
   return res.json()
 }
 
+type ShopifyPageType = 'index' | 'product' | 'collection' | 'cart' | 'page' | 'blog' | 'article' | 'search'
+
+/** Detect which Shopify template this page belongs to based on URL path + HTML content */
+function detectPageType(url: string | null | undefined, html: string): ShopifyPageType {
+  if (url) {
+    try {
+      const path = new URL(url).pathname.toLowerCase().replace(/\/$/, '')
+      if (path === '' || path === '/') return 'index'
+      if (path.startsWith('/products/') && path.split('/').length >= 3) return 'product'
+      if (path.startsWith('/collections/') && path.split('/').length >= 3) return 'collection'
+      if (path === '/cart') return 'cart'
+      if (path.startsWith('/blogs/') && path.split('/').length >= 4) return 'article'
+      if (path.startsWith('/blogs/')) return 'blog'
+      if (path === '/search') return 'search'
+      if (path.startsWith('/pages/') || path.startsWith('/page/')) return 'page'
+    } catch {
+      // fall through to content detection
+    }
+  }
+  // Content-based fallback
+  const lower = html.toLowerCase()
+  if (lower.includes('add-to-cart') || lower.includes('add_to_cart') ||
+      lower.includes('product-form') || lower.includes('product__price') ||
+      (lower.includes('add to cart') && lower.includes('product'))) return 'product'
+  if (lower.includes('collection-grid') || lower.includes('collection__products') ||
+      (lower.includes('collection') && lower.includes('filter'))) return 'collection'
+  if (lower.includes('cart__items') || lower.includes('cart-form') ||
+      (lower.includes('checkout') && lower.includes('cart'))) return 'cart'
+  return 'index'
+}
+
+/** Build the Shopify template JSON file path for a given page type */
+function templatePath(pageType: ShopifyPageType): string {
+  if (pageType === 'index') return 'templates/index.json'
+  return `templates/${pageType}.json`
+}
+
 /** Extract all <style> content from HTML, returning { css, htmlWithoutStyles } */
 function extractStyles(html: string): { css: string; headInner: string } {
   const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i)
@@ -73,7 +110,7 @@ export async function POST(request: NextRequest) {
     // Load project HTML
     const { data: project } = await supabase
       .from('projects')
-      .select('html_content, name, user_id')
+      .select('html_content, name, user_id, url')
       .eq('id', projectId)
       .single()
 
@@ -148,7 +185,12 @@ ${headInner.trim()}
 </body>
 </html>`
 
-    // Build templates/index.json (Shopify 2.0 format — lets editor add/remove/reorder sections)
+    // Detect which Shopify template this page belongs to
+    const pageType = detectPageType((project as { url?: string }).url, project.html_content)
+    const tmplPath = templatePath(pageType)
+    console.log(`[Shopify] Detected page type: ${pageType} → ${tmplPath}`)
+
+    // Build template JSON (Shopify 2.0 format — lets editor add/remove/reorder sections)
     const sectionsJson: Record<string, unknown> = {}
     const sectionOrder: string[] = []
 
@@ -159,7 +201,7 @@ ${headInner.trim()}
       sectionOrder.push(id)
     }
 
-    const indexJson = JSON.stringify({
+    const templateJson = JSON.stringify({
       sections: sectionsJson,
       order: sectionOrder,
     }, null, 2)
@@ -167,7 +209,7 @@ ${headInner.trim()}
     // Assemble all theme files
     const themeFiles: Record<string, string> = {
       'layout/theme.liquid': themeLiquid,
-      'templates/index.json': indexJson,
+      [tmplPath]: templateJson,
       'assets/style.css': css || '/* No styles extracted */',
       'config/settings_schema.json': JSON.stringify([
         {
@@ -236,9 +278,9 @@ ${headInner.trim()}
       'layout/theme.liquid',
       'assets/style.css',
       'config/settings_schema.json',
-      // sections must exist before templates/index.json references them
+      // sections must exist before the template JSON references them
       ...Object.keys(themeFiles).filter(k => k.startsWith('sections/')),
-      'templates/index.json',
+      tmplPath,
     ]
 
     for (const key of uploadOrder) {
@@ -258,7 +300,7 @@ ${headInner.trim()}
     const themeEditorUrl = `https://${shopDomain}/admin/themes/${themeId}/editor`
     const themePreviewUrl = `https://${shopDomain}/?preview_theme_id=${themeId}`
 
-    return NextResponse.json({ themeEditorUrl, themePreviewUrl, themeId })
+    return NextResponse.json({ themeEditorUrl, themePreviewUrl, themeId, pageType })
   } catch (err) {
     const error = err as Error
     console.error('Shopify push error:', error)
