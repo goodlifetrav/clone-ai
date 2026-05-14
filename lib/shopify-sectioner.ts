@@ -33,6 +33,31 @@ function bodyHtml($: CheerioAPI): string {
   return $('body').html() ?? ''
 }
 
+/** Detect the dominant background color of a section from inline styles or Tailwind classes */
+function detectBgColor(html: string): string {
+  const inline = html.match(/background(?:-color)?\s*:\s*(#[0-9a-f]{3,8})/i)
+  if (inline) return inline[1]
+  const arbitrary = html.match(/\bbg-\[#([0-9a-f]{3,8})\]/i)
+  if (arbitrary) return `#${arbitrary[1]}`
+  if (/\b(?:bg-black|bg-gray-9\d\d?|bg-neutral-9\d\d?|bg-zinc-9\d\d?|bg-slate-9\d\d?)\b/i.test(html)) return '#000000'
+  if (/\b(?:bg-gray-8\d\d?|bg-neutral-8\d\d?)\b/i.test(html)) return '#1f2937'
+  if (/\b(?:bg-gray-7\d\d?|bg-neutral-7\d\d?)\b/i.test(html)) return '#374151'
+  return '#ffffff'
+}
+
+/** Inject bg_color and text_color Liquid vars onto the outermost element's inline style.
+ *  Inline style beats Tailwind utility classes so the picker always takes effect. */
+function injectColorVars(html: string): string {
+  const $ = load(html)
+  const outer = $('body').children().first()
+  if (outer.length) {
+    const existing = (outer.attr('style') ?? '').replace(/;?\s*$/, '')
+    outer.attr('style', `${existing}${existing ? ';' : ''}background-color:{{ section.settings.bg_color }};color:{{ section.settings.text_color }}`)
+    return bodyHtml($)
+  }
+  return `<div style="background-color:{{ section.settings.bg_color }};color:{{ section.settings.text_color }}">${html}</div>`
+}
+
 /** Count visual "images" — img tags, CSS backgrounds, gradients, and IgualAI product card placeholders */
 function countImages(html: string): number {
   const imgTags = (html.match(/<img[\s>]/gi) ?? []).length
@@ -109,7 +134,7 @@ function classifySection(html: string, isFirst: boolean): string {
 
 // ── Schema builders ──────────────────────────────────────────────────────────
 
-function buildHeroSchema(d: Record<string, string>) {
+function buildHeroSchema(d: Record<string, string>, bg = '#000000') {
   return {
     name: 'Hero',
     settings: [
@@ -120,12 +145,14 @@ function buildHeroSchema(d: Record<string, string>) {
       setting({ type: 'text', id: 'btn2_label', label: 'Button 2 text' }, d.btn2_label),
       { type: 'url', id: 'btn2_url', label: 'Button 2 URL' },
       { type: 'image_picker', id: 'bg_image', label: 'Background image' },
+      { type: 'color', id: 'bg_color', label: 'Background color', default: bg },
+      { type: 'color', id: 'text_color', label: 'Text color', default: '#ffffff' },
     ],
     presets: [{ name: 'Hero' }],
   }
 }
 
-function buildProductGridSchema(d: Record<string, string>) {
+function buildProductGridSchema(d: Record<string, string>, bg = '#ffffff') {
   return {
     name: 'Product Grid',
     settings: [
@@ -134,19 +161,22 @@ function buildProductGridSchema(d: Record<string, string>) {
       { type: 'range', id: 'products_to_show', label: 'Products to show', min: 2, max: 12, step: 1, default: 6 },
       { type: 'range', id: 'columns', label: 'Columns', min: 2, max: 4, step: 1, default: 3 },
       { type: 'checkbox', id: 'show_price', label: 'Show price', default: true },
+      { type: 'color', id: 'bg_color', label: 'Background color', default: bg },
+      { type: 'color', id: 'text_color', label: 'Text color', default: '#111111' },
     ],
     presets: [{ name: 'Product Grid' }],
   }
 }
 
-function buildContentSchema(name: string, d: Record<string, string>, hasImages: boolean) {
+function buildContentSchema(name: string, d: Record<string, string>, hasImages: boolean, bg = '#ffffff') {
   return {
     name,
     settings: [
       setting({ type: 'text', id: 'heading', label: 'Heading' }, d.heading),
       setting({ type: 'textarea', id: 'subheading', label: 'Subheading' }, d.subheading),
       ...(hasImages ? [{ type: 'collection', id: 'collection', label: 'Link a collection (optional)' }] : []),
-      { type: 'color', id: 'bg_color', label: 'Background color', default: '#ffffff' },
+      { type: 'color', id: 'bg_color', label: 'Background color', default: bg },
+      { type: 'color', id: 'text_color', label: 'Text color', default: bg === '#ffffff' ? '#111111' : '#ffffff' },
     ],
     presets: [{ name }],
   }
@@ -324,40 +354,88 @@ ${schemaTag(buildHeaderSchema(d))}`
 }
 
 function buildFooterSection(rawFooterHtml: string): string {
-  const d: { newsletterHeading?: string; subscribeBtn?: string } = {}
-  let footerHtml = rawFooterHtml
-
-  // Detect email input in footer
-  const emailPos = rawFooterHtml.search(/type=["']email["']|name=["']email["']|placeholder=["'][^"']*email/i)
+  // Detect newsletter heading from content before the email input
+  let newsletterHeading = ''
+  let subscribeBtn = 'Subscribe'
+  const emailPos = rawFooterHtml.search(/type=["']email["']|placeholder=["'][^"']*email/i)
   if (emailPos > 0) {
-    // Find the LAST heading that appears BEFORE the email input in raw HTML order.
-    // This is the newsletter heading — column headers come AFTER the email form.
-    const beforeEmail = rawFooterHtml.slice(0, emailPos)
-    const headingMatches = [...beforeEmail.matchAll(/<(h[1-4])[^>]*>([\s\S]*?)<\/h[1-4]>/gi)]
+    const headingMatches = [...rawFooterHtml.slice(0, emailPos).matchAll(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/gi)]
     if (headingMatches.length > 0) {
-      const lastMatch = headingMatches[headingMatches.length - 1]
-      const tag = lastMatch[1]
-      const headingText = lastMatch[2].replace(/<[^>]+>/g, '').trim()
-      if (headingText) {
-        d.newsletterHeading = headingText
-        footerHtml = footerHtml.replace(lastMatch[0], `<${tag}>{{ section.settings.newsletter_heading }}</${tag}>`)
-      }
+      newsletterHeading = headingMatches[headingMatches.length - 1][1].replace(/<[^>]+>/g, '').trim()
     }
-
-    // Find subscribe button (search full HTML, replace text content only)
-    footerHtml = footerHtml.replace(
-      /(<(?:button|a)[^>]*>)([\s\S]*?SUBSCRIBE[\s\S]*?)(<\/(?:button|a)>)/i,
-      (_, open, text, close) => {
-        d.subscribeBtn = text.trim()
-        return `${open}{{ section.settings.subscribe_btn }}${close}`
-      }
-    )
+    const btnMatch = rawFooterHtml.match(/(<(?:button|a)[^>]*>)([\s\S]*?SUBSCRIBE[\s\S]*?)(<\/(?:button|a)>)/i)
+    if (btnMatch) subscribeBtn = btnMatch[2].trim()
   }
 
-  return `<div style="background-color:{{ section.settings.bg_color }};color:{{ section.settings.text_color }}">
-${footerHtml}
-</div>
-${schemaTag(buildFooterSchema(d))}`
+  // Detect footer background color
+  const bg = detectBgColor(rawFooterHtml) || '#000000'
+  const isDark = /^#(?:0[0-9a-f]|1[0-5][0-9a-f]|2[0-3])/i.test(bg) || bg === '#000000'
+  const textDefault = isDark ? '#ffffff' : '#111111'
+
+  // Build a fully Liquid-powered footer — nav columns render from link_list settings
+  // so users can edit/replace menus directly in the Shopify theme editor.
+  const colStyle = 'style="display:inline-block;vertical-align:top;min-width:140px;margin-right:2rem;margin-bottom:1.5rem"'
+  const navColLiquid = (menuId: string) => `
+  {%- assign _nav = linklists[section.settings.${menuId}] -%}
+  {% if _nav.links.size > 0 %}
+  <div ${colStyle}>
+    <h4 style="font-weight:700;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;margin:0 0 .75rem;opacity:.65">{{ _nav.title }}</h4>
+    <ul style="list-style:none;padding:0;margin:0">
+      {% for _link in _nav.links %}
+      <li style="margin-bottom:.4rem"><a href="{{ _link.url }}" style="color:inherit;text-decoration:none;font-size:.875rem;opacity:.8">{{ _link.title }}</a></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}`
+
+  const liquid = `<footer style="background-color:{{ section.settings.bg_color }};color:{{ section.settings.text_color }};padding:3rem 2rem 2rem">
+
+  {% if section.settings.newsletter_heading != blank %}
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;padding-bottom:2rem;margin-bottom:2rem;border-bottom:1px solid rgba(128,128,128,.3)">
+    <h2 style="font-size:1.4rem;font-weight:700;margin:0;letter-spacing:.04em">{{ section.settings.newsletter_heading }}</h2>
+    <form method="post" action="/contact#ContactFooter" accept-charset="UTF-8" style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <input type="hidden" name="form_type" value="customer">
+      <input type="hidden" name="utf8" value="✓">
+      <input type="email" name="contact[email]" placeholder="Enter your email" required
+        style="padding:.5rem 1rem;border-radius:.375rem;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font-size:.875rem;min-width:180px">
+      <button type="submit"
+        style="padding:.5rem 1.25rem;border-radius:.375rem;background:{{ section.settings.btn_color }};color:{{ section.settings.btn_text_color }};border:none;cursor:pointer;font-weight:600;font-size:.875rem">
+        {{ section.settings.subscribe_btn }}
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div style="margin-bottom:2rem">
+    ${navColLiquid('menu1')}${navColLiquid('menu2')}${navColLiquid('menu3')}
+  </div>
+
+  <div style="padding-top:1.25rem;border-top:1px solid rgba(128,128,128,.3);font-size:.75rem;opacity:.55">
+    {{ section.settings.copyright | default: shop.name }}
+  </div>
+
+</footer>`
+
+  const schema = {
+    name: 'Footer',
+    class: 'section-footer',
+    settings: [
+      ...(newsletterHeading ? [
+        setting({ type: 'text', id: 'newsletter_heading', label: 'Newsletter heading' }, newsletterHeading),
+        setting({ type: 'text', id: 'subscribe_btn', label: 'Subscribe button text' }, subscribeBtn),
+        { type: 'color', id: 'btn_color', label: 'Subscribe button color', default: '#1a5c3a' },
+        { type: 'color', id: 'btn_text_color', label: 'Subscribe button text color', default: '#ffffff' },
+      ] : []),
+      { type: 'link_list', id: 'menu1', label: 'Footer links column 1', default: 'footer' },
+      { type: 'link_list', id: 'menu2', label: 'Footer links column 2' },
+      { type: 'link_list', id: 'menu3', label: 'Footer links column 3' },
+      { type: 'text', id: 'copyright', label: 'Copyright text' },
+      { type: 'color', id: 'bg_color', label: 'Background color', default: bg },
+      { type: 'color', id: 'text_color', label: 'Text color', default: textDefault },
+    ],
+  }
+
+  return liquid + schemaTag(schema)
 }
 
 // ── Main export ──────────────────────────────────────────────────────────────
@@ -444,30 +522,31 @@ export async function htmlToShopifySections(html: string): Promise<ShopifySectio
     const imgCount = countImages(chunkHtml)
 
     let sectionContent = ''
+    const bg = detectBgColor(chunkHtml)
 
     if (type === 'hero') {
       const { liquid, defaults } = liquidifyHero(chunkHtml)
-      sectionContent = liquid + schemaTag(buildHeroSchema(defaults))
+      sectionContent = injectColorVars(liquid) + schemaTag(buildHeroSchema(defaults, bg))
     } else if (type === 'product-grid') {
       const $c = load(chunkHtml)
       const heading = $c('h2, h3').first().text().trim()
-      sectionContent = productGridLiquid(heading) + schemaTag(buildProductGridSchema({ heading }))
+      sectionContent = injectColorVars(productGridLiquid(heading)) + schemaTag(buildProductGridSchema({ heading }, bg))
     } else if (type === 'newsletter') {
-      const { liquid, defaults } = liquidifyHero(chunkHtml)  // reuse — finds heading + button
-      sectionContent = liquid + schemaTag({
+      const { liquid, defaults } = liquidifyHero(chunkHtml)
+      sectionContent = injectColorVars(liquid) + schemaTag({
         name: 'Newsletter',
         settings: [
           setting({ type: 'text', id: 'heading', label: 'Heading' }, defaults.heading),
           setting({ type: 'text', id: 'btn1_label', label: 'Button text' }, defaults.btn1_label),
-          { type: 'color', id: 'bg_color', label: 'Background color', default: '#000000' },
-          { type: 'color', id: 'text_color', label: 'Text color', default: '#ffffff' },
+          { type: 'color', id: 'bg_color', label: 'Background color', default: bg },
+          { type: 'color', id: 'text_color', label: 'Text color', default: bg === '#ffffff' ? '#111111' : '#ffffff' },
         ],
         presets: [{ name: 'Newsletter' }],
       })
     } else {
       const { liquid, defaults } = liquidifyContent(chunkHtml)
       const displayName = type.charAt(0).toUpperCase() + type.slice(1).replace(/-/g, ' ')
-      sectionContent = liquid + schemaTag(buildContentSchema(displayName, defaults, imgCount >= 2))
+      sectionContent = injectColorVars(liquid) + schemaTag(buildContentSchema(displayName, defaults, imgCount >= 2, bg))
     }
 
     sections[name] = sectionContent
