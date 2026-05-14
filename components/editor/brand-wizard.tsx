@@ -49,6 +49,17 @@ const DEFAULT_BRAND: BrandData = {
   ctaText: 'Get Started',
 }
 
+const BRAND_STORAGE_KEY = 'igualai_brand_profile'
+
+function loadSavedBrand(): BrandData {
+  if (typeof window === 'undefined') return DEFAULT_BRAND
+  try {
+    const saved = localStorage.getItem(BRAND_STORAGE_KEY)
+    if (saved) return { ...DEFAULT_BRAND, ...JSON.parse(saved) }
+  } catch { /* ignore */ }
+  return DEFAULT_BRAND
+}
+
 export function BrandWizard({
   projectId,
   onClose,
@@ -59,7 +70,7 @@ export function BrandWizard({
   onImageGenStatus,
 }: BrandWizardProps) {
   const [step, setStep] = useState(1)
-  const [brand, setBrand] = useState<BrandData>(DEFAULT_BRAND)
+  const [brand, setBrand] = useState<BrandData>(loadSavedBrand)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const update = (key: keyof BrandData, value: string) =>
@@ -74,6 +85,8 @@ export function BrandWizard({
 
   const handleSubmit = async () => {
     setIsSubmitting(true)
+    // Save brand profile so it pre-fills on the next page rebuild
+    try { localStorage.setItem(BRAND_STORAGE_KEY, JSON.stringify(brand)) } catch { /* ignore */ }
     onRebuildStart()
     onClose()
 

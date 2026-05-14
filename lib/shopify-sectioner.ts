@@ -409,9 +409,23 @@ function buildHeaderSection(announcementHtml: string, navHtml: string): { liquid
   if (announcementHtml) {
     const $a = load(announcementHtml)
     d.announcement_text = $a('body').text().trim().slice(0, 255)
-    // Try to get background color from inline style
     const bgMatch = announcementHtml.match(/background(?:-color)?\s*:\s*(#[0-9a-f]{3,6}|rgb[^;)"]+)/i)
     if (bgMatch) d.announcement_bg = bgMatch[1]
+  }
+
+  // Replace the first <img> in the nav (the logo) with a Liquid image_picker variable.
+  // Falls back to shop.name text if no logo is uploaded in the Shopify editor.
+  if (navHtml) {
+    const $nav = load(navHtml)
+    const logoImg = $nav('img').first()
+    if (logoImg.length) {
+      const existingStyle = logoImg.attr('style') ?? ''
+      const heightStyle = existingStyle.match(/(?:max-)?height\s*:[^;]+/i)?.[0] ?? 'max-height:50px'
+      logoImg.replaceWith(
+        `{% if section.settings.logo != blank %}<img src="{{ section.settings.logo | img_url: '300x' }}" alt="{{ shop.name }}" style="${heightStyle};width:auto;display:inline-block">{% else %}<span style="font-weight:700;font-size:1.1rem;letter-spacing:.02em">{{ shop.name }}</span>{% endif %}`
+      )
+      navHtml = $nav('body').html() ?? navHtml
+    }
   }
 
   const announcementLiquid = announcementHtml
