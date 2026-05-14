@@ -84,6 +84,11 @@ function classifySection(html: string, isFirst: boolean): string {
     (lower.includes('btn') || lower.includes('button') || (lower.includes('<a ') && lower.includes('href')))
   ) return 'hero'
 
+  // Newsletter: has an email input field
+  if (lower.includes('type="email"') || lower.includes("type='email'") ||
+      (lower.includes('subscribe') && lower.includes('<input')) ||
+      (lower.includes('newsletter') && lower.includes('<input'))) return 'newsletter'
+
   // Testimonials
   if (lower.includes('review') || lower.includes('testimonial') || lower.includes('★')) return 'testimonials'
 
@@ -317,20 +322,31 @@ function buildFooterSection(footerHtml: string): string {
   const $ = load(footerHtml)
   const d: { newsletterHeading?: string; subscribeBtn?: string } = {}
 
-  // Liquidify newsletter/subscribe heading inside footer
-  const heading = $('h1, h2, h3, h4').first()
-  if (heading.length) {
-    d.newsletterHeading = heading.text().trim()
-    heading.html('{{ section.settings.newsletter_heading }}')
-  }
+  // Only liquidify newsletter content if the footer contains an actual email input
+  const hasEmailInput = $('input[type="email"], input[name="email"]').length > 0
+  if (hasEmailInput) {
+    // Find the heading that's closest (in DOM order) to the email input — not column headers
+    const emailEl = $('input[type="email"], input[name="email"]').first()
+    const emailParent = emailEl.closest('div, section, form')
+    // Look for heading inside the email's container, or just before it
+    let newsletterH = emailParent.find('h1, h2, h3, h4').first()
+    if (!newsletterH.length) {
+      // Try previous sibling containers
+      newsletterH = emailParent.prevAll().find('h1, h2, h3, h4').last()
+    }
+    if (newsletterH.length) {
+      d.newsletterHeading = newsletterH.text().trim()
+      newsletterH.html('{{ section.settings.newsletter_heading }}')
+    }
 
-  // Liquidify subscribe button text
-  const subscribeBtn = $('button, [class*="btn"], [class*="button"]').filter((_, el) => {
-    return /subscribe|sign.?up|join|submit/i.test($(el).text())
-  }).first()
-  if (subscribeBtn.length) {
-    d.subscribeBtn = subscribeBtn.text().trim()
-    subscribeBtn.html('{{ section.settings.subscribe_btn }}')
+    // Liquidify subscribe button text
+    const subscribeBtn = $('button, [class*="btn"], [class*="button"]').filter((_, el) => {
+      return /subscribe|sign.?up|join|submit/i.test($(el).text())
+    }).first()
+    if (subscribeBtn.length) {
+      d.subscribeBtn = subscribeBtn.text().trim()
+      subscribeBtn.html('{{ section.settings.subscribe_btn }}')
+    }
   }
 
   const liquidHtml = $('body').html() ?? footerHtml
