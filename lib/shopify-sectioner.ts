@@ -407,6 +407,19 @@ function buildFooterSection(rawFooterHtml: string): string {
   {% endif %}
 
   <div style="margin-bottom:2rem">
+    {% if section.settings.logo != blank or section.settings.brand_text != blank %}
+    <div style="display:inline-block;vertical-align:top;min-width:180px;margin-right:2.5rem;margin-bottom:1.5rem;max-width:240px">
+      {% if section.settings.logo != blank %}
+        <img src="{{ section.settings.logo | img_url: '200x' }}" alt="{{ shop.name }}" style="max-height:50px;width:auto;margin-bottom:.75rem;display:block">
+      {% endif %}
+      {% if section.settings.brand_text != blank %}
+        <p style="font-weight:700;font-size:1rem;margin:0 0 .375rem">{{ section.settings.brand_text }}</p>
+      {% endif %}
+      {% if section.settings.brand_description != blank %}
+        <p style="font-size:.8rem;opacity:.65;margin:0;line-height:1.5">{{ section.settings.brand_description }}</p>
+      {% endif %}
+    </div>
+    {% endif %}
     ${navColLiquid('menu1')}${navColLiquid('menu2')}${navColLiquid('menu3')}
   </div>
 
@@ -420,6 +433,9 @@ function buildFooterSection(rawFooterHtml: string): string {
     name: 'Footer',
     class: 'section-footer',
     settings: [
+      { type: 'image_picker', id: 'logo', label: 'Footer logo' },
+      { type: 'text', id: 'brand_text', label: 'Brand name / tagline' },
+      { type: 'textarea', id: 'brand_description', label: 'Brand description (optional)' },
       ...(newsletterHeading ? [
         setting({ type: 'text', id: 'newsletter_heading', label: 'Newsletter heading' }, newsletterHeading),
         setting({ type: 'text', id: 'subscribe_btn', label: 'Subscribe button text' }, subscribeBtn),
