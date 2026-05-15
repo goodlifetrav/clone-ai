@@ -18,6 +18,8 @@ interface BrandData {
   headline: string
   subheadline: string
   ctaText: string
+  productName: string
+  productDescription: string
 }
 
 interface Folder {
@@ -49,6 +51,8 @@ const DEFAULT_BRAND: BrandData = {
   headline: '',
   subheadline: '',
   ctaText: 'Get Started',
+  productName: '',
+  productDescription: '',
 }
 
 function detectPageType(url?: string): 'homepage' | 'product' | 'collection' | 'other' {
@@ -80,10 +84,16 @@ export function BrandWizard({
   const pageType = detectPageType(projectUrl)
   const isHomepage = pageType === 'homepage'
 
+  const step3 = isHomepage
+    ? { id: 3, title: 'Content', description: 'Key copy for your homepage' }
+    : pageType === 'product'
+      ? { id: 3, title: 'Product', description: 'Tell us about this product' }
+      : null
+
   const STEPS = [
     { id: 1, title: 'Brand Identity', description: 'Tell us about your brand' },
     { id: 2, title: 'Colors', description: 'Choose your brand colors' },
-    ...(isHomepage ? [{ id: 3, title: 'Content', description: 'Key copy for your homepage' }] : []),
+    ...(step3 ? [step3] : []),
   ]
 
   const [step, setStep] = useState(1)
@@ -165,10 +175,13 @@ export function BrandWizard({
 
   const saveBrandToFolder = async (data: BrandData) => {
     if (!activeFolderId) return
+    // Exclude product-specific fields — they belong to individual pages, not the shared brand
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { productName, productDescription, ...brandProfile } = data
     await fetch(`/api/folders/${activeFolderId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ brand_profile: data }),
+      body: JSON.stringify({ brand_profile: brandProfile }),
     }).catch(() => {})
   }
 
@@ -451,6 +464,31 @@ export function BrandWizard({
                       </div>
                     </div>
                   ))}
+                </>
+              )}
+
+              {step === 3 && pageType === 'product' && (
+                <>
+                  <p className="text-xs text-neutral-500">Help the AI style this product page. Both fields are optional — leave blank to auto-generate from your brand.</p>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Product Name <span className="text-neutral-400">(optional)</span></Label>
+                    <Input
+                      placeholder="e.g. Norse Winter Beard Oil"
+                      value={brand.productName}
+                      onChange={(e) => update('productName', e.target.value)}
+                      className="h-9 text-sm"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Describe this product <span className="text-neutral-400">(optional)</span></Label>
+                    <textarea
+                      placeholder="e.g. Cold-weather beard oil with pine and cedarwood. Deep conditioning formula for dry, coarse beards. Best seller in the winter collection."
+                      value={brand.productDescription}
+                      onChange={(e) => update('productDescription', e.target.value)}
+                      className="w-full h-28 px-3 py-2 text-sm rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white placeholder:text-neutral-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
                 </>
               )}
 
