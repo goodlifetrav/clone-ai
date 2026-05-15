@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -50,19 +50,6 @@ const DEFAULT_BRAND: BrandData = {
   ctaText: 'Get Started',
 }
 
-function brandStorageKey(folderId?: string): string {
-  return folderId ? `igualai_brand_folder_${folderId}` : 'igualai_brand_profile'
-}
-
-function loadSavedBrand(folderId?: string): BrandData {
-  if (typeof window === 'undefined' || !folderId) return DEFAULT_BRAND
-  try {
-    const saved = localStorage.getItem(brandStorageKey(folderId))
-    if (saved) return { ...DEFAULT_BRAND, ...JSON.parse(saved) }
-  } catch { /* ignore */ }
-  return DEFAULT_BRAND
-}
-
 export function BrandWizard({
   projectId,
   folderId,
@@ -74,20 +61,35 @@ export function BrandWizard({
   onImageGenStatus,
 }: BrandWizardProps) {
   const [step, setStep] = useState(1)
-  const [brand, setBrand] = useState<BrandData>(() => loadSavedBrand(folderId))
+  const [brand, setBrand] = useState<BrandData>(DEFAULT_BRAND)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [loading, setLoading] = useState(!!folderId)
 
-  const saveBrand = (data: BrandData) => {
+  // Load brand from folder on mount
+  useEffect(() => {
     if (!folderId) return
-    try { localStorage.setItem(brandStorageKey(folderId), JSON.stringify(data)) } catch { /* ignore */ }
+    fetch(`/api/folders/${folderId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.folder?.brand_profile) {
+          setBrand({ ...DEFAULT_BRAND, ...data.folder.brand_profile })
+        }
+      })
+      .catch(() => {/* ignore */})
+      .finally(() => setLoading(false))
+  }, [folderId])
+
+  const saveBrandToFolder = async (data: BrandData) => {
+    if (!folderId) return
+    await fetch(`/api/folders/${folderId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brand_profile: data }),
+    }).catch(() => {/* ignore */})
   }
 
   const update = (key: keyof BrandData, value: string) =>
-    setBrand((prev) => {
-      const next = { ...prev, [key]: value }
-      saveBrand(next)
-      return next
-    })
+    setBrand((prev) => ({ ...prev, [key]: value }))
 
   const canNext = () => {
     if (step === 1) return brand.brandName.trim().length > 0 && brand.brandDescription.trim().length > 0
@@ -96,9 +98,14 @@ export function BrandWizard({
     return false
   }
 
+  const handleNext = async () => {
+    await saveBrandToFolder(brand)
+    setStep(step + 1)
+  }
+
   const handleSubmit = async () => {
     setIsSubmitting(true)
-    saveBrand(brand)
+    await saveBrandToFolder(brand)
     onRebuildStart()
     onClose()
 
@@ -208,117 +215,124 @@ export function BrandWizard({
 
         {/* Step content */}
         <div className="px-6 py-4 space-y-4 min-h-[240px]">
-
-          {step === 1 && (
+          {loading ? (
+            <div className="flex items-center justify-center h-40">
+              <div className="w-5 h-5 rounded-full border-2 border-purple-600 border-t-transparent animate-spin" />
+            </div>
+          ) : (
             <>
-              {!folderId && (
-                <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-2.5">
-                  <span className="text-amber-500 mt-0.5 text-sm">💡</span>
-                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                    Move this project into a folder to save your brand and auto-fill it on every other page in that folder.
-                  </p>
-                </div>
-              )}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Brand Name *</Label>
-                <Input
-                  placeholder="e.g. Acme Corp"
-                  value={brand.brandName}
-                  onChange={(e) => update('brandName', e.target.value)}
-                  className="h-9 text-sm"
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Tagline</Label>
-                <Input
-                  placeholder="e.g. Build faster, ship better"
-                  value={brand.tagline}
-                  onChange={(e) => update('tagline', e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Describe your brand *</Label>
-                <textarea
-                  placeholder="e.g. We help startups automate their marketing with AI. Our customers are B2B SaaS founders who want to grow without hiring a big team."
-                  value={brand.brandDescription}
-                  onChange={(e) => update('brandDescription', e.target.value)}
-                  className="w-full h-24 px-3 py-2 text-sm rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white placeholder:text-neutral-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Logo URL <span className="text-neutral-400">(optional)</span></Label>
-                <Input
-                  placeholder="https://yoursite.com/logo.png"
-                  value={brand.logoUrl}
-                  onChange={(e) => update('logoUrl', e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
-            </>
-          )}
-
-          {step === 2 && (
-            <>
-              <p className="text-xs text-neutral-500">Pick your brand colors. These will be applied throughout the redesigned site.</p>
-              {[
-                { key: 'primaryColor', label: 'Primary Color', hint: 'Main brand color — navbars, buttons, headings' },
-                { key: 'secondaryColor', label: 'Secondary Color', hint: 'Background sections, cards' },
-                { key: 'accentColor', label: 'Accent / CTA Color', hint: 'Call-to-action buttons, highlights' },
-              ].map(({ key, label, hint }) => (
-                <div key={key} className="space-y-1.5">
-                  <Label className="text-xs font-medium">{label}</Label>
-                  <p className="text-xs text-neutral-400">{hint}</p>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={brand[key as keyof BrandData]}
-                      onChange={(e) => update(key as keyof BrandData, e.target.value)}
-                      className="w-10 h-9 rounded cursor-pointer border border-neutral-200 dark:border-neutral-700 p-0.5 bg-white"
-                    />
+              {step === 1 && (
+                <>
+                  {!folderId && (
+                    <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-2.5">
+                      <span className="text-amber-500 mt-0.5 text-sm">💡</span>
+                      <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                        Add this project to a folder to share brand settings across all pages of the same site.
+                      </p>
+                    </div>
+                  )}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Brand Name *</Label>
                     <Input
-                      value={brand[key as keyof BrandData]}
-                      onChange={(e) => update(key as keyof BrandData, e.target.value)}
-                      placeholder="#6366f1"
-                      className="h-9 text-sm font-mono"
+                      placeholder="e.g. Acme Corp"
+                      value={brand.brandName}
+                      onChange={(e) => update('brandName', e.target.value)}
+                      className="h-9 text-sm"
+                      autoFocus
                     />
                   </div>
-                </div>
-              ))}
-            </>
-          )}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Tagline</Label>
+                    <Input
+                      placeholder="e.g. Build faster, ship better"
+                      value={brand.tagline}
+                      onChange={(e) => update('tagline', e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Describe your brand *</Label>
+                    <textarea
+                      placeholder="e.g. We help startups automate their marketing with AI. Our customers are B2B SaaS founders who want to grow without hiring a big team."
+                      value={brand.brandDescription}
+                      onChange={(e) => update('brandDescription', e.target.value)}
+                      className="w-full h-24 px-3 py-2 text-sm rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white placeholder:text-neutral-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Logo URL <span className="text-neutral-400">(optional)</span></Label>
+                    <Input
+                      placeholder="https://yoursite.com/logo.png"
+                      value={brand.logoUrl}
+                      onChange={(e) => update('logoUrl', e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                </>
+              )}
 
-          {step === 3 && (
-            <>
-              <p className="text-xs text-neutral-500">Key copy for your site. Leave blank to auto-generate from your brand description.</p>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Hero Headline</Label>
-                <Input
-                  placeholder={`e.g. ${brand.brandName || 'Your Brand'} — ${brand.tagline || 'Your Tagline'}`}
-                  value={brand.headline}
-                  onChange={(e) => update('headline', e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Hero Subheadline</Label>
-                <Input
-                  placeholder="e.g. The all-in-one platform for modern teams"
-                  value={brand.subheadline}
-                  onChange={(e) => update('subheadline', e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">CTA Button Text</Label>
-                <Input
-                  placeholder="e.g. Get Started, Book a Demo, Try for Free"
-                  value={brand.ctaText}
-                  onChange={(e) => update('ctaText', e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
+              {step === 2 && (
+                <>
+                  <p className="text-xs text-neutral-500">Pick your brand colors. These will be applied throughout the redesigned site.</p>
+                  {[
+                    { key: 'primaryColor', label: 'Primary Color', hint: 'Main brand color — navbars, buttons, headings' },
+                    { key: 'secondaryColor', label: 'Secondary Color', hint: 'Background sections, cards' },
+                    { key: 'accentColor', label: 'Accent / CTA Color', hint: 'Call-to-action buttons, highlights' },
+                  ].map(({ key, label, hint }) => (
+                    <div key={key} className="space-y-1.5">
+                      <Label className="text-xs font-medium">{label}</Label>
+                      <p className="text-xs text-neutral-400">{hint}</p>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          value={brand[key as keyof BrandData]}
+                          onChange={(e) => update(key as keyof BrandData, e.target.value)}
+                          className="w-10 h-9 rounded cursor-pointer border border-neutral-200 dark:border-neutral-700 p-0.5 bg-white"
+                        />
+                        <Input
+                          value={brand[key as keyof BrandData]}
+                          onChange={(e) => update(key as keyof BrandData, e.target.value)}
+                          placeholder="#6366f1"
+                          className="h-9 text-sm font-mono"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {step === 3 && (
+                <>
+                  <p className="text-xs text-neutral-500">Key copy for your site. Leave blank to auto-generate from your brand description.</p>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Hero Headline</Label>
+                    <Input
+                      placeholder={`e.g. ${brand.brandName || 'Your Brand'} — ${brand.tagline || 'Your Tagline'}`}
+                      value={brand.headline}
+                      onChange={(e) => update('headline', e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Hero Subheadline</Label>
+                    <Input
+                      placeholder="e.g. The all-in-one platform for modern teams"
+                      value={brand.subheadline}
+                      onChange={(e) => update('subheadline', e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">CTA Button Text</Label>
+                    <Input
+                      placeholder="e.g. Get Started, Book a Demo, Try for Free"
+                      value={brand.ctaText}
+                      onChange={(e) => update('ctaText', e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -338,8 +352,8 @@ export function BrandWizard({
           {step < STEPS.length ? (
             <Button
               size="sm"
-              onClick={() => setStep(step + 1)}
-              disabled={!canNext()}
+              onClick={handleNext}
+              disabled={!canNext() || loading}
               className="gap-1 text-xs bg-purple-600 hover:bg-purple-500 text-white"
             >
               Next
@@ -349,7 +363,7 @@ export function BrandWizard({
             <Button
               size="sm"
               onClick={handleSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitting || loading}
               className="gap-1.5 text-xs bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white border-0"
             >
               <Sparkles className="w-3 h-3" />
