@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { Sparkles, ArrowRight, ArrowLeft, X, FolderOpen } from 'lucide-react'
+import { Sparkles, ArrowRight, ArrowLeft, X, FolderOpen, FolderPlus, Check, ChevronDown } from 'lucide-react'
 
 interface BrandData {
   brandName: string
@@ -20,6 +20,11 @@ interface BrandData {
   ctaText: string
 }
 
+interface Folder {
+  id: string
+  name: string
+}
+
 interface BrandWizardProps {
   projectId: string
   projectUrl?: string
@@ -30,6 +35,7 @@ interface BrandWizardProps {
   onRebuildComplete: (html: string) => void
   onRebuildError: (err: string) => void
   onImageGenStatus?: (status: { current: number; total: number } | null) => void
+  onFolderAssigned?: (folderId: string, folderName: string) => void
 }
 
 const DEFAULT_BRAND: BrandData = {
@@ -62,13 +68,14 @@ function detectPageType(url?: string): 'homepage' | 'product' | 'collection' | '
 export function BrandWizard({
   projectId,
   projectUrl,
-  folderId,
+  folderId: folderIdProp,
   onClose,
   onRebuildStart,
   onHtmlChunk,
   onRebuildComplete,
   onRebuildError,
   onImageGenStatus,
+  onFolderAssigned,
 }: BrandWizardProps) {
   const pageType = detectPageType(projectUrl)
   const isHomepage = pageType === 'homepage'
@@ -82,29 +89,87 @@ export function BrandWizard({
   const [step, setStep] = useState(1)
   const [brand, setBrand] = useState<BrandData>(DEFAULT_BRAND)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [loading, setLoading] = useState(!!folderId)
+  const [loading, setLoading] = useState(!!folderIdProp)
+
+  // Active folder state — starts from prop, can be assigned inline
+  const [activeFolderId, setActiveFolderId] = useState<string | undefined>(folderIdProp)
+  const [activeFolderName, setActiveFolderName] = useState<string | undefined>()
+
+  // Folder picker state
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [folderMode, setFolderMode] = useState<'idle' | 'pick' | 'create'>('idle')
+  const [newFolderName, setNewFolderName] = useState('')
+  const [assigning, setAssigning] = useState(false)
+
+  // Load existing folders when no folder assigned
+  useEffect(() => {
+    if (activeFolderId) return
+    fetch('/api/folders')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.folders) setFolders(data.folders) })
+      .catch(() => {})
+  }, [activeFolderId])
 
   // Load brand from folder on mount
   useEffect(() => {
-    if (!folderId) return
-    fetch(`/api/folders/${folderId}`)
+    if (!activeFolderId) return
+    setLoading(true)
+    fetch(`/api/folders/${activeFolderId}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.folder?.brand_profile) {
           setBrand({ ...DEFAULT_BRAND, ...data.folder.brand_profile })
         }
+        if (data?.folder?.name) setActiveFolderName(data.folder.name)
       })
-      .catch(() => {/* ignore */})
+      .catch(() => {})
       .finally(() => setLoading(false))
-  }, [folderId])
+  }, [activeFolderId])
+
+  const assignToFolder = async (folderId: string, folderName: string) => {
+    setAssigning(true)
+    try {
+      // Move project into folder
+      await fetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_id: folderId }),
+      })
+      setActiveFolderId(folderId)
+      setActiveFolderName(folderName)
+      setFolderMode('idle')
+      onFolderAssigned?.(folderId, folderName)
+    } catch {/* ignore */} finally {
+      setAssigning(false)
+    }
+  }
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return
+    setAssigning(true)
+    try {
+      const res = await fetch('/api/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newFolderName.trim() }),
+      })
+      const data = await res.json()
+      if (data?.folder) {
+        await assignToFolder(data.folder.id, data.folder.name)
+        setNewFolderName('')
+      }
+    } catch {/* ignore */} finally {
+      setAssigning(false)
+    }
+  }
 
   const saveBrandToFolder = async (data: BrandData) => {
-    if (!folderId) return
-    await fetch(`/api/folders/${folderId}`, {
+    if (!activeFolderId) return
+    await fetch(`/api/folders/${activeFolderId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ brand_profile: data }),
-    }).catch(() => {/* ignore */})
+    }).catch(() => {})
   }
 
   const update = (key: keyof BrandData, value: string) =>
@@ -146,11 +211,9 @@ export function BrandWizard({
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() ?? ''
-
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           try {
@@ -230,17 +293,97 @@ export function BrandWizard({
             <>
               {step === 1 && (
                 <>
-                  {!folderId && (
-                    <div className="flex items-start gap-3 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 px-4 py-3">
-                      <FolderOpen className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs font-semibold text-purple-800 dark:text-purple-300 mb-0.5">Add to a folder first</p>
-                        <p className="text-xs text-purple-700 dark:text-purple-400 leading-relaxed">
-                          Group all pages of the same site in one folder. The brand you set up here will automatically apply to every other page in that folder — no re-entering required.
-                        </p>
+                  {/* Folder assignment — inline, actionable */}
+                  {activeFolderId ? (
+                    <div className="flex items-center gap-2 rounded-xl bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 px-4 py-2.5">
+                      <Check className="w-4 h-4 text-green-500 shrink-0" />
+                      <p className="text-xs text-green-800 dark:text-green-300 font-medium">
+                        Saved to <span className="font-semibold">{activeFolderName}</span> — brand syncs across all pages in this folder
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+                      <div className="flex items-center gap-3 px-4 py-3 bg-neutral-50 dark:bg-neutral-800/60">
+                        <FolderOpen className="w-4 h-4 text-purple-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Add to a folder</p>
+                          <p className="text-xs text-neutral-500 leading-relaxed">Brand settings will auto-fill on every other page in the folder.</p>
+                        </div>
                       </div>
+
+                      {folderMode === 'idle' && (
+                        <div className="flex gap-2 px-4 py-3 border-t border-neutral-200 dark:border-neutral-700">
+                          {folders.length > 0 && (
+                            <button
+                              onClick={() => setFolderMode('pick')}
+                              className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-2 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-colors"
+                            >
+                              <ChevronDown className="w-3 h-3" />
+                              Add to existing folder
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setFolderMode('create')}
+                            className={cn(
+                              'flex items-center justify-center gap-1.5 text-xs font-medium py-2 px-3 rounded-lg transition-colors',
+                              folders.length > 0
+                                ? 'border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300'
+                                : 'flex-1 bg-purple-600 hover:bg-purple-500 text-white'
+                            )}
+                          >
+                            <FolderPlus className="w-3 h-3" />
+                            Create new folder
+                          </button>
+                        </div>
+                      )}
+
+                      {folderMode === 'pick' && (
+                        <div className="px-4 py-3 border-t border-neutral-200 dark:border-neutral-700 space-y-2">
+                          <p className="text-xs text-neutral-500">Select a folder:</p>
+                          <div className="space-y-1 max-h-36 overflow-y-auto">
+                            {folders.map(f => (
+                              <button
+                                key={f.id}
+                                onClick={() => assignToFolder(f.id, f.name)}
+                                disabled={assigning}
+                                className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 hover:text-purple-700 dark:hover:text-purple-300 transition-colors text-neutral-700 dark:text-neutral-300 flex items-center gap-2"
+                              >
+                                <FolderOpen className="w-3 h-3 shrink-0 text-neutral-400" />
+                                {f.name}
+                              </button>
+                            ))}
+                          </div>
+                          <button onClick={() => setFolderMode('idle')} className="text-xs text-neutral-400 hover:text-neutral-600">← Back</button>
+                        </div>
+                      )}
+
+                      {folderMode === 'create' && (
+                        <div className="px-4 py-3 border-t border-neutral-200 dark:border-neutral-700 space-y-2">
+                          <p className="text-xs text-neutral-500">Name your folder (e.g. "Death Wish Coffee"):</p>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Folder name"
+                              value={newFolderName}
+                              onChange={(e) => setNewFolderName(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+                              className="h-8 text-xs"
+                              autoFocus
+                            />
+                            <Button
+                              size="sm"
+                              onClick={handleCreateFolder}
+                              disabled={!newFolderName.trim() || assigning}
+                              className="h-8 text-xs bg-purple-600 hover:bg-purple-500 text-white shrink-0"
+                            >
+                              {assigning ? '…' : 'Create'}
+                            </Button>
+                          </div>
+                          <button onClick={() => setFolderMode('idle')} className="text-xs text-neutral-400 hover:text-neutral-600">← Back</button>
+                        </div>
+                      )}
                     </div>
                   )}
+
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">Brand Name *</Label>
                     <Input
@@ -248,7 +391,7 @@ export function BrandWizard({
                       value={brand.brandName}
                       onChange={(e) => update('brandName', e.target.value)}
                       className="h-9 text-sm"
-                      autoFocus
+                      autoFocus={!!activeFolderId}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -263,7 +406,7 @@ export function BrandWizard({
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">Describe your brand *</Label>
                     <textarea
-                      placeholder="e.g. Bold, rebellious coffee brand for serious caffeine drinkers. Dark aesthetic, skull-and-crossbones imagery. USDA organic, fair trade. Target: men & women 25-45 who take their coffee seriously."
+                      placeholder="e.g. Bold, rebellious coffee brand. Dark aesthetic, USDA organic, fair trade. Target: serious coffee drinkers 25-45."
                       value={brand.brandDescription}
                       onChange={(e) => update('brandDescription', e.target.value)}
                       className="w-full h-24 px-3 py-2 text-sm rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white placeholder:text-neutral-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"

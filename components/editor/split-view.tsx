@@ -91,6 +91,7 @@ export function SplitView({
   )
   const [showMoreSheet, setShowMoreSheet] = useState(false)
   const [moreContent, setMoreContent] = useState<'visual' | 'history' | null>(null)
+  const [activeFolderId, setActiveFolderId] = useState<string | undefined>(project.folder_id ?? undefined)
   const rebuildHtmlRef = useRef('')
   const [imageGenStatus, setImageGenStatus] = useState<{ current: number; total: number } | null>(null)
   const isGenerating = isStreamingProp || chatGenerating
@@ -451,7 +452,8 @@ export function SplitView({
         <BrandWizard
           projectId={project.id}
           projectUrl={project.url}
-          folderId={project.folder_id ?? undefined}
+          folderId={activeFolderId}
+          onFolderAssigned={(id) => setActiveFolderId(id)}
           onClose={() => setShowBrandWizard(false)}
           onRebuildStart={() => {
             rebuildHtmlRef.current = ''
