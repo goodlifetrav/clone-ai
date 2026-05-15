@@ -454,13 +454,12 @@ function describeSiteStructure(html: string): string {
   let m: RegExpExecArray | null
 
   // Match on EITHER id="shopify-section..." OR class="...shopify-section..."
-  // Skip review-widget sections — they are valid Shopify sections but are NOT homepage layout sections.
-  const reviewSectionRe = /id="shopify-section[^"]*(?:review|testimonial|loox|yotpo|judgeme|stamped|okendo|fera|rivyo|ali-review)[^"]*"/i
+  // Skip non-page sections: review widgets, cart drawer, search overlay, popups, modals, sidebars.
+  const skipSectionRe = /id="shopify-section[^"]*(?:review|testimonial|loox|yotpo|judgeme|stamped|okendo|fera|rivyo|ali-review|cart|cart-drawer|cart-notification|search|predictive-search|modal|popup|drawer|flyout|overlay|sidebar|cookie|gdpr|age-verify|quick-view|sticky)[^"]*"/i
   const shopifyRe = /<div\b[^>]*(?:id="shopify-section[^"]*"|class="[^"]*\bshopify-section\b[^"]*")[^>]*>([\s\S]*?)(?=<div\b[^>]*(?:id="shopify-section|class="[^"]*\bshopify-section\b)|<footer\b|<\/body>|$)/gi
   while ((m = shopifyRe.exec(cleaned)) !== null) {
-    // Extract the opening div tag to check its id/class for review signals
     const openTag = m[0].slice(0, 200)
-    if (reviewSectionRe.test(openTag)) continue // skip review widgets
+    if (skipSectionRe.test(openTag)) continue
     // Include small sections that look like announcement bars even if < 300 chars
     const isSmallAnnouncementBar = m[0].length < 300 && /\d+%\s*off|free\s*ship|promo|sale|announce|% off/i.test(m[0])
     if (m[0].length > 300 || isSmallAnnouncementBar) sectionMatches.push(m[0])
@@ -500,7 +499,13 @@ function describeSiteStructure(html: string): string {
     }
   }
 
-  // No section count cap — build every single section no matter how many
+  // Cap at 10 visible content sections — Shopify stores often have 20+ section divs in the DOM
+  // including cart drawers, search overlays, popups, and subscription widgets that appear
+  // at the end of the body. The real visible page sections always come first in document order.
+  if (sectionMatches.length > 10) {
+    sectionMatches.splice(10)
+  }
+
   let secNum = 1
   for (const sec of sectionMatches) {
     const imgCount = (sec.match(/<img\b/gi) ?? []).length

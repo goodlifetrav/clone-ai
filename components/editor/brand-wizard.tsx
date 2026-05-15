@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { Sparkles, ArrowRight, ArrowLeft, X } from 'lucide-react'
+import { Sparkles, ArrowRight, ArrowLeft, X, FolderOpen } from 'lucide-react'
 
 interface BrandData {
   brandName: string
@@ -22,6 +22,7 @@ interface BrandData {
 
 interface BrandWizardProps {
   projectId: string
+  projectUrl?: string
   folderId?: string
   onClose: () => void
   onRebuildStart: () => void
@@ -30,12 +31,6 @@ interface BrandWizardProps {
   onRebuildError: (err: string) => void
   onImageGenStatus?: (status: { current: number; total: number } | null) => void
 }
-
-const STEPS = [
-  { id: 1, title: 'Brand Identity', description: 'Tell us about your brand' },
-  { id: 2, title: 'Colors', description: 'Choose your brand colors' },
-  { id: 3, title: 'Content', description: 'Key copy for your site' },
-]
 
 const DEFAULT_BRAND: BrandData = {
   brandName: '',
@@ -50,8 +45,23 @@ const DEFAULT_BRAND: BrandData = {
   ctaText: 'Get Started',
 }
 
+function detectPageType(url?: string): 'homepage' | 'product' | 'collection' | 'other' {
+  if (!url) return 'homepage'
+  try {
+    const path = new URL(url).pathname
+    if (/\/products\//i.test(path)) return 'product'
+    if (/\/collections\//i.test(path)) return 'collection'
+    if (/\/cart|\/account|\/pages\//i.test(path)) return 'other'
+    if (path === '/' || path === '') return 'homepage'
+    return 'other'
+  } catch {
+    return 'homepage'
+  }
+}
+
 export function BrandWizard({
   projectId,
+  projectUrl,
   folderId,
   onClose,
   onRebuildStart,
@@ -60,6 +70,15 @@ export function BrandWizard({
   onRebuildError,
   onImageGenStatus,
 }: BrandWizardProps) {
+  const pageType = detectPageType(projectUrl)
+  const isHomepage = pageType === 'homepage'
+
+  const STEPS = [
+    { id: 1, title: 'Brand Identity', description: 'Tell us about your brand' },
+    { id: 2, title: 'Colors', description: 'Choose your brand colors' },
+    ...(isHomepage ? [{ id: 3, title: 'Content', description: 'Key copy for your homepage' }] : []),
+  ]
+
   const [step, setStep] = useState(1)
   const [brand, setBrand] = useState<BrandData>(DEFAULT_BRAND)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -93,9 +112,7 @@ export function BrandWizard({
 
   const canNext = () => {
     if (step === 1) return brand.brandName.trim().length > 0 && brand.brandDescription.trim().length > 0
-    if (step === 2) return true
-    if (step === 3) return true
-    return false
+    return true
   }
 
   const handleNext = async () => {
@@ -138,14 +155,9 @@ export function BrandWizard({
           if (!line.startsWith('data: ')) continue
           try {
             const parsed = JSON.parse(line.slice(6))
-            if (parsed.htmlChunk) {
-              onHtmlChunk(parsed.htmlChunk)
-            }
+            if (parsed.htmlChunk) onHtmlChunk(parsed.htmlChunk)
             if (parsed.status === 'generating_images') {
-              onImageGenStatus?.({
-                current: parsed.current ?? 1,
-                total: parsed.total ?? 3,
-              })
+              onImageGenStatus?.({ current: parsed.current ?? 1, total: parsed.total ?? 3 })
             }
             if (parsed.done && parsed.html) {
               onImageGenStatus?.(null)
@@ -191,9 +203,7 @@ export function BrandWizard({
             <div key={s.id} className="flex items-center gap-2 flex-1">
               <div className={cn(
                 'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-colors',
-                step >= s.id
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-400'
+                step >= s.id ? 'bg-purple-600 text-white' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-400'
               )}>
                 {s.id}
               </div>
@@ -204,10 +214,7 @@ export function BrandWizard({
                 {s.title}
               </span>
               {s.id < STEPS.length && (
-                <div className={cn(
-                  'flex-1 h-px',
-                  step > s.id ? 'bg-purple-300' : 'bg-neutral-200 dark:bg-neutral-700'
-                )} />
+                <div className={cn('flex-1 h-px', step > s.id ? 'bg-purple-300' : 'bg-neutral-200 dark:bg-neutral-700')} />
               )}
             </div>
           ))}
@@ -224,17 +231,20 @@ export function BrandWizard({
               {step === 1 && (
                 <>
                   {!folderId && (
-                    <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-2.5">
-                      <span className="text-amber-500 mt-0.5 text-sm">💡</span>
-                      <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                        Add this project to a folder to share brand settings across all pages of the same site.
-                      </p>
+                    <div className="flex items-start gap-3 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 px-4 py-3">
+                      <FolderOpen className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs font-semibold text-purple-800 dark:text-purple-300 mb-0.5">Add to a folder first</p>
+                        <p className="text-xs text-purple-700 dark:text-purple-400 leading-relaxed">
+                          Group all pages of the same site in one folder. The brand you set up here will automatically apply to every other page in that folder — no re-entering required.
+                        </p>
+                      </div>
                     </div>
                   )}
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">Brand Name *</Label>
                     <Input
-                      placeholder="e.g. Acme Corp"
+                      placeholder="e.g. Valhalla Roast"
                       value={brand.brandName}
                       onChange={(e) => update('brandName', e.target.value)}
                       className="h-9 text-sm"
@@ -244,7 +254,7 @@ export function BrandWizard({
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">Tagline</Label>
                     <Input
-                      placeholder="e.g. Build faster, ship better"
+                      placeholder="e.g. Fuel for the Bold"
                       value={brand.tagline}
                       onChange={(e) => update('tagline', e.target.value)}
                       className="h-9 text-sm"
@@ -253,7 +263,7 @@ export function BrandWizard({
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">Describe your brand *</Label>
                     <textarea
-                      placeholder="e.g. We help startups automate their marketing with AI. Our customers are B2B SaaS founders who want to grow without hiring a big team."
+                      placeholder="e.g. Bold, rebellious coffee brand for serious caffeine drinkers. Dark aesthetic, skull-and-crossbones imagery. USDA organic, fair trade. Target: men & women 25-45 who take their coffee seriously."
                       value={brand.brandDescription}
                       onChange={(e) => update('brandDescription', e.target.value)}
                       className="w-full h-24 px-3 py-2 text-sm rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white placeholder:text-neutral-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -301,9 +311,9 @@ export function BrandWizard({
                 </>
               )}
 
-              {step === 3 && (
+              {step === 3 && isHomepage && (
                 <>
-                  <p className="text-xs text-neutral-500">Key copy for your site. Leave blank to auto-generate from your brand description.</p>
+                  <p className="text-xs text-neutral-500">Key copy for your homepage. Leave blank to auto-generate from your brand description.</p>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">Hero Headline</Label>
                     <Input
@@ -325,7 +335,7 @@ export function BrandWizard({
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">CTA Button Text</Label>
                     <Input
-                      placeholder="e.g. Get Started, Book a Demo, Try for Free"
+                      placeholder="e.g. Shop Now, Book a Demo, Try for Free"
                       value={brand.ctaText}
                       onChange={(e) => update('ctaText', e.target.value)}
                       className="h-9 text-sm"
