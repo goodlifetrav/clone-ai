@@ -77,8 +77,17 @@ export function BrandWizard({
   const [brand, setBrand] = useState<BrandData>(() => loadSavedBrand(folderId))
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  const saveBrand = (data: BrandData) => {
+    if (!folderId) return
+    try { localStorage.setItem(brandStorageKey(folderId), JSON.stringify(data)) } catch { /* ignore */ }
+  }
+
   const update = (key: keyof BrandData, value: string) =>
-    setBrand((prev) => ({ ...prev, [key]: value }))
+    setBrand((prev) => {
+      const next = { ...prev, [key]: value }
+      saveBrand(next)
+      return next
+    })
 
   const canNext = () => {
     if (step === 1) return brand.brandName.trim().length > 0 && brand.brandDescription.trim().length > 0
@@ -89,8 +98,7 @@ export function BrandWizard({
 
   const handleSubmit = async () => {
     setIsSubmitting(true)
-    // Save brand profile keyed by folder so each store has its own brand settings
-    try { localStorage.setItem(brandStorageKey(folderId), JSON.stringify(brand)) } catch { /* ignore */ }
+    saveBrand(brand)
     onRebuildStart()
     onClose()
 
