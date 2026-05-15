@@ -1,7 +1,7 @@
 import { Header } from '@/components/header'
 import { UrlInput } from '@/components/url-input'
 import { TypewriterHeadline } from '@/components/typewriter-headline'
-import { Zap, Globe, Sparkles, ShoppingBag, FolderOpen } from 'lucide-react'
+import { Zap, Globe, Sparkles, Upload, FolderOpen } from 'lucide-react'
 import Link from 'next/link'
 
 const jsonLd = {
@@ -176,10 +176,10 @@ export default function Home() {
                   'Enter your brand once. AI rebuilds every page with your colors, copy, and identity. Group pages in a folder to sync automatically.',
               },
               {
-                icon: <ShoppingBag className="w-5 h-5" />,
-                title: 'Push to Shopify',
+                icon: <Upload className="w-5 h-5" />,
+                title: 'Deploy Anywhere',
                 description:
-                  'Export as a fully structured Shopify theme with Liquid sections, color pickers, and live product data — ready to publish.',
+                  'Push to Shopify as a fully structured theme, export to GitHub, deploy to Vercel, or download as a self-contained HTML file.',
               },
               {
                 icon: <FolderOpen className="w-5 h-5" />,
