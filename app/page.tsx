@@ -46,7 +46,7 @@ const jsonLd = {
           name: 'Can I clone a Shopify store?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'Yes. Clone the homepage, product pages, and collection pages. Use the Brand Wizard to rebuild each page with your brand identity, then push the entire site to your Shopify store as a fully structured theme — complete with Liquid sections, color pickers in the Shopify editor, and live product data.',
+            text: 'Yes — including the homepage, product pages, and collection pages. IgualAI automatically detects the page type and configures the right Shopify template. Product pages use Shopify Liquid so actual product data (title, price, variants, add-to-cart) comes from your catalog live.',
           },
         },
         {
@@ -54,7 +54,7 @@ const jsonLd = {
           name: 'Is IgualAI free?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'Yes! The free plan lets you clone 1 website and includes 10,000 AI tokens for editing. Paid plans start at $10/month for unlimited clones and more AI tokens.',
+            text: 'Yes. The Free plan includes 1 clone and 75,000 AI tokens per month. Pro is $19/month (20 clones, 2M tokens). Agency is $49/month (60 clones, 6M tokens). Visual Editor changes are always free and never use tokens.',
           },
         },
         {
@@ -62,7 +62,15 @@ const jsonLd = {
           name: 'How does the AI Brand Rebuild work?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'After cloning, open the Brand Wizard and enter your brand name, colors, logo, and a short description. IgualAI uses the cloned page\'s structure as a blueprint and regenerates every section with your brand\'s identity, copy, and styling. Group pages in a folder and the brand syncs automatically across all of them.',
+            text: "Open the Brand Wizard from the editor toolbar. Enter your brand name, colors, logo, and a short description. IgualAI uses the cloned page's layout as a structural blueprint and regenerates every section with your brand's identity and copy. Add pages to a folder and the brand syncs automatically — no re-entering required.",
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Is cloning websites legal?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: "IgualAI is designed for brand transformation — you clone a layout and structure, then rebuild it as something entirely new for your business. The output is an original page inspired by a layout, not a copy of anyone's content. You are responsible for your use of the tool. See our Acceptable Use Policy for details.",
           },
         },
         {
@@ -70,7 +78,7 @@ const jsonLd = {
           name: 'Can I download or deploy my clone?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'Yes. Download as a self-contained HTML file, connect a custom domain, push to GitHub, or export directly to Shopify as a theme.',
+            text: 'Yes. Download as a self-contained HTML file, connect a custom domain, push to GitHub, or export directly to Shopify as a fully structured theme.',
           },
         },
       ],
@@ -81,31 +89,43 @@ const jsonLd = {
 const FAQS = [
   {
     q: 'What can IgualAI clone?',
-    a: 'Any publicly accessible website, Shopify store, sales funnel, landing page, or sales page. Paste the URL and IgualAI captures and rebuilds it as clean, editable HTML in seconds.',
+    a: 'Any publicly accessible website, Shopify store, sales funnel, landing page, or sales page. Paste the URL and IgualAI captures and rebuilds it as clean, editable HTML in seconds. Sites behind a login or paywall may not clone fully.',
   },
   {
     q: 'Can I clone a Shopify store?',
-    a: 'Yes. Clone the homepage, product pages, and collection pages. Use the Brand Wizard to rebuild each page with your brand, then push the entire site to your Shopify store as a fully structured theme — complete with Liquid sections, color pickers in the Shopify editor, and live product data.',
-  },
-  {
-    q: 'How does the AI Brand Rebuild work?',
-    a: "After cloning, open the Brand Wizard and enter your brand name, colors, logo, and a short description. IgualAI uses the cloned page's structure as a blueprint and regenerates every section with your brand's identity, copy, and styling. Group pages in a folder and the brand auto-fills on every other page in that folder.",
+    a: 'Yes — including the homepage, product pages, and collection pages. IgualAI automatically detects the page type and configures the right Shopify template. Product pages use Shopify Liquid variables so actual product data (title, price, variants, add-to-cart) comes from your catalog live.',
   },
   {
     q: 'What is a folder?',
-    a: "A folder groups all the pages of one website together. Set up your brand once on any page in a folder and every other page in that folder will automatically load your brand info — no re-entering required. When you push to Shopify, all pages in the folder go into one theme.",
+    a: "A folder groups all the pages of one website together. Set up your brand once on any page in a folder and every other page in that folder automatically loads your brand info — no re-entering required. When you push to Shopify, all pages in the folder go into one theme in one click.",
+  },
+  {
+    q: 'How does the AI Brand Rebuild work?',
+    a: "Open the Brand Wizard from the editor toolbar. Enter your brand name, colors, logo, and a short description. IgualAI uses the cloned page's layout as a structural blueprint and regenerates every section with your brand's identity and copy. For product pages, a Product Details step lets you describe the product so the AI styles supporting sections correctly.",
+  },
+  {
+    q: 'How does editing work after the rebuild?',
+    a: "You have two options. AI Chat: describe what you want changed in plain English — follow-up messages make targeted edits without touching anything you didn't ask about. Visual Editor: click directly on any text or image in the preview to edit it inline. Visual Editor changes are always free and never use tokens.",
+  },
+  {
+    q: 'What are tokens?',
+    a: "Tokens are the AI's unit of work. A full Brand Wizard rebuild uses roughly 50,000–70,000 tokens. A targeted follow-up edit uses 5,000–15,000. Visual Editor changes (click-to-edit text and images) use zero tokens. The Free plan includes 75,000 tokens/month. Pro includes 2,000,000. You can buy token packs from Settings if you run out mid-month.",
+  },
+  {
+    q: 'How does the Shopify push work?',
+    a: "IgualAI converts your rebuilt pages into a proper Shopify Online Store 2.0 theme — every section becomes a Liquid section file with a schema block, making all text, colors, and images editable inside the Shopify theme editor. Push a single page from the editor, or push an entire folder as one complete theme from the dashboard.",
+  },
+  {
+    q: 'Is cloning websites legal?',
+    a: "IgualAI is designed for brand transformation — you clone a layout and structure, then rebuild it as something entirely new for your business. The output is an original page inspired by a layout, not a copy of anyone's content. You are responsible for your use of the tool. See our Acceptable Use Policy for details.",
   },
   {
     q: 'Is IgualAI free?',
-    a: 'Yes! The free plan lets you clone 1 website and includes 10,000 AI tokens for editing. Paid plans start at $10/month for unlimited clones and more AI tokens.',
-  },
-  {
-    q: 'Can I edit the cloned page?',
-    a: 'Absolutely. Every clone opens in our live editor where you can chat with AI to make changes, edit the code directly, or use the visual editor to click and edit text and images inline.',
+    a: 'Yes. The Free plan includes 1 clone and 75,000 AI tokens per month at no cost. Pro is $19/month (20 clones, 2M tokens, custom domains, Shopify integration). Agency is $49/month (60 clones, 6M tokens). Visual Editor changes are always free.',
   },
   {
     q: 'Can I download or deploy my clone?',
-    a: 'Yes. Download as a self-contained HTML file, connect a custom domain, push to GitHub, or export directly to Shopify as a fully structured theme.',
+    a: 'Yes. Download as a self-contained HTML file you can host anywhere, connect a custom domain to serve it directly from IgualAI, push to GitHub (Pro/Agency), or export to Shopify as a fully structured theme.',
   },
 ]
 

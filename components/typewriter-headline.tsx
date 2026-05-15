@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react'
 
 const WORDS = ['Website', 'Shopify Store', 'Funnel', 'Sales Page', 'Landing Page']
-const TYPE_SPEED = 75
-const DELETE_SPEED = 45
-const WAIT_AFTER = 2400
-const WAIT_BEFORE = 320
+const TYPE_SPEED = 45
+const DELETE_SPEED = 25
+const WAIT_AFTER = 1800
+const WAIT_BEFORE = 200
 
 export function TypewriterHeadline() {
   const [wordIndex, setWordIndex] = useState(0)
