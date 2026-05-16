@@ -1148,33 +1148,44 @@ BENTO GRID — card pair (use for comparison/highlight sections):
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
+    // Product page checklist — Shopify product pages are JS-rendered so the clone is always sparse.
+    // Use a fixed structure instead of the (empty) headingChecklist derived from the sparse clone.
+    const productPageChecklist = `PRODUCT PAGE STRUCTURE — Shopify product pages load data via JavaScript so the cloned HTML is sparse. Ignore the section count from the clone. Generate a COMPLETE product page with EXACTLY these sections in order:
+1. PRODUCT MAIN — two-column flex row: LEFT side (55%) is a tall product image placeholder (dark gradient div, min-h-[500px], brand accent icon centered), RIGHT side (45%) has: product name (text-3xl font-bold), star rating row, price (text-2xl), short product description (2-3 sentences), variant selector buttons (e.g. Grind Type: Whole Bean / Ground; Size: 1lb / 2lb / 5lb), quantity picker, "Add to Cart" button (full-width, brand accent color), and 1-2 trust badges (free shipping, satisfaction guarantee). data-igualai-section="product-main"
+2. PRODUCT DETAILS ACCORDION — three collapsed accordion items below product-main: Flavor Profile / Tasting Notes, Brew Recommendations, Shipping & Returns. Styled with brand colors, click-to-expand pattern. data-igualai-section="content"
+3. RELATED PRODUCTS — "You May Also Like" heading, horizontal scroll of 3-4 product cards (each: square image placeholder, product name, price, "Add to Cart" link). data-igualai-section="product-grid"
+4. NEWSLETTER SIGNUP — one full-width email capture bar: bold heading on left, email input + submit button on right, brand accent background. data-igualai-section="newsletter"`
+
     const prompt = `BRAND: ${userMessage}
 
-━━━ REQUIRED SECTION CHECKLIST (from original HTML — follow exactly) ━━━
-${headingChecklist}
+━━━ REQUIRED SECTION CHECKLIST ━━━
+${isProductPage ? productPageChecklist : headingChecklist}
 
-━━━ ORIGINAL SITE SECTION STRUCTURE ━━━
+${!isProductPage ? `━━━ ORIGINAL SITE SECTION STRUCTURE ━━━
 ${siteStructure}
 
-━━━ ORIGINAL SITE HTML (CSS stripped — structure above is your layout guide) ━━━
+` : ''}━━━ ORIGINAL SITE HTML (CSS stripped — structure above is your layout guide) ━━━
 ${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
 Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
-1. SECTION COUNT IS FIXED — the original has a specific number of sections listed in the structure above. Output THAT EXACT number of sections. Count them. Do not add sections. Do not remove sections.
-2. ONLY the sections listed in the REQUIRED SECTION CHECKLIST above may appear. NEVER invent a testimonial section, review section, social proof section, community section, or feature grid that does not appear in the checklist. If the original has no testimonials, your output has no testimonials.
-3. PRESERVE SECTION ORDER — output sections in the same order they appear in the original structure. The first section in the original must be the first section in your output.
+${isProductPage
+  ? `1. USE THE PRODUCT PAGE STRUCTURE in the checklist above. Output ALL 4 sections (product-main, accordion, related products, newsletter). Do NOT reduce sections because the cloned HTML looks sparse — Shopify loads product data via JavaScript so empty black areas are expected.
+2. PRODUCT MAIN must be a two-column product detail layout — NOT a homepage hero with a massive headline. The first big visual element is the product image placeholder, not a full-bleed hero banner.`
+  : `1. SECTION COUNT IS FIXED — the original has a specific number of sections listed in the structure above. Output THAT EXACT number of sections. Count them. Do not add sections. Do not remove sections.
+2. ONLY the sections listed in the REQUIRED SECTION CHECKLIST above may appear. NEVER invent a testimonial section, review section, social proof section, community section, or feature grid that does not appear in the checklist. If the original has no testimonials, your output has no testimonials.`}
+3. PRESERVE SECTION ORDER — output sections in the same order they appear in the checklist.
 4. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
 5. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
-6. MAXIMUM 1 NEWSLETTER/EMAIL SIGNUP SECTION total. If you see multiple newsletter sections in the checklist, output only the first one and skip the rest. Never repeat email signup bars.
-6. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
-7. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
+6. MAXIMUM 1 NEWSLETTER/EMAIL SIGNUP SECTION total. Never repeat email signup bars.
+7. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
+8. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
 LAYOUT RULES FOR SPECIFIC SECTION TYPES:
-${isProductPage ? `- PRODUCT MAIN (first major section): Two-column flex layout. LEFT: tall product image placeholder (gradient div, min-h-[500px], rounded-2xl, centered thematic icon). RIGHT: product title (text-3xl font-bold), price, short description, variant selector (size/color buttons), large "Add to Cart" button (full-width, brand accent color). data-igualai-section="product-main". DO NOT make this a homepage hero.` : `- HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.`}
-- CAROUSEL: each card MUST have a fixed width (max-w-xs or w-72) and flex-shrink-0 so exactly 2-3 cards are visible. Outer container: overflow-x-auto. Inner: flex gap-4. Partial overflow on last card hints at scrollability.
+${isProductPage ? `- PRODUCT MAIN: Two-column flex layout (flex-col lg:flex-row). LEFT: tall product image placeholder (gradient div, min-h-[500px], rounded-2xl, centered thematic icon). RIGHT: product title (text-3xl font-bold), price, short description, variant selector buttons, qty picker, full-width "Add to Cart" button (brand accent). data-igualai-section="product-main". DO NOT make this a homepage hero.` : `- HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.`}
+- CAROUSEL: each card MUST have a fixed width (max-w-xs or w-72) and flex-shrink-0 so exactly 2-3 cards are visible. Outer container: overflow-x-auto. Inner: flex gap-4.
 - SCROLLING MARQUEE TICKER: use CSS @keyframes marquee with translateX(-50%) and a duplicated list of phrases for seamless looping.
-- LIFESTYLE PHOTO STRIP: heading MUST be a brand values or mission statement (e.g., "OUR CORE VALUES: [VALUE] • [VALUE] • [VALUE]" or "BUILT ON [VALUE], [VALUE], [VALUE]"). NEVER use "Join Our Community", "Join the Community", "Our Community", or any community-CTA heading — those belong in the footer, not as a mid-page section heading.
+- LIFESTYLE PHOTO STRIP: heading MUST be a brand values or mission statement. NEVER "Join Our Community".
 
 The rebuilt page must look like the SAME website redesigned for a new brand — not a generic template.
 Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
