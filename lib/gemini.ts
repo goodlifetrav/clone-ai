@@ -529,6 +529,12 @@ function describeSiteStructure(html: string): string {
     const headingMatch = sec.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i)
     const headingText = headingMatch ? getText(headingMatch[1]).slice(0, 60) : ''
 
+    // Skip cart notification / cart drawer sections regardless of their shopify-section id format
+    if (/item.{0,10}added.{0,15}cart|added to (your )?cart|your cart is|cart (notification|drawer|popup)|recently viewed/i.test(headingText)) continue
+    // Also skip by section text content for sections without headings (cart drawers, age-gate, etc.)
+    const secTextSnippet = sec.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300)
+    if (!headingText && /item added to (your )?cart|you may also like|recently viewed|age verification|enter your (birth)?date/i.test(secTextSnippet)) continue
+
     // Detect text alignment for this section
     const secHasCenterAlign = /text-center|mx-auto|text-align:\s*center/i.test(sec.slice(0, 1000))
     const secAlignment = secHasCenterAlign ? 'centered' : 'left-aligned'

@@ -47,6 +47,29 @@ export function cleanHtml(html: string): string {
   // NOT generic "overlay" which Framer and other frameworks use for real layout containers.
   $('[id="modal-backdrop"], [id="overlay-backdrop"], [class="modal-backdrop"], [id="modal-bg"], [class*="modal-bg"]').remove()
 
+  // Remove Shopify-specific hidden/utility sections that are in the DOM but not visible page content:
+  // cart drawers, cart notifications, predictive search, age verification, quick-view modals, etc.
+  // These sections are always present in Shopify themes but hidden until triggered by JS.
+  const shopifyHiddenSections = [
+    'cart-drawer', 'cart-notification', 'cart-items', 'cart-footer',
+    'predictive-search', 'search-modal',
+    'quick-add', 'quick-view', 'quick-order',
+    'age-verification', 'age-verify', 'age-gate',
+    'announcement-popup', 'email-popup', 'exit-popup',
+    'mobile-menu', 'mobile-nav',
+  ]
+  shopifyHiddenSections.forEach(keyword => {
+    $(`[id*="${keyword}"], [class*="${keyword}"]`).each((_, el) => {
+      // Only remove if the element is Shopify-section-level (direct child of body or a shopify-section wrapper)
+      // to avoid accidentally removing real page content that happens to share a class name
+      const id = $(el).attr('id') ?? ''
+      const cls = $(el).attr('class') ?? ''
+      if (id.includes('shopify-section') || id.includes(keyword) || cls.includes('shopify-section')) {
+        $(el).remove()
+      }
+    })
+  })
+
   // Remove live chat widgets (Intercom, Drift, Crisp, HubSpot, Zendesk)
   $('[id*="intercom"], [class*="intercom"], [id*="drift"], [class*="drift"], [id*="crisp"], [id*="hubspot"], [class*="hubspot"], [id*="launcher"], iframe[src*="intercom"], iframe[src*="drift"], iframe[src*="crisp"]').remove()
 
