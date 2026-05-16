@@ -31,10 +31,36 @@ export async function POST(
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
   const body = await request.json()
-  const { brandName, tagline, primaryColor, secondaryColor, accentColor, logoUrl, brandDescription, headline, subheadline, ctaText } = body
+  const { brandName, tagline, primaryColor, secondaryColor, accentColor, logoUrl, brandDescription, headline, subheadline, ctaText, productName, productDescription, pageType } = body
 
-  // Build the brand message exactly like the user would type in chat
-  const brandMessage = `Rebuild this website for my brand:
+  // Build a page-type-aware brand message
+  let brandMessage: string
+  if (pageType === 'product') {
+    brandMessage = `Rebuild this PRODUCT PAGE for my brand:
+- Brand Name: ${brandName}
+- Tagline: ${tagline || ''}
+- Primary Color: ${primaryColor}
+- Secondary Color: ${secondaryColor || ''}
+- Accent Color: ${accentColor || ''}
+- Logo: ${logoUrl ? logoUrl : 'use brand name as text logo'}
+- Brand Description: ${brandDescription}
+${productName ? `- Product Name: ${productName}` : ''}
+${productDescription ? `- Product Description: ${productDescription}` : ''}
+
+THIS IS A PRODUCT PAGE. Keep the product detail layout (image on left, title/price/add-to-cart on right). Style supporting sections with brand colors and copy. Do NOT generate a homepage hero.`
+  } else if (pageType === 'collection') {
+    brandMessage = `Rebuild this COLLECTION PAGE for my brand:
+- Brand Name: ${brandName}
+- Tagline: ${tagline || ''}
+- Primary Color: ${primaryColor}
+- Secondary Color: ${secondaryColor || ''}
+- Accent Color: ${accentColor || ''}
+- Logo: ${logoUrl ? logoUrl : 'use brand name as text logo'}
+- Brand Description: ${brandDescription}
+
+THIS IS A COLLECTION PAGE. Keep the product grid layout. Style the page with brand colors and copy.`
+  } else {
+    brandMessage = `Rebuild this website for my brand:
 - Brand Name: ${brandName}
 - Tagline: ${tagline || ''}
 - Primary Color: ${primaryColor}
@@ -47,6 +73,7 @@ export async function POST(
 - CTA Button Text: ${ctaText || 'Get Started'}
 
 Keep the exact same layout, sections, and visual structure. Replace all text with brand-appropriate copy.`
+  }
 
   const encoder = new TextEncoder()
 
@@ -90,7 +117,9 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
 
         const { html: fullHtmlRaw } = await chatWithProjectGemini(
           project.html_content ?? '',
-          [{ role: 'user', content: brandMessage }]
+          [{ role: 'user', content: brandMessage }],
+          undefined,
+          pageType as string | undefined
         )
 
         if (!fullHtmlRaw || !/<html/i.test(fullHtmlRaw) || !/<\/html>/i.test(fullHtmlRaw)) {

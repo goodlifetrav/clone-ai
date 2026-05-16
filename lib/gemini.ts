@@ -948,7 +948,8 @@ function stripCssForRebuild(html: string): string {
 export async function chatWithProjectGemini(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-  uploadedImageUrls?: string[]
+  uploadedImageUrls?: string[],
+  pageType?: string
 ): Promise<{ html: string; message: string; tokensUsed: number; estimatedCost?: number }> {
   const lastUserMessage = messages[messages.length - 1]
 
@@ -995,6 +996,19 @@ export async function chatWithProjectGemini(
   <div class="space-y-3"><div class="h-4 bg-gray-100 rounded w-3/4"></div><div class="h-32 bg-gray-50 rounded-xl flex items-center justify-center text-gray-300 border border-gray-100"><i class="fas fa-chart-bar text-5xl"></i></div></div>
 </div>`
 
+    const isProductPage = pageType === 'product'
+    const isCollectionPage = pageType === 'collection'
+
+    const productPageInstructions = isProductPage ? `
+━━━ THIS IS A PRODUCT PAGE ━━━
+CRITICAL: The main content section is a PRODUCT DETAIL SECTION — not a homepage hero.
+- The product section layout: large product images on the LEFT, product title / price / add-to-cart form on the RIGHT
+- Use data-igualai-section="product-main" on this section
+- Include realistic product image placeholder (tall gradient div with a relevant icon), product name, price ($XX.XX), variant selector, and an "Add to Cart" button
+- Do NOT generate a full-width homepage hero with a massive headline and CTA button pair as the first section
+- Supporting sections (features, reviews, related products) follow the product main section and should be styled with brand colors
+` : ''
+
     const systemPrompt = `You are an elite web designer rebuilding a cloned site for a new brand. Your #1 goal is HIGH VISUAL FIDELITY to the original site's layout — the rebuilt page must look structurally identical to the original, with only brand content, colors, and text swapped in.
 
 REQUIRED <head> — always include exactly:
@@ -1026,7 +1040,7 @@ DARK THEME ENFORCEMENT — add this exact <style> block immediately after the Ta
 </style>
 Every top-level section wrapper MUST have one of: bg-[#0a0f1e] bg-[#0f1629] bg-gray-950 bg-gray-900 bg-slate-950
 NO bg-white, NO bg-gray-50, NO bg-gray-100 on any section — the CSS above overrides them but avoid them anyway.` : ''}
-
+${productPageInstructions}
 ━━━ STYLE SIGNALS (detected from original — OBEY THESE STRICTLY) ━━━
 ${styleSignals}
 
@@ -1113,7 +1127,7 @@ Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
 7. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
 LAYOUT RULES FOR SPECIFIC SECTION TYPES:
-- HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.
+${isProductPage ? `- PRODUCT MAIN (first major section): Two-column flex layout. LEFT: tall product image placeholder (gradient div, min-h-[500px], rounded-2xl, centered thematic icon). RIGHT: product title (text-3xl font-bold), price, short description, variant selector (size/color buttons), large "Add to Cart" button (full-width, brand accent color). data-igualai-section="product-main". DO NOT make this a homepage hero.` : `- HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.`}
 - CAROUSEL: each card MUST have a fixed width (max-w-xs or w-72) and flex-shrink-0 so exactly 2-3 cards are visible. Outer container: overflow-x-auto. Inner: flex gap-4. Partial overflow on last card hints at scrollability.
 - SCROLLING MARQUEE TICKER: use CSS @keyframes marquee with translateX(-50%) and a duplicated list of phrases for seamless looping.
 - LIFESTYLE PHOTO STRIP: heading MUST be a brand values or mission statement (e.g., "OUR CORE VALUES: [VALUE] • [VALUE] • [VALUE]" or "BUILT ON [VALUE], [VALUE], [VALUE]"). NEVER use "Join Our Community", "Join the Community", "Our Community", or any community-CTA heading — those belong in the footer, not as a mid-page section heading.

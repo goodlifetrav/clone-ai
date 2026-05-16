@@ -208,7 +208,7 @@ export function BrandWizard({
       const res = await fetch(`/api/projects/${projectId}/rebuild`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(brand),
+        body: JSON.stringify({ ...brand, pageType }),
       })
 
       if (!res.ok || !res.body) {
