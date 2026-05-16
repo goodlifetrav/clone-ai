@@ -174,8 +174,8 @@ async function runDomPipeline(projectId: string, url: string): Promise<void> {
     html = await rehostImages(html, projectId)
     console.log('[DOM] Images rehosted')
 
-    // 5. Strip scripts/tracking, add <base target="_blank">
-    html = cleanHtml(html)
+    // 5. Strip scripts/tracking, add <base target="_blank">, inject AJAX placeholders
+    html = cleanHtml(html, url)
     console.log(`[DOM] HTML cleaned — ${html.length} chars`)
 
     // 6. Save to database
