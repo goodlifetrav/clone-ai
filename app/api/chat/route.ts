@@ -5,6 +5,7 @@ import { chatWithProjectGemini } from '@/lib/gemini'
 import { isAdminEmail } from '@/lib/admin'
 import { reportError } from '@/lib/error-report'
 import { createJob, completeJob, failJob } from '@/lib/chat-jobs'
+import { extractHeaderFooter, replaceHeaderFooter } from '@/lib/header-footer'
 
 const FREE_CHAT_LIMIT = 2
 
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
 
   // ── Fetch current state ──────────────────────────────────────────────────
   const [{ data: project }, { data: chatHistory }] = await Promise.all([
-    supabase.from('projects').select('html_content').eq('id', projectId).single(),
+    supabase.from('projects').select('html_content, folder_id').eq('id', projectId).single(),
     supabase
       .from('chat_messages')
       .select('role, content')
@@ -113,13 +114,11 @@ export async function POST(request: NextRequest) {
   ]
 
   // ── Create job and start background generation ───────────────────────────
-  // Return the jobId immediately — no nginx timeout risk.
-  // The generation continues in the background on the Node.js event loop.
   const jobId = crypto.randomUUID()
   createJob(jobId, projectId)
 
   // eslint-disable-next-line @typescript-eslint/no-floating-promises
-  runChatJob(jobId, projectId, currentHtml, chatMessages, uploadedImageUrls, user, adminOverride, message)
+  runChatJob(jobId, projectId, currentHtml, chatMessages, uploadedImageUrls, user, adminOverride, message, project?.folder_id ?? null)
 
   return NextResponse.json({ jobId })
 }
@@ -133,7 +132,8 @@ async function runChatJob(
   uploadedImageUrls: string[] | undefined,
   user: { id: string; plan: string; tokens_used: number; free_chats_used: number | null },
   adminOverride: boolean,
-  originalMessage: string
+  originalMessage: string,
+  folderId: string | null
 ) {
   const supabase = createServiceClient()
 
@@ -159,6 +159,14 @@ async function runChatJob(
         .from('projects')
         .update({ html_content: finalHtml, updated_at: new Date().toISOString() })
         .eq('id', projectId)
+
+      // Auto-sync header/footer to all sibling pages in the folder.
+      // Fire-and-forget — does not block the response to the user.
+      if (folderId) {
+        syncHeaderFooterToFolder(projectId, folderId, finalHtml, supabase).catch((e) =>
+          console.error('[header-sync] failed:', e)
+        )
+      }
     }
 
     // Update token usage
@@ -191,4 +199,69 @@ async function runChatJob(
       : error.message || 'Generation failed. Please try again.'
     failJob(jobId, userMessage)
   }
+}
+
+/**
+ * After any AI edit on a page in a folder, extract the new header/footer and
+ * push it to every other rebuilt page in the same folder. This ensures logo
+ * position, nav links, colors, and footer stay in sync across all pages
+ * without the user having to manually re-rebuild each page.
+ *
+ * Only patches pages that have already been rebuilt (contain data-igualai-section).
+ * Raw clones are left untouched — they don't have section boundaries.
+ * Runs fire-and-forget so it never delays the user's chat response.
+ */
+async function syncHeaderFooterToFolder(
+  editedProjectId: string,
+  folderId: string,
+  editedHtml: string,
+  supabase: ReturnType<typeof createServiceClient>
+): Promise<void> {
+  // Only sync if the edited page has been rebuilt (has section attributes)
+  if (!editedHtml.includes('data-igualai-section')) return
+
+  const { headerHtml, footerHtml } = extractHeaderFooter(editedHtml)
+  if (!headerHtml && !footerHtml) return
+
+  // Save updated header/footer to folder brand_profile
+  const { data: folder } = await supabase
+    .from('folders')
+    .select('brand_profile')
+    .eq('id', folderId)
+    .single()
+
+  const existing = folder?.brand_profile ?? {}
+  await supabase
+    .from('folders')
+    .update({ brand_profile: { ...existing, headerHtml, footerHtml } })
+    .eq('id', folderId)
+
+  // Fetch all OTHER pages in the folder
+  const { data: siblings } = await supabase
+    .from('projects')
+    .select('id, html_content')
+    .eq('folder_id', folderId)
+    .neq('id', editedProjectId)
+
+  if (!siblings || siblings.length === 0) return
+
+  // Patch each sibling's header/footer — skip raw clones (no data-igualai-section)
+  const updates = siblings
+    .filter((s) => s.html_content && s.html_content.includes('data-igualai-section'))
+    .map((s) => ({
+      id: s.id,
+      html: replaceHeaderFooter(s.html_content, headerHtml, footerHtml),
+    }))
+    .filter((u) => u.html !== siblings.find((s) => s.id === u.id)?.html_content)
+
+  await Promise.all(
+    updates.map((u) =>
+      supabase
+        .from('projects')
+        .update({ html_content: u.html, updated_at: new Date().toISOString() })
+        .eq('id', u.id)
+    )
+  )
+
+  console.log(`[header-sync] synced header/footer from project ${editedProjectId} to ${updates.length} sibling(s) in folder ${folderId}`)
 }

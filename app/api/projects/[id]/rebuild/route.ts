@@ -3,39 +3,7 @@ import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 import { chatWithProjectGemini } from '@/lib/gemini'
 import { injectBrandImages } from '@/lib/image-injection'
-
-/**
- * Extract the header region (announcement bar + nav) and footer from a rebuilt HTML page.
- * Uses data-igualai-section attributes written by Gemini to find boundaries.
- */
-function extractHeaderFooter(html: string): { headerHtml: string; footerHtml: string } {
-  // Find where the body content starts
-  const bodyMatch = html.match(/<body[^>]*>/i)
-  if (!bodyMatch) return { headerHtml: '', footerHtml: '' }
-  const bodyStart = html.indexOf(bodyMatch[0]) + bodyMatch[0].length
-
-  // Find the first NON-header content section (hero, product-main, features, etc.)
-  // announcement-bar and nav are part of the header region
-  const contentSectionRe = /<(?:section|div)\b[^>]*data-igualai-section="(?!announcement-bar)(?!nav)[^"]+"/i
-  const contentMatch = html.search(contentSectionRe)
-
-  let headerHtml = ''
-  if (contentMatch > bodyStart) {
-    // Walk backwards from the match to find the opening '<' of that tag
-    const tagStart = html.lastIndexOf('<', contentMatch)
-    headerHtml = html.slice(bodyStart, tagStart).trim()
-  } else {
-    // Fallback: extract just the nav element
-    const navMatch = html.match(/<nav\b[^>]*>[\s\S]*?<\/nav>/i)
-    headerHtml = navMatch?.[0] ?? ''
-  }
-
-  // Extract footer
-  const footerMatch = html.match(/<footer\b[^>]*>[\s\S]*?<\/footer>/i)
-  const footerHtml = footerMatch?.[0] ?? ''
-
-  return { headerHtml, footerHtml }
-}
+import { extractHeaderFooter } from '@/lib/header-footer'
 
 export async function POST(
   request: NextRequest,
