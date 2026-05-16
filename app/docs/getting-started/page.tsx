@@ -27,6 +27,9 @@ export default function GettingStartedPage() {
           IgualAI captures the page using a proprietary pipeline and reconstructs it as a clean,
           self-contained HTML file. This typically completes in 5–15 seconds.
         </p>
+        <Callout>
+          <strong>The clone is a layout blueprint, not a pixel-perfect copy.</strong> IgualAI captures the page structure, sections, and design — not live data. Dynamic content that requires authentication or JavaScript API calls (Shopify product carousels, live inventory, recommendation feeds) may appear empty in the clone preview. This is expected — the Brand Rebuild step replaces all content with your brand anyway, using the cloned layout purely as a structural guide.
+        </Callout>
       </Section>
 
       <Section title="2. Add the page to a folder">

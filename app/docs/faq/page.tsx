@@ -56,6 +56,10 @@ const FAQS = [
     a: "Some sites block automated access, use heavy client-side rendering (JavaScript-rendered carousels, product sliders), or serve different content to non-human visitors. Try re-cloning. If it still fails or looks incomplete, the site's rendering approach may be incompatible with our current capture pipeline.",
   },
   {
+    q: 'Why are some sections empty in my Shopify clone?',
+    a: "The clone is a layout blueprint, not a live copy. Shopify product carousels (New Arrivals, Recommendations, Others Also Bought) load product data via authenticated API calls that can't be replicated in a static clone — so those sections will appear empty. This is expected behavior. The Brand Rebuild step replaces all section content with your brand anyway, using the cloned layout purely as a structural guide. The final rebuilt page is 100% original.",
+  },
+  {
     q: 'What is the Visual Editor?',
     a: "After any AI rebuild, the Visual tab becomes a live editor. Click directly on any text — headlines, nav links, buttons, paragraphs — to edit it inline without writing a prompt. Click any image to swap it with a new URL. Changes save automatically.",
   },
