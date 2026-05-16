@@ -174,10 +174,11 @@ export async function extractSite(url: string): Promise<string> {
         .swiper-container, .swiper { overflow: visible !important; }
         .slick-list { overflow: visible !important; }
         ${isProductPage ? `
-        /* ── Shopify product page: force all product info containers visible ──
-           Many Shopify themes hide the product info column via CSS class-based
-           opacity/visibility animations (not inline styles) that our inline-style
-           selector above does not catch. Target every common theme variant. */
+        /* ── Shopify product page: force all product sections visible ──
+           Many Shopify themes hide sections via CSS class-based opacity/
+           visibility/display animations (not inline styles). Target every
+           common theme variant for product info, brand sections, and
+           supplementary product page sections. */
         .product__info-wrapper,
         .product__info-container,
         .product__info,
@@ -191,6 +192,8 @@ export async function extractSite(url: string): Promise<string> {
         .product-form__wrapper,
         .product-form__buttons,
         .product__accordion,
+        .product__tabs,
+        .product-tabs,
         [class*="product__info"],
         [class*="product-info"],
         [class*="product__meta"],
@@ -201,15 +204,7 @@ export async function extractSite(url: string): Promise<string> {
         [class*="product-details"],
         [class*="ProductInfo"],
         [data-product-information],
-        [data-product-form] {
-          visibility: visible !important;
-          opacity: 1 !important;
-          max-height: none !important;
-          overflow: visible !important;
-          clip: auto !important;
-          clip-path: none !important;
-          pointer-events: auto !important;
-        }
+        [data-product-form],
         /* Ensure any flex/grid parent of product info is also visible */
         .product.grid,
         .product__container,
@@ -217,6 +212,12 @@ export async function extractSite(url: string): Promise<string> {
         [class*="ProductTemplate"] {
           visibility: visible !important;
           opacity: 1 !important;
+          display: block !important;
+          max-height: none !important;
+          overflow: visible !important;
+          clip: auto !important;
+          clip-path: none !important;
+          pointer-events: auto !important;
         }
         ` : ''}
       `
@@ -260,16 +261,32 @@ export async function extractSite(url: string): Promise<string> {
           })
         })
 
-        // Walk ALL elements and force-show any that are computed-invisible
-        // BUT skip known modals, cart drawers, popups (they should stay hidden)
-        const skipRe = /cart|drawer|modal|popup|overlay|sidebar|search|cookie|consent|gdpr|age-ver|intercom|drift|crisp/i
-        document.querySelectorAll('*').forEach((el) => {
-          if (skipRe.test(el.className + (el.id ?? ''))) return
+        // Walk ALL elements and force-show any that are computed-invisible.
+        // Check opacity, visibility, AND display:none — all three hiding patterns.
+        // Skip known modals, cart drawers, popups, and Shopify utility sections
+        // that should legitimately stay hidden.
+        const skipRe = /cart[-_]?(?:drawer|notification|items|footer|form)|modal|popup|overlay|sidebar|predictive[-_]?search|search[-_]?modal|quick[-_]?(?:add|view|order)|age[-_]?(?:ver|gate)|cookie|consent|gdpr|intercom|drift|crisp|hubspot/i
+        document.querySelectorAll('body *').forEach((el) => {
+          const id = el.id ?? ''
+          const cls = typeof el.className === 'string' ? el.className : ''
+          if (skipRe.test(id + ' ' + cls)) return
+          // Also skip elements that are deeply nested inside a skip-matched ancestor
+          const closestSkip = el.closest('[id*="cart-drawer"],[id*="cart-notification"],[class*="cart-drawer"],[id*="modal"],[id*="popup"],[id*="predictive-search"]')
+          if (closestSkip) return
+
           const h = el as HTMLElement
           const cs = window.getComputedStyle(h)
-          if (cs.opacity === '0' || cs.visibility === 'hidden') {
+          if (cs.opacity === '0') {
             h.style.opacity = '1'
+          }
+          if (cs.visibility === 'hidden') {
             h.style.visibility = 'visible'
+          }
+          // Only flip display:none on block-level containers — not on inline/svg/script
+          const tag = h.tagName.toLowerCase()
+          const isContainer = ['div', 'section', 'article', 'main', 'aside', 'header', 'footer', 'ul', 'ol', 'li', 'figure', 'form', 'fieldset'].includes(tag)
+          if (isContainer && cs.display === 'none') {
+            h.style.display = 'block'
           }
         })
       })
