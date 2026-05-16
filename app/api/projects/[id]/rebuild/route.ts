@@ -4,6 +4,39 @@ import { createServiceClient } from '@/lib/supabase'
 import { chatWithProjectGemini } from '@/lib/gemini'
 import { injectBrandImages } from '@/lib/image-injection'
 
+/**
+ * Extract the header region (announcement bar + nav) and footer from a rebuilt HTML page.
+ * Uses data-igualai-section attributes written by Gemini to find boundaries.
+ */
+function extractHeaderFooter(html: string): { headerHtml: string; footerHtml: string } {
+  // Find where the body content starts
+  const bodyMatch = html.match(/<body[^>]*>/i)
+  if (!bodyMatch) return { headerHtml: '', footerHtml: '' }
+  const bodyStart = html.indexOf(bodyMatch[0]) + bodyMatch[0].length
+
+  // Find the first NON-header content section (hero, product-main, features, etc.)
+  // announcement-bar and nav are part of the header region
+  const contentSectionRe = /<(?:section|div)\b[^>]*data-igualai-section="(?!announcement-bar)(?!nav)[^"]+"/i
+  const contentMatch = html.search(contentSectionRe)
+
+  let headerHtml = ''
+  if (contentMatch > bodyStart) {
+    // Walk backwards from the match to find the opening '<' of that tag
+    const tagStart = html.lastIndexOf('<', contentMatch)
+    headerHtml = html.slice(bodyStart, tagStart).trim()
+  } else {
+    // Fallback: extract just the nav element
+    const navMatch = html.match(/<nav\b[^>]*>[\s\S]*?<\/nav>/i)
+    headerHtml = navMatch?.[0] ?? ''
+  }
+
+  // Extract footer
+  const footerMatch = html.match(/<footer\b[^>]*>[\s\S]*?<\/footer>/i)
+  const footerHtml = footerMatch?.[0] ?? ''
+
+  return { headerHtml, footerHtml }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,7 +57,7 @@ export async function POST(
 
   const { data: project } = await supabase
     .from('projects')
-    .select('html_content, user_id')
+    .select('html_content, user_id, folder_id')
     .eq('id', id)
     .single()
 
@@ -75,6 +108,19 @@ THIS IS A COLLECTION PAGE. Keep the product grid layout. Style the page with bra
 Keep the exact same layout, sections, and visual structure. Replace all text with brand-appropriate copy.`
   }
 
+  // Load shared header/footer from folder for non-homepage rebuilds
+  let sharedHeaderHtml: string | undefined
+  let sharedFooterHtml: string | undefined
+  if (project.folder_id && pageType !== 'homepage') {
+    const { data: folder } = await supabase
+      .from('folders')
+      .select('brand_profile')
+      .eq('id', project.folder_id)
+      .single()
+    sharedHeaderHtml = folder?.brand_profile?.headerHtml || undefined
+    sharedFooterHtml = folder?.brand_profile?.footerHtml || undefined
+  }
+
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
@@ -91,7 +137,6 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
         send({ status: 'thinking' })
 
         // Save the original clone as a labeled version before overwriting it.
-        // This lets users restore the raw clone from History at any time.
         const existingVersions = await supabase
           .from('project_versions')
           .select('id')
@@ -119,7 +164,9 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
           project.html_content ?? '',
           [{ role: 'user', content: brandMessage }],
           undefined,
-          pageType as string | undefined
+          pageType as string | undefined,
+          sharedHeaderHtml,
+          sharedFooterHtml
         )
 
         if (!fullHtmlRaw || !/<html/i.test(fullHtmlRaw) || !/<\/html>/i.test(fullHtmlRaw)) {
@@ -141,6 +188,29 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
           .from('projects')
           .update({ html_content: fullHtml, updated_at: new Date().toISOString() })
           .eq('id', id)
+
+        // After a homepage rebuild, save the header/footer to the folder so
+        // subsequent product/collection page rebuilds can use the same header/footer.
+        if (pageType === 'homepage' && project.folder_id) {
+          try {
+            const { headerHtml, footerHtml } = extractHeaderFooter(fullHtml)
+            if (headerHtml || footerHtml) {
+              const { data: folder } = await supabase
+                .from('folders')
+                .select('brand_profile')
+                .eq('id', project.folder_id)
+                .single()
+              const existing = folder?.brand_profile ?? {}
+              await supabase
+                .from('folders')
+                .update({ brand_profile: { ...existing, headerHtml, footerHtml } })
+                .eq('id', project.folder_id)
+              console.log(`[rebuild] saved header (${headerHtml.length} chars) + footer (${footerHtml.length} chars) to folder ${project.folder_id}`)
+            }
+          } catch (e) {
+            console.error('[rebuild] failed to save header/footer to folder:', e)
+          }
+        }
 
         send({ done: true, html: fullHtml })
       } catch (err) {

@@ -955,7 +955,9 @@ export async function chatWithProjectGemini(
   currentHtml: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   uploadedImageUrls?: string[],
-  pageType?: string
+  pageType?: string,
+  sharedHeaderHtml?: string,
+  sharedFooterHtml?: string
 ): Promise<{ html: string; message: string; tokensUsed: number; estimatedCost?: number }> {
   const lastUserMessage = messages[messages.length - 1]
 
@@ -1005,14 +1007,44 @@ export async function chatWithProjectGemini(
     const isProductPage = pageType === 'product'
     const isCollectionPage = pageType === 'collection'
 
+    // Shared header/footer instructions — when a homepage has already been rebuilt in this folder
+    const sharedHeaderFooterInstructions = (sharedHeaderHtml || sharedFooterHtml) ? `
+━━━ SHARED HEADER & FOOTER (copy these EXACTLY — do not modify) ━━━
+The homepage for this brand has already been rebuilt. You MUST use the exact same header and footer so all pages in the folder look consistent.
+
+${sharedHeaderHtml ? `HEADER — paste this verbatim as the first content after <body>:
+${sharedHeaderHtml}` : ''}
+
+${sharedFooterHtml ? `FOOTER — paste this verbatim as the last element before </body>:
+${sharedFooterHtml}` : ''}
+
+CRITICAL: Do NOT generate your own header or footer. Do NOT modify the logo, nav links, colors, or structure above. Copy them EXACTLY.
+` : ''
+
     const productPageInstructions = isProductPage ? `
 ━━━ THIS IS A PRODUCT PAGE ━━━
 CRITICAL: The main content section is a PRODUCT DETAIL SECTION — not a homepage hero.
 - The product section layout: large product images on the LEFT, product title / price / add-to-cart form on the RIGHT
 - Use data-igualai-section="product-main" on this section
-- Include realistic product image placeholder (tall gradient div with a relevant icon), product name, price ($XX.XX), variant selector, and an "Add to Cart" button
+- Include a tall product image placeholder (dark gradient div min-h-[500px], centered relevant icon), product name, price, star rating, short description, variant selector buttons (Grind Type, Size), quantity selector, and a large "Add to Cart" button (full-width, brand accent color)
+- Add accordion items below (Flavor Profile, Brewing Recommendations) — collapsed by default
 - Do NOT generate a full-width homepage hero with a massive headline and CTA button pair as the first section
-- Supporting sections (features, reviews, related products) follow the product main section and should be styled with brand colors
+
+━━━ PRODUCT PAGE SECTION LIMIT ━━━
+Product pages are FOCUSED. After the product-main section, include ONLY what the original product page had:
+- Related products carousel ("Others Also Bought" / "You May Also Like") — max 1 carousel
+- Reviews section — ONLY if the original clearly had customer reviews
+- ONE newsletter signup bar — max 1
+- Footer
+
+DO NOT ADD on product pages:
+- Multiple newsletter/email signup bars (max 1 total)
+- Brand storytelling split sections ("Our Story", "The Difference", "Crafted for...")
+- Core values sections
+- Feature grids with icons
+- Multiple lifestyle photo strips
+- Logo/press bars ("Featured On")
+These sections belong on the HOMEPAGE. Product pages stay focused on the product.
 ` : ''
 
     const systemPrompt = `You are an elite web designer rebuilding a cloned site for a new brand. Your #1 goal is HIGH VISUAL FIDELITY to the original site's layout — the rebuilt page must look structurally identical to the original, with only brand content, colors, and text swapped in.
@@ -1046,7 +1078,7 @@ DARK THEME ENFORCEMENT — add this exact <style> block immediately after the Ta
 </style>
 Every top-level section wrapper MUST have one of: bg-[#0a0f1e] bg-[#0f1629] bg-gray-950 bg-gray-900 bg-slate-950
 NO bg-white, NO bg-gray-50, NO bg-gray-100 on any section — the CSS above overrides them but avoid them anyway.` : ''}
-${productPageInstructions}
+${sharedHeaderFooterInstructions}${productPageInstructions}
 ━━━ STYLE SIGNALS (detected from original — OBEY THESE STRICTLY) ━━━
 ${styleSignals}
 
