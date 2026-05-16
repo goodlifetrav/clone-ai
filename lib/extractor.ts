@@ -205,14 +205,12 @@ export async function extractSite(url: string): Promise<string> {
         [class*="ProductInfo"],
         [data-product-information],
         [data-product-form],
-        /* Ensure any flex/grid parent of product info is also visible */
         .product.grid,
         .product__container,
         [class*="product-template"],
         [class*="ProductTemplate"] {
           visibility: visible !important;
           opacity: 1 !important;
-          display: block !important;
           max-height: none !important;
           overflow: visible !important;
           clip: auto !important;
@@ -248,7 +246,9 @@ export async function extractSite(url: string): Promise<string> {
         productSelectors.forEach((sel) => {
           document.querySelectorAll(sel).forEach((el) => {
             const h = el as HTMLElement
-            h.style.removeProperty('display')
+            // Do NOT removeProperty('display') — Shopify uses display:none for
+            // tab panels, hidden variants, and theme-toggle divs. Flipping those
+            // causes white-background skeleton loaders to appear over dark themes.
             h.style.removeProperty('visibility')
             h.style.removeProperty('opacity')
             h.style.removeProperty('height')
@@ -261,33 +261,23 @@ export async function extractSite(url: string): Promise<string> {
           })
         })
 
-        // Walk ALL elements and force-show any that are computed-invisible.
-        // Check opacity, visibility, AND display:none — all three hiding patterns.
-        // Skip known modals, cart drawers, popups, and Shopify utility sections
-        // that should legitimately stay hidden.
+        // Walk ALL elements and force-show any that are computed opacity:0 or
+        // visibility:hidden. Do NOT flip display:none broadly — that breaks
+        // tab panels, light/dark theme variants, skeleton loaders, and
+        // Shopify theme toggle divs (causes white bg on dark-theme stores).
+        // display:none is only flipped for the specific product selectors above.
         const skipRe = /cart[-_]?(?:drawer|notification|items|footer|form)|modal|popup|overlay|sidebar|predictive[-_]?search|search[-_]?modal|quick[-_]?(?:add|view|order)|age[-_]?(?:ver|gate)|cookie|consent|gdpr|intercom|drift|crisp|hubspot/i
         document.querySelectorAll('body *').forEach((el) => {
           const id = el.id ?? ''
           const cls = typeof el.className === 'string' ? el.className : ''
           if (skipRe.test(id + ' ' + cls)) return
-          // Also skip elements that are deeply nested inside a skip-matched ancestor
           const closestSkip = el.closest('[id*="cart-drawer"],[id*="cart-notification"],[class*="cart-drawer"],[id*="modal"],[id*="popup"],[id*="predictive-search"]')
           if (closestSkip) return
 
           const h = el as HTMLElement
           const cs = window.getComputedStyle(h)
-          if (cs.opacity === '0') {
-            h.style.opacity = '1'
-          }
-          if (cs.visibility === 'hidden') {
-            h.style.visibility = 'visible'
-          }
-          // Only flip display:none on block-level containers — not on inline/svg/script
-          const tag = h.tagName.toLowerCase()
-          const isContainer = ['div', 'section', 'article', 'main', 'aside', 'header', 'footer', 'ul', 'ol', 'li', 'figure', 'form', 'fieldset'].includes(tag)
-          if (isContainer && cs.display === 'none') {
-            h.style.display = 'block'
-          }
+          if (cs.opacity === '0') h.style.opacity = '1'
+          if (cs.visibility === 'hidden') h.style.visibility = 'visible'
         })
       })
 
