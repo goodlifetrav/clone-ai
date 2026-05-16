@@ -2,7 +2,8 @@
  * extractSite — DOM extraction via headless Chromium
  *
  * Navigates to a URL, scrolls the full page to trigger lazy-loaded content,
- * and returns the fully-rendered outerHTML.
+ * forces carousel slides and lazy images to be visible, and returns the
+ * fully-rendered outerHTML.
  */
 export async function extractSite(url: string): Promise<string> {
   const { chromium } = await import('playwright')
@@ -37,39 +38,157 @@ export async function extractSite(url: string): Promise<string> {
       await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {})
     }
 
-    // Scroll the full page height to trigger lazy-loaded images and JS sections
+    // ── Pass 1: Scroll full page to trigger lazy-load and intersection observers ──
     await page.evaluate(async () => {
       const totalHeight = document.documentElement.scrollHeight
       const step = window.innerHeight
       for (let y = 0; y < totalHeight; y += step) {
         window.scrollTo(0, y)
-        await new Promise((r) => setTimeout(r, 200))
+        await new Promise((r) => setTimeout(r, 150))
       }
       window.scrollTo(0, 0)
     })
 
-    // Let any scroll-triggered network requests and animations settle
-    await page.waitForTimeout(2500)
+    // Wait for scroll-triggered requests to settle
+    await page.waitForTimeout(2000)
 
-    // Force all scroll-animated elements visible — many sites use AOS, GSAP, or
-    // Intersection Observer to hide elements initially (opacity:0, translateY, etc.)
-    // and reveal them on scroll. Since the static clone has no JS, we override
-    // these so every section is visible in the captured HTML.
+    // ── Pass 2: Force lazy-loaded images to resolve ───────────────────────────
+    // Many sites use data-src / data-lazy / data-srcset for lazy loading.
+    // Copy these to real src/srcset so images appear in the static clone.
+    await page.evaluate(() => {
+      document.querySelectorAll('img').forEach((img) => {
+        const lazy = img.getAttribute('data-src')
+          || img.getAttribute('data-lazy')
+          || img.getAttribute('data-lazy-src')
+          || img.getAttribute('data-original')
+          || img.getAttribute('data-url')
+        if (lazy && !img.src) img.src = lazy
+
+        const lazySrcset = img.getAttribute('data-srcset') || img.getAttribute('data-lazy-srcset')
+        if (lazySrcset && !img.srcset) img.srcset = lazySrcset
+      })
+
+      // Also handle background-image lazy loading (data-bg, data-background)
+      document.querySelectorAll('[data-bg], [data-background], [data-background-image]').forEach((el) => {
+        const bg = el.getAttribute('data-bg')
+          || el.getAttribute('data-background')
+          || el.getAttribute('data-background-image')
+        if (bg) (el as HTMLElement).style.backgroundImage = `url("${bg}")`
+      })
+
+      // Shopify-specific: srcset in data-srcset on picture source elements
+      document.querySelectorAll('source[data-srcset]').forEach((source) => {
+        const srcset = source.getAttribute('data-srcset')
+        if (srcset) source.setAttribute('srcset', srcset)
+      })
+    })
+
+    // ── Pass 3: Expand all carousel/slider slides so content is visible ───────
+    // Shopify Splide/Swiper/Dawn carousels hide non-active slides via:
+    //   - aria-hidden="true"
+    //   - display:none / visibility:hidden inline styles
+    //   - transform: translateX / opacity:0
+    // We override all of these so every slide's content is captured.
+    await page.evaluate(() => {
+      // Common carousel item selectors
+      const slideSelectors = [
+        '.splide__slide',
+        '.swiper-slide',
+        '.slick-slide',
+        '.carousel__slide',
+        '[class*="slide-item"]',
+        '[class*="slider__slide"]',
+        '[class*="slideshow__slide"]',
+        // Shopify Dawn/Debut/Sense theme slide wrappers
+        '.slider__slide',
+        '.slideshow__slide',
+        '.product-slider__item',
+        // Generic hidden slide patterns
+        '[data-slide]',
+        '[data-index]',
+      ]
+
+      slideSelectors.forEach((sel) => {
+        document.querySelectorAll(sel).forEach((el) => {
+          const htmlEl = el as HTMLElement
+          // Remove aria-hidden so screen-reader-hidden slides become part of DOM
+          htmlEl.removeAttribute('aria-hidden')
+          htmlEl.removeAttribute('hidden')
+          // Remove transform/opacity/visibility that hide inactive slides
+          htmlEl.style.removeProperty('display')
+          htmlEl.style.removeProperty('visibility')
+          htmlEl.style.removeProperty('opacity')
+          htmlEl.style.removeProperty('transform')
+          htmlEl.style.removeProperty('position')
+          htmlEl.style.removeProperty('left')
+          htmlEl.style.removeProperty('right')
+          htmlEl.style.removeProperty('pointer-events')
+        })
+      })
+
+      // Force Shopify Splide slides: remove is-hidden class and aria states
+      document.querySelectorAll('.splide__slide.is-hidden, .splide__slide[aria-hidden]').forEach((el) => {
+        el.classList.remove('is-hidden')
+        el.removeAttribute('aria-hidden')
+      })
+
+      // Force all slide lists to not clip overflow (prevents cropping in screenshot)
+      document.querySelectorAll('.splide__list, .swiper-wrapper, .slick-track, [class*="slides-wrapper"]').forEach((el) => {
+        const htmlEl = el as HTMLElement
+        htmlEl.style.removeProperty('transform')
+        htmlEl.style.flexWrap = 'wrap'
+        htmlEl.style.removeProperty('width')
+      })
+    })
+
+    // ── Pass 4: Force AOS / GSAP / Intersection Observer animated elements visible ──
     await page.addStyleTag({
       content: `
-        *[style*="opacity: 0"],
-        *[style*="opacity:0"] { opacity: 1 !important; }
+        /* Reveal AOS animated elements */
+        *[data-aos], .aos-init:not(.aos-animate) {
+          opacity: 1 !important;
+          transform: none !important;
+          transition: none !important;
+        }
+        /* Reveal GSAP / custom hidden elements */
+        .gsap-hidden, .is-hidden, .js-hidden, [data-hidden="true"] {
+          opacity: 1 !important;
+          visibility: visible !important;
+          display: block !important;
+        }
+        /* Reveal inline-style hidden elements (opacity:0, visibility:hidden) */
+        *[style*="opacity: 0"]:not(script):not(style),
+        *[style*="opacity:0"]:not(script):not(style) {
+          opacity: 1 !important;
+        }
         *[style*="visibility: hidden"] { visibility: visible !important; }
-        *[style*="translateY"] { transform: none !important; }
-        *[style*="translateX"] { transform: none !important; }
-        .aos-init:not(.aos-animate) { opacity: 1 !important; transform: none !important; }
-        [data-aos] { opacity: 1 !important; transform: none !important; transition: none !important; }
-        .gsap-hidden, .is-hidden, .js-hidden { opacity: 1 !important; visibility: visible !important; }
+        /* Force all carousel slides visible — Splide, Swiper, Slick */
+        .splide__slide, .swiper-slide, .slick-slide {
+          opacity: 1 !important;
+          visibility: visible !important;
+          pointer-events: auto !important;
+        }
+        /* Unwrap Splide overflow clip so all slides render */
+        .splide__track { overflow: visible !important; }
+        .swiper-container, .swiper { overflow: visible !important; }
+        .slick-list { overflow: visible !important; }
       `
     })
 
-    // Dismiss cookie banners before capturing
-    // First try clicking Accept buttons on consent dialogs
+    // ── Pass 5: Second scroll pass — pick up anything that loaded late ─────────
+    await page.evaluate(async () => {
+      const totalHeight = document.documentElement.scrollHeight
+      const step = Math.floor(window.innerHeight / 2)
+      for (let y = 0; y < totalHeight; y += step) {
+        window.scrollTo(0, y)
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      window.scrollTo(0, 0)
+    })
+
+    await page.waitForTimeout(1500)
+
+    // ── Dismiss cookie banners before capturing ───────────────────────────────
     await page.evaluate(() => {
       const acceptSelectors = [
         'button[id*="accept"]', 'button[class*="accept"]',
@@ -92,11 +211,9 @@ export async function extractSite(url: string): Promise<string> {
         '[id*="cc-"]', '[class*="cc-banner"]',
         '[id*="CookieBanner"]', '[class*="CookieBanner"]',
         '[id*="cookiebanner"]', '[class*="cookiebanner"]',
-        // Shopify Privacy & Compliance banner
         '[id*="shopify-pc"]', '[class*="shopify-pc"]',
         '[id*="shopify-privacy"]', '[class*="shopify-privacy"]',
         '[id*="privacy-bar"]', '[class*="privacy-bar"]',
-        // Country/region selector overlays (Apple-style geo-redirect banners)
         '[id*="country"]', '[class*="country-selector"]', '[class*="locale-selector"]',
         '[id*="locale"]', '[class*="region-selector"]', '[id*="region-selector"]',
         '[class*="geo-"]', '[id*="geo-banner"]', '[class*="country-banner"]',
@@ -104,8 +221,6 @@ export async function extractSite(url: string): Promise<string> {
       selectors.forEach(sel => {
         document.querySelectorAll(sel).forEach(el => el.remove())
       })
-      // Remove live chat widgets and specific modal backdrops (NOT generic overlay/backdrop —
-      // Framer and other frameworks use those class names for real layout containers)
       ;[
         '[id*="intercom"]', '[class*="intercom"]',
         '[id*="drift"]', '[class*="drift"]',
@@ -116,24 +231,17 @@ export async function extractSite(url: string): Promise<string> {
         document.querySelectorAll(sel).forEach(el => el.remove())
       })
 
-      // Remove consent-blocking body classes that hide all page content.
-      // Some consent implementations add classes like "consent-required" or
-      // "no-consent" to <body> and use CSS to hide everything until accepted.
       const consentBodyClasses = ['consent-required', 'no-consent', 'gdpr-required', 'cookie-required', 'privacy-required']
       consentBodyClasses.forEach(cls => document.body.classList.remove(cls))
 
-      // Force body and html visible — catches any remaining display:none on root
       document.body.style.removeProperty('display')
       document.body.style.removeProperty('visibility')
       document.documentElement.style.removeProperty('overflow')
     })
 
-    // Brief pause for the style injection to apply
     await page.waitForTimeout(300)
 
-    // Extract all CSS from the browser's CSSOM and inline it.
-    // This is more reliable than server-side CSS fetching because the browser
-    // already has all stylesheets loaded (no CORS/CDN fetch issues).
+    // ── Extract and inline CSS from CSSOM ─────────────────────────────────────
     await page.evaluate(() => {
       const rules: string[] = []
       for (const sheet of Array.from(document.styleSheets)) {
@@ -142,13 +250,11 @@ export async function extractSite(url: string): Promise<string> {
             rules.push(rule.cssText)
           }
         } catch {
-          // Cross-origin sheet without --disable-web-security — skip, leave link tag
+          // Cross-origin sheet — skip, leave link tag
         }
       }
       if (rules.length > 0) {
-        // Remove all external <link rel="stylesheet"> tags (we've extracted their rules)
         document.querySelectorAll('link[rel="stylesheet"]').forEach(el => el.remove())
-        // Inject all extracted CSS as a single inline <style> block
         const style = document.createElement('style')
         style.textContent = rules.join('\n')
         document.head.insertBefore(style, document.head.firstChild)
