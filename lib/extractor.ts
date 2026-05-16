@@ -142,6 +142,7 @@ export async function extractSite(url: string): Promise<string> {
     })
 
     // ── Pass 4: Force AOS / GSAP / Intersection Observer animated elements visible ──
+    const isProductPage = url.includes('/products/')
     await page.addStyleTag({
       content: `
         /* Reveal AOS animated elements */
@@ -172,8 +173,115 @@ export async function extractSite(url: string): Promise<string> {
         .splide__track { overflow: visible !important; }
         .swiper-container, .swiper { overflow: visible !important; }
         .slick-list { overflow: visible !important; }
+        ${isProductPage ? `
+        /* ── Shopify product page: force all product info containers visible ──
+           Many Shopify themes hide the product info column via CSS class-based
+           opacity/visibility animations (not inline styles) that our inline-style
+           selector above does not catch. Target every common theme variant. */
+        .product__info-wrapper,
+        .product__info-container,
+        .product__info,
+        .product__meta,
+        .product-single__meta,
+        .product-single__title,
+        .product__title,
+        .product__price,
+        .product__description,
+        .product-form,
+        .product-form__wrapper,
+        .product-form__buttons,
+        .product__accordion,
+        [class*="product__info"],
+        [class*="product-info"],
+        [class*="product__meta"],
+        [class*="product-detail"],
+        [class*="product-form"],
+        [class*="product__desc"],
+        [class*="ProductDetails"],
+        [class*="product-details"],
+        [class*="ProductInfo"],
+        [data-product-information],
+        [data-product-form] {
+          visibility: visible !important;
+          opacity: 1 !important;
+          max-height: none !important;
+          overflow: visible !important;
+          clip: auto !important;
+          clip-path: none !important;
+          pointer-events: auto !important;
+        }
+        /* Ensure any flex/grid parent of product info is also visible */
+        .product.grid,
+        .product__container,
+        [class*="product-template"],
+        [class*="ProductTemplate"] {
+          visibility: visible !important;
+          opacity: 1 !important;
+        }
+        ` : ''}
       `
     })
+
+    // ── Pass 4b: Product page — JS force-show product info containers ────────
+    // CSS overrides can't fix elements hidden via computed class styles when the
+    // specificity of the theme's CSS is higher. A JS removeProperty pass wins
+    // regardless of specificity by clearing the inline style cache.
+    if (isProductPage) {
+      await page.evaluate(() => {
+        const productSelectors = [
+          '.product__info-wrapper',
+          '.product__info-container',
+          '.product__info',
+          '.product__meta',
+          '.product-single__meta',
+          '.product__title',
+          '.product-single__title',
+          '.product__price',
+          '.product__description',
+          '.product-form',
+          '.product-form__wrapper',
+          '.product__accordion',
+          '[data-product-information]',
+          '[data-product-form]',
+        ]
+        productSelectors.forEach((sel) => {
+          document.querySelectorAll(sel).forEach((el) => {
+            const h = el as HTMLElement
+            h.style.removeProperty('display')
+            h.style.removeProperty('visibility')
+            h.style.removeProperty('opacity')
+            h.style.removeProperty('height')
+            h.style.removeProperty('max-height')
+            h.style.removeProperty('overflow')
+            h.style.removeProperty('clip')
+            h.style.removeProperty('clip-path')
+            h.style.removeProperty('transform')
+            h.style.removeProperty('pointer-events')
+          })
+        })
+
+        // Walk ALL elements and force-show any that are computed-invisible
+        // BUT skip known modals, cart drawers, popups (they should stay hidden)
+        const skipRe = /cart|drawer|modal|popup|overlay|sidebar|search|cookie|consent|gdpr|age-ver|intercom|drift|crisp/i
+        document.querySelectorAll('*').forEach((el) => {
+          if (skipRe.test(el.className + (el.id ?? ''))) return
+          const h = el as HTMLElement
+          const cs = window.getComputedStyle(h)
+          if (cs.opacity === '0' || cs.visibility === 'hidden') {
+            h.style.opacity = '1'
+            h.style.visibility = 'visible'
+          }
+        })
+      })
+
+      // Wait for product title to appear as a proxy for content being rendered
+      await page.waitForSelector(
+        '.product__title, .product-single__title, [class*="product__title"], h1',
+        { state: 'visible', timeout: 8000 }
+      ).catch(() => {})
+
+      await page.waitForTimeout(1000)
+    }
 
     // ── Pass 5: Second scroll pass — pick up anything that loaded late ─────────
     await page.evaluate(async () => {
