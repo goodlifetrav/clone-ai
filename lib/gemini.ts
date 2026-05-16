@@ -507,6 +507,7 @@ function describeSiteStructure(html: string): string {
   }
 
   let secNum = 1
+  let newsletterCount = 0  // cap at 1 newsletter section per page
   for (const sec of sectionMatches) {
     const imgCount = (sec.match(/<img\b/gi) ?? []).length
     const bgImgCount = (sec.match(/background-image/gi) ?? []).length
@@ -584,6 +585,9 @@ function describeSiteStructure(html: string): string {
     } else if (isPricingGrid) {
       layout = `PRICING SECTION — 2-3 plan cards with price, features list, CTA button`
     } else if (isNewsletter) {
+      // Cap at 1 newsletter section — subsequent newsletter sections are redundant and cause bloat
+      newsletterCount++
+      if (newsletterCount > 1) continue
       layout = `NEWSLETTER SIGNUP — INLINE LAYOUT: large bold condensed heading${headingText ? ` ("${headingText}")` : ''} on the LEFT, email input field + submit button inline on the RIGHT — all on the same row using flexbox. No stacking. Minimal, full-width section.`
     } else if (isLifestyleStrip) {
       const stripHeading = headingText ? ` heading: "${headingText}",` : ' NO heading text.'
@@ -866,6 +870,7 @@ Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
 3. PRESERVE SECTION ORDER — output sections in the same order they appear in the original structure. The first section in the original must be the first section in your output.
 4. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
 5. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
+6. MAXIMUM 1 NEWSLETTER/EMAIL SIGNUP SECTION total. If you see multiple newsletter sections in the checklist, output only the first one and skip the rest. Never repeat email signup bars.
 6. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
 7. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
@@ -1161,6 +1166,7 @@ Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
 3. PRESERVE SECTION ORDER — output sections in the same order they appear in the original structure. The first section in the original must be the first section in your output.
 4. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
 5. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
+6. MAXIMUM 1 NEWSLETTER/EMAIL SIGNUP SECTION total. If you see multiple newsletter sections in the checklist, output only the first one and skip the rest. Never repeat email signup bars.
 6. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
 7. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
