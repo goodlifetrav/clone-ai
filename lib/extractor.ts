@@ -151,6 +151,14 @@ export async function extractSite(url: string): Promise<string> {
           transform: none !important;
           transition: none !important;
         }
+        /* Reveal Shopify Dawn/Refresh scroll-trigger sections (opacity:0.01 initial state) */
+        .scroll-trigger.animate--slide-in,
+        .scroll-trigger.animate--fade-in {
+          opacity: 1 !important;
+          transform: none !important;
+          animation: none !important;
+          transition: none !important;
+        }
         /* Reveal GSAP / custom hidden elements */
         .gsap-hidden, .is-hidden, .js-hidden, [data-hidden="true"] {
           opacity: 1 !important;
@@ -276,8 +284,20 @@ export async function extractSite(url: string): Promise<string> {
 
           const h = el as HTMLElement
           const cs = window.getComputedStyle(h)
-          if (cs.opacity === '0') h.style.opacity = '1'
+          if (parseFloat(cs.opacity) < 0.1) h.style.opacity = '1'
           if (cs.visibility === 'hidden') h.style.visibility = 'visible'
+          // Resolve CSS variable background colors — Shopify stores set
+          // --var-pdp-main-color and similar custom props via JS from metafields.
+          // After JS runs, getComputedStyle gives the actual resolved color.
+          // Inline it so the static clone doesn't lose it when JS is stripped.
+          const inlineBg = h.style.backgroundColor
+          if (inlineBg && inlineBg.startsWith('var(')) {
+            h.style.backgroundColor = cs.backgroundColor
+          }
+          const inlineColor = h.style.color
+          if (inlineColor && inlineColor.startsWith('var(')) {
+            h.style.color = cs.color
+          }
         })
       })
 
