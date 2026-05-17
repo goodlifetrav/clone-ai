@@ -66,6 +66,11 @@ export async function extractSite(url: string): Promise<string> {
 
         const lazySrcset = img.getAttribute('data-srcset') || img.getAttribute('data-lazy-srcset')
         if (lazySrcset && !img.srcset) img.srcset = lazySrcset
+
+        // Force all lazy images to load eagerly so Playwright captures them
+        if ((img as HTMLImageElement).loading === 'lazy') {
+          (img as HTMLImageElement).loading = 'eager'
+        }
       })
 
       // Also handle background-image lazy loading (data-bg, data-background)
@@ -182,6 +187,26 @@ export async function extractSite(url: string): Promise<string> {
         .swiper-container, .swiper { overflow: visible !important; }
         .slick-list { overflow: visible !important; }
         ${isProductPage ? `
+        /* ── Shopify deferred-media: show product images without JS interaction ──
+           Shopify Dawn/Refresh use <deferred-media> custom element + CSS rule
+           .product__media-list .deferred-media{display:none} to hide the
+           product image gallery until the user clicks a play/load button.
+           Without JS activation the entire product image section is invisible. */
+        deferred-media,
+        .deferred-media,
+        .product__media-list .deferred-media,
+        .product__media-container deferred-media {
+          display: block !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+        }
+        .product__media-item,
+        .product__media-wrapper,
+        .product__media {
+          display: block !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+        }
         /* ── Shopify product page: force all product sections visible ──
            Many Shopify themes hide sections via CSS class-based opacity/
            visibility/display animations (not inline styles). Target every
@@ -298,6 +323,26 @@ export async function extractSite(url: string): Promise<string> {
           if (inlineColor && inlineColor.startsWith('var(')) {
             h.style.color = cs.color
           }
+        })
+      })
+
+      // Force lazy images to load eagerly so Playwright captures them
+      await page.evaluate(() => {
+        document.querySelectorAll('img[loading="lazy"]').forEach((img) => {
+          (img as HTMLImageElement).loading = 'eager'
+        })
+        // Activate deferred-media elements — Shopify Dawn needs a load event
+        // on the <deferred-media> custom element to show product images.
+        // Directly swap the template content into the DOM as a fallback.
+        document.querySelectorAll('deferred-media, .deferred-media').forEach((el) => {
+          const template = el.querySelector('template')
+          if (template) {
+            el.appendChild(template.content.cloneNode(true))
+          }
+          // Remove any poster/placeholder overlays that cover the media
+          el.querySelectorAll('.deferred-media__poster, [class*="poster"]').forEach(p => {
+            (p as HTMLElement).style.display = 'none'
+          })
         })
       })
 
