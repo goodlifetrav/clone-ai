@@ -16,10 +16,21 @@ const PRODUCT_CAROUSEL_PLACEHOLDER = `<div data-igualai-section="product-grid" s
 
 const REVIEWS_PLACEHOLDER = `<div data-igualai-section="testimonials" style="padding:60px 24px;background:#0f0f0f;text-align:center;"><div style="border:2px dashed #2d2d2d;border-radius:16px;padding:40px 24px;max-width:1000px;margin:0 auto;"><p style="color:#ffffff;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin:0 0 6px;font-family:sans-serif;">&#x2B50; Customer Reviews</p><p style="color:#555555;font-size:12px;margin:0;font-family:sans-serif;line-height:1.5;">Loads from a third-party review app &mdash; requires live store data.<br>The Brand Rebuild will generate this section with customer testimonials.</p></div></div>`
 
+const GENERIC_EMPTY_PLACEHOLDER = `<div data-igualai-section="content" style="padding:48px 24px;background:#111111;text-align:center;"><div style="border:2px dashed #2d2d2d;border-radius:16px;padding:32px 24px;max-width:1000px;margin:0 auto;"><p style="color:#555555;font-size:12px;margin:0;font-family:sans-serif;line-height:1.5;">This section loads dynamically &mdash; content not available in static clone.<br>The Brand Rebuild will generate this section with your brand content.</p></div></div>`
+
+// Sections that should never be replaced with placeholders even if empty
+const SKIP_SECTION_RE = /cart|drawer|search|modal|popup|overlay|sticky|announcement|header|footer|nav|cookie|gdpr|age-ver|intercom|drift|crisp|predictive/i
+
 /**
- * Replace empty Shopify AJAX sections (product recommendations, review apps)
- * with labeled placeholder blocks instead of leaving a black void.
- * Only runs on product pages (URL contains /products/).
+ * Replace empty Shopify sections on product pages with labeled placeholder
+ * blocks instead of leaving black voids.
+ *
+ * Strategy (two passes):
+ * 1. Named detection — product-recommendations and known review app patterns
+ *    get specific typed placeholders (carousel vs reviews)
+ * 2. Broad scan — any remaining shopify-section div with < 150 chars of visible
+ *    text AND no real images gets a generic "loads dynamically" placeholder
+ *    This catches custom theme sections regardless of their class/id naming.
  */
 function injectAjaxPlaceholders(html: string, url: string): string {
   if (!url.includes('/products/')) return html
@@ -27,61 +38,64 @@ function injectAjaxPlaceholders(html: string, url: string): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const $ = load(html, { xmlMode: false } as any)
 
-  const isEmpty = (el: ReturnType<typeof $>[0]) =>
-    $(el).text().replace(/\s+/g, ' ').trim().length < 150
+  const isEffectivelyEmpty = (el: ReturnType<typeof $>[0]) => {
+    const text = $(el).text().replace(/\s+/g, ' ').trim()
+    const realImages = $(el).find('img').filter((_, img) => {
+      const src = $(img).attr('src') ?? ''
+      return src.length > 0 && !src.startsWith('data:')
+    }).length
+    return text.length < 150 && realImages === 0
+  }
 
-  // ── Product recommendations sections ───────────────────────────────────────
-  // Shopify Dawn uses a <product-recommendations> custom element inside a
-  // shopify-section wrapper. Other themes use data-section-type or id patterns.
-  const recoMatched = new Set<ReturnType<typeof $>[0]>()
+  const replaced = new Set<ReturnType<typeof $>[0]>()
 
-  $('product-recommendations, [data-url*="recommendations/products"], [data-section-type="product-recommendations"]').each((_, el) => {
-    // Walk up to the shopify-section wrapper if present
+  // ── Pass 1: Named detection for product recommendations ────────────────────
+  $('product-recommendations, [data-url*="recommendations/products"], [data-section-type="product-recommendations"], [id*="product-recommendations"], [id*="ProductRecommendations"]').each((_, el) => {
     const wrapper = $(el).closest('[id*="shopify-section"]')
     const target = wrapper.length ? wrapper[0] : el
-    if (!recoMatched.has(target) && isEmpty(target)) {
-      recoMatched.add(target)
+    if (!replaced.has(target) && isEffectivelyEmpty(target)) {
+      replaced.add(target)
       $(target).replaceWith(PRODUCT_CAROUSEL_PLACEHOLDER)
     }
   })
 
-  // Also catch by id pattern in case the custom element wasn't matched
-  $('[id*="product-recommendations"], [id*="ProductRecommendations"]').each((_, el) => {
-    if (!recoMatched.has(el) && isEmpty(el)) {
-      recoMatched.add(el)
-      $(el).replaceWith(PRODUCT_CAROUSEL_PLACEHOLDER)
-    }
-  })
-
-  // ── Review app sections ────────────────────────────────────────────────────
-  // Yotpo, Loox, Okendo, Stamped, Judge.me, Fera, native Shopify reviews
+  // ── Pass 1b: Named detection for review apps ───────────────────────────────
   const reviewSelectors = [
-    '[class*="yotpo-main-widget"]',
-    '[id*="yotpo-reviews"]',
-    '[class*="loox"]',
-    '[id*="loox"]',
-    '[class*="okendo"]',
-    '[id*="okendo"]',
-    '[class*="stamped"]',
-    '[id*="stamped"]',
-    '[id*="judgeme"]',
-    '[class*="jdgm"]',
-    '[id*="shopify-section"][id*="review"]',
-    '[id*="shopify-section"][id*="Reviews"]',
-    '[data-section-type*="review"]',
-    '[data-section-type="product-reviews"]',
+    'yotpo-widget', '[class*="yotpo-main-widget"]', '[id*="yotpo-reviews"]',
+    '[class*="loox"]', '[id*="loox"]',
+    '[class*="okendo"]', '[id*="okendo"]',
+    '[class*="stamped"]', '[id*="stamped"]',
+    '[id*="judgeme"]', '[class*="jdgm"]',
+    '[data-section-type*="review"]', '[data-section-type="product-reviews"]',
+    '[id*="shopify-section"][id*="review"]', '[id*="shopify-section"][id*="Reviews"]',
   ]
-
-  const reviewMatched = new Set<ReturnType<typeof $>[0]>()
   reviewSelectors.forEach(sel => {
     $(sel).each((_, el) => {
       const wrapper = $(el).closest('[id*="shopify-section"]')
       const target = wrapper.length ? wrapper[0] : el
-      if (!reviewMatched.has(target) && isEmpty(target)) {
-        reviewMatched.add(target)
+      if (!replaced.has(target) && isEffectivelyEmpty(target)) {
+        replaced.add(target)
         $(target).replaceWith(REVIEWS_PLACEHOLDER)
       }
     })
+  })
+
+  // ── Pass 2: Broad scan — any remaining empty shopify-section ───────────────
+  // Custom themes use arbitrary section IDs (e.g. "shopify-section-template--others-also-bought--main").
+  // Rather than trying to match every possible name, replace ALL sections that
+  // appear effectively empty (no visible text, no real images) and aren't known
+  // utility sections (cart, search, modal, etc.).
+  $('[id*="shopify-section"], [class*="shopify-section"]').each((_, el) => {
+    if (replaced.has(el)) return
+    const id = $(el).attr('id') ?? ''
+    const cls = $(el).attr('class') ?? ''
+    if (SKIP_SECTION_RE.test(id + ' ' + cls)) return
+    // Skip sections already containing a placeholder we injected
+    if ($(el).find('[data-igualai-section]').length > 0) return
+    if (isEffectivelyEmpty(el)) {
+      replaced.add(el)
+      $(el).replaceWith(GENERIC_EMPTY_PLACEHOLDER)
+    }
   })
 
   return $.html()
