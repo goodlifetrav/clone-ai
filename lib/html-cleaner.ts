@@ -49,19 +49,30 @@ function injectAjaxPlaceholders(html: string, url: string): string {
 
   const replaced = new Set<ReturnType<typeof $>[0]>()
 
-  // ── Pass 1: Named detection for product recommendations ────────────────────
+  // ── Pass 1: Named detection for product recommendations ─────────────────────
+  // Always replace regardless of content — even when the static capture picked up
+  // product data, the carousel JS is missing so it renders as broken raw text.
   $('product-recommendations, [data-url*="recommendations/products"], [data-section-type="product-recommendations"], [id*="product-recommendations"], [id*="ProductRecommendations"]').each((_, el) => {
     const wrapper = $(el).closest('[id*="shopify-section"]')
     const target = wrapper.length ? wrapper[0] : el
-    if (!replaced.has(target) && isEffectivelyEmpty(target)) {
+    if (!replaced.has(target)) {
       replaced.add(target)
       $(target).replaceWith(PRODUCT_CAROUSEL_PLACEHOLDER)
     }
   })
 
-  // ── Pass 1b: Named detection for review apps ───────────────────────────────
+  // ── Pass 1b: Review sections — always remove entirely ────────────────────────
+  // Third-party review apps (BazaarVoice, Yotpo, Loox, etc.) render a full DOM
+  // when JS runs but the layout and data are inseparable from their scripts.
+  // Without the scripts the section is a wall of broken text/markup. Remove it.
   const reviewSelectors = [
+    // BazaarVoice
+    '[data-bv-show]', '[class*="BVRRContainer"]', '[class*="bv_main_container"]',
+    '[id*="BVRRContainer"]', '[id*="bazaarvoice"]',
+    // Yotpo
     'yotpo-widget', '[class*="yotpo-main-widget"]', '[id*="yotpo-reviews"]',
+    '[class*="yotpo-reviews"]', '[class*="yotpo-widget"]',
+    // Others
     '[class*="loox"]', '[id*="loox"]',
     '[class*="okendo"]', '[id*="okendo"]',
     '[class*="stamped"]', '[id*="stamped"]',
@@ -73,9 +84,9 @@ function injectAjaxPlaceholders(html: string, url: string): string {
     $(sel).each((_, el) => {
       const wrapper = $(el).closest('[id*="shopify-section"]')
       const target = wrapper.length ? wrapper[0] : el
-      if (!replaced.has(target) && isEffectivelyEmpty(target)) {
+      if (!replaced.has(target)) {
         replaced.add(target)
-        $(target).replaceWith(REVIEWS_PLACEHOLDER)
+        $(target).remove()
       }
     })
   })
