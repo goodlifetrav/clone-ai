@@ -50,7 +50,7 @@ export interface GeneratedImage {
 export async function generateImage(prompt: string): Promise<GeneratedImage> {
   const client = getClient()
   const model = client.getGenerativeModel({
-    model: 'gemini-2.0-flash-preview-image-generation',
+    model: 'gemini-2.0-flash-exp-image-generation',
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
