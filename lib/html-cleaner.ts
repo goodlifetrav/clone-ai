@@ -81,19 +81,27 @@ function injectAjaxPlaceholders(html: string, url: string): string {
   })
 
   // ── Pass 2: Broad scan — any remaining empty shopify-section ───────────────
-  // Custom themes use arbitrary section IDs (e.g. "shopify-section-template--others-also-bought--main").
-  // Rather than trying to match every possible name, replace ALL sections that
-  // appear effectively empty (no visible text, no real images) and aren't known
-  // utility sections (cart, search, modal, etc.).
-  $('[id*="shopify-section"], [class*="shopify-section"]').each((_, el) => {
+  // Custom themes use arbitrary section IDs. Match on shopify-section id/class
+  // AND on data-section-id / data-section-type which many themes use instead.
+  const broadSelector = '[id*="shopify-section"], [class*="shopify-section"], [data-section-id], [data-section-type]'
+  const broadMatches = $(broadSelector).toArray()
+  console.log(`[placeholder-scan] product page — found ${broadMatches.length} section candidates`)
+
+  broadMatches.forEach((el) => {
     if (replaced.has(el)) return
     const id = $(el).attr('id') ?? ''
     const cls = $(el).attr('class') ?? ''
     if (SKIP_SECTION_RE.test(id + ' ' + cls)) return
-    // Skip sections already containing a placeholder we injected
     if ($(el).find('[data-igualai-section]').length > 0) return
+    const text = $(el).text().replace(/\s+/g, ' ').trim()
+    const realImages = $(el).find('img').filter((_, img) => {
+      const src = $(img).attr('src') ?? ''
+      return src.length > 0 && !src.startsWith('data:')
+    }).length
+    console.log(`[placeholder-scan] id="${id}" cls="${cls.slice(0, 60)}" text=${text.length} imgs=${realImages}`)
     if (isEffectivelyEmpty(el)) {
       replaced.add(el)
+      console.log(`[placeholder-scan] → replacing with generic placeholder`)
       $(el).replaceWith(GENERIC_EMPTY_PLACEHOLDER)
     }
   })
