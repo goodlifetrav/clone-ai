@@ -1,29 +1,9 @@
 import { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 
-const CSS_RESET = `
-<meta name="color-scheme" content="light only">
-<style id="__preview_reset__">
-  :root, [data-theme], [data-color-scheme], [class*="dark"], [class*="theme"] {
-    --background: #ffffff !important;
-    --bg: #ffffff !important;
-    --bg-color: #ffffff !important;
-    --body-bg: #ffffff !important;
-    --page-bg: #ffffff !important;
-    --color-bg: #ffffff !important;
-    --color-background: #ffffff !important;
-    --color-canvas-default: #ffffff !important;
-    --color-canvas-subtle: #f6f8fa !important;
-    --surface-background: #ffffff !important;
-    --app-background: #ffffff !important;
-    color-scheme: light !important;
-  }
-  html, body {
-    background: #ffffff !important;
-    background-color: #ffffff !important;
-  }
-</style>
-`
+// No background override — let the cloned site's own CSS control colors.
+// Forcing white here breaks dark-themed stores (e.g. Death Wish Coffee).
+const CSS_RESET = ``
 
 // Proxy script: retry blocked images through corsproxy.io when they fail to load.
 // Uses no regex — only string methods — to stay template-literal safe.
