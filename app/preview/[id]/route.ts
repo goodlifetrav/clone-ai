@@ -75,6 +75,22 @@ function prepareHtml(raw: string): string {
     /<html([^>]*)>/i,
     (_, attrs) => `<html${attrs.replace(/\s*data-theme=["'][^"']*["']/gi, '')}>`
   )
+
+  // ── Strip EasyLockdown content-gate display:none ──────────────────────────────
+  // Confirmed structure from Death Wish Coffee (and any site using EasyLockdown):
+  //   <div class='easylockdown-content' style='display:none;'>
+  // The app wraps ALL page content and removes display:none after JS auth check.
+  // We have no auth cookie so the wrapper stays locked — strip it server-side
+  // so all existing clones work immediately without re-cloning.
+  html = html.replace(
+    /(<(?:div|section|main)\b[^>]*easylockdown[^>]*?)\s+style=(["'])display\s*:\s*none\s*;?\2/gi,
+    '$1'
+  )
+  // Also handle style attribute appearing before class attribute
+  html = html.replace(
+    /(<(?:div|section|main)\b[^>]*?)style=(["'])display\s*:\s*none\s*;?\2(\s[^>]*easylockdown[^>]*>)/gi,
+    '$1$3'
+  )
   // HEAD_INJECT: <base target="_blank"> ensures all links open in a new tab,
   // followed by the CSS reset to force light mode.
   const HEAD_INJECT = '<base target="_blank">' + CSS_RESET
