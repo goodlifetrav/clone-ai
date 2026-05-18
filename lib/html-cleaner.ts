@@ -240,33 +240,70 @@ export function cleanHtml(html: string, url = ''): string {
   }
 
   // ── Normalize carousel containers to CSS grid ─────────────────────────────
-  // After JS is stripped, Splide/Swiper/Slick slide wrappers lose their
-  // JavaScript-driven positioning. Key constraints:
-  //   - Keep overflow:hidden on the TRACK so off-screen slides don't spill
-  //     below the section and add giant blank areas.
-  //   - Reset the LIST transform (Splide uses translateX to scroll slides).
-  //   - Use flex:1 1 200px on slides — avoids calc(25%-Xpx) which collapses
-  //     to 0 when the parent track has no explicit width, causing one character
-  //     per line ("writing-mode"-style vertical text).
-  $('.splide__track, .swiper-container, .swiper, .slick-list').each((_, el) => {
-    // Preserve other inline styles; only override overflow so layout is clipped correctly
-    const s = ($(el).attr('style') ?? '').replace(/overflow\s*:[^;]+;?\s*/gi, '').trim()
-    $(el).attr('style', s ? `${s};overflow:hidden` : 'overflow:hidden')
+  // Strategy: replace the full carousel with a clean flex-wrap product grid.
+  //
+  //   1. Remove clone slides (Splide creates duplicates for infinite-loop;
+  //      they appear as blank rows or duplicate product cards in the grid).
+  //   2. Repair inline styles on slide children that cause vertical text:
+  //      - writing-mode:vertical-* → horizontal-tb
+  //      - width < 30px on any element inside a slide → auto (these are the
+  //        narrow product-name strips some themes use as a design element;
+  //        without carousel JS they make text render one char per line).
+  //   3. Reset track overflow and list transform so all slides are reachable.
+  //   4. Apply flex-wrap grid layout to slides.
+
+  // Step 1: Remove clone / duplicate slides before any layout changes
+  $('.splide__slide--clone, [class*="splide__slide"][class*="clone"]').remove()
+  $('.swiper-slide-duplicate, .swiper-slide[data-swiper-slide-index]').each((_, el) => {
+    // Only remove true duplicates (Swiper sets data-swiper-slide-index on clones)
+    const idx = $(el).attr('data-swiper-slide-index')
+    if (idx !== undefined) $(el).remove()
   })
-  $('.splide__list, .swiper-wrapper, .slick-track').each((_, el) => {
-    $(el).attr('style', 'display:flex;flex-wrap:wrap;gap:12px;transform:none;width:100%;list-style:none;padding:0')
-    $(el).children().each((_, slide) => {
-      $(slide).removeAttr('aria-hidden')
-      // flex:1 1 200px — grow to fill available space, never collapse below 200px
-      // This prevents the slide from getting 0 width (which would render text vertically)
-      $(slide).attr('style', 'flex:1 1 200px;max-width:320px;min-width:180px;display:block;overflow:hidden')
+  $('.slick-cloned').remove()
+
+  // Step 2: Fix inline writing-mode and narrow-width styles inside every slide
+  $('.splide__slide, .swiper-slide, .slick-slide').each((_, slide) => {
+    $(slide).find('[style]').each((_, el) => {
+      let s = $(el).attr('style') ?? ''
+      // Fix vertical writing-mode (intentional design element that breaks readability in clone)
+      if (/writing-mode\s*:\s*vertical/i.test(s)) {
+        s = s.replace(/writing-mode\s*:[^;]+;?\s*/gi, '')
+        s = s.replace(/text-orientation\s*:[^;]+;?\s*/gi, '')
+        s += ';writing-mode:horizontal-tb'
+      }
+      // Fix inline widths < 30px — Death Wish Coffee and similar themes use
+      // a ~14px wide vertical strip for the product name beside the product image.
+      // Without carousel JS the strip stays 14px and renders one char per line.
+      const wMatch = s.match(/(?:^|;)\s*width\s*:\s*(\d+(?:\.\d+)?)(px)/)
+      if (wMatch && parseFloat(wMatch[1]) < 30) {
+        s = s.replace(/(?:^|;)\s*width\s*:\s*\d+(?:\.\d+)?px\s*/gi, ';width:auto;min-width:60px;')
+      }
+      $(el).attr('style', s.replace(/^;+/, '').replace(/;{2,}/g, ';').trim())
     })
   })
+
+  // Step 3: Track — keep overflow hidden, clear JS-set height so rows can wrap
+  $('.splide__track, .swiper-container, .swiper, .slick-list').each((_, el) => {
+    const s = ($(el).attr('style') ?? '')
+      .replace(/overflow\s*:[^;]+;?\s*/gi, '')
+      .replace(/height\s*:[^;]+;?\s*/gi, '')
+      .trim()
+    $(el).attr('style', s ? `${s};overflow:hidden;height:auto` : 'overflow:hidden;height:auto')
+  })
+
+  // Step 4: List — reset transform, enable flex-wrap
+  $('.splide__list, .swiper-wrapper, .slick-track').each((_, el) => {
+    $(el).attr('style', 'display:flex;flex-wrap:wrap;gap:12px;transform:none;width:100%;list-style:none;padding:0;height:auto')
+    $(el).children().each((_, slide) => {
+      $(slide).removeAttr('aria-hidden')
+      $(slide).attr('style', 'flex:1 1 200px;max-width:320px;min-width:180px;display:block;overflow:hidden;height:auto')
+    })
+  })
+
   // Remove non-functional carousel UI (arrows, pagination dots)
   $('.splide__arrows, .splide__pagination, .swiper-button-prev, .swiper-button-next, .swiper-pagination, .slick-prev, .slick-next, .slick-dots').remove()
-  // Add a scoped CSS override: Shopify themes can apply writing-mode:vertical-lr
-  // to product-name elements for decorative purposes; that rule bleeds into carousel
-  // slides after JS is stripped and CSS is inlined, rendering text vertically.
+
+  // CSS safety-net: catch any writing-mode not set via inline style
   if ($('head').length) {
     $('head').append('<style>.splide__slide *,.swiper-slide *,.slick-slide *{writing-mode:horizontal-tb!important;text-orientation:mixed!important}</style>')
   }
