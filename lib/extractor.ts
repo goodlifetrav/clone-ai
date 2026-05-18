@@ -160,12 +160,19 @@ export async function extractSite(url: string): Promise<string> {
         el.removeAttribute('aria-hidden')
       })
 
-      // Force all slide lists to not clip overflow (prevents cropping in screenshot)
+      // Reset carousel transforms so slides aren't clipped off-screen in the screenshot.
+      // Do NOT set flexWrap='wrap' — that causes all slides to stack vertically in the
+      // static clone, producing duplicate product cards and giant empty spaces.
+      // Instead keep only the first slide visible; hidden slides get replaced by the
+      // PRODUCT_CAROUSEL_PLACEHOLDER or stripped by cleanHtml.
       document.querySelectorAll('.splide__list, .swiper-wrapper, .slick-track, [class*="slides-wrapper"]').forEach((el) => {
         const htmlEl = el as HTMLElement
         htmlEl.style.removeProperty('transform')
-        htmlEl.style.flexWrap = 'wrap'
         htmlEl.style.removeProperty('width')
+        // Hide slides after the first so they don't appear stacked without carousel JS
+        Array.from(htmlEl.children).forEach((slide, i) => {
+          if (i > 0) (slide as HTMLElement).style.display = 'none'
+        })
       })
     })
 

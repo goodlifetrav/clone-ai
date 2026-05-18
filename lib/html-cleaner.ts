@@ -52,7 +52,9 @@ function injectAjaxPlaceholders(html: string, url: string): string {
   // ── Pass 1: Named detection for product recommendations ─────────────────────
   // Always replace regardless of content — even when the static capture picked up
   // product data, the carousel JS is missing so it renders as broken raw text.
-  $('product-recommendations, [data-url*="recommendations/products"], [data-section-type="product-recommendations"], [id*="product-recommendations"], [id*="ProductRecommendations"]').each((_, el) => {
+  // Catches: Shopify native product-recommendations, common third-party
+  // "Also Bought" apps, upsell/cross-sell widgets, and related-products sections.
+  $('product-recommendations, [data-url*="recommendations/products"], [data-section-type="product-recommendations"], [id*="product-recommendations"], [id*="ProductRecommendations"], [id*="also-bought"], [id*="AlsoBought"], [id*="others-also-bought"], [id*="related-products"], [id*="cross-sell"], [id*="upsell-section"], [class*="also-bought"], [data-section-type="also-bought"], [data-section-type="related-products"]').each((_, el) => {
     const wrapper = $(el).closest('[id*="shopify-section"]')
     const target = wrapper.length ? wrapper[0] : el
     if (!replaced.has(target)) {
@@ -65,8 +67,15 @@ function injectAjaxPlaceholders(html: string, url: string): string {
   // Third-party review apps (BazaarVoice, Yotpo, Loox, etc.) render a full DOM
   // when JS runs but the layout and data are inseparable from their scripts.
   // Without the scripts the section is a wall of broken text/markup. Remove it.
+  //
+  // IMPORTANT: Some selectors (e.g. [data-bv-show]) also match INLINE rating
+  // widgets (data-bv-show="inline_rating") that live INSIDE the main product
+  // template section — not just dedicated review sections. If we blindly escalate
+  // to removing the shopify-section wrapper we delete the entire product info
+  // block (title, images, price, add-to-cart). Only remove the wrapper when its
+  // own ID/class confirms it is a dedicated review section.
   const reviewSelectors = [
-    // BazaarVoice
+    // BazaarVoice — [data-bv-show] matches both inline_rating AND full reviews
     '[data-bv-show]', '[class*="BVRRContainer"]', '[class*="bv_main_container"]',
     '[id*="BVRRContainer"]', '[id*="bazaarvoice"]',
     // Yotpo
@@ -83,7 +92,15 @@ function injectAjaxPlaceholders(html: string, url: string): string {
   reviewSelectors.forEach(sel => {
     $(sel).each((_, el) => {
       const wrapper = $(el).closest('[id*="shopify-section"]')
-      const target = wrapper.length ? wrapper[0] : el
+      const wrapperId = wrapper.attr('id') ?? ''
+      const wrapperCls = wrapper.attr('class') ?? ''
+      // Only escalate to removing the entire shopify-section when the section
+      // itself is clearly a dedicated review/ratings section. Otherwise just
+      // remove the review widget element — leaving the surrounding product
+      // section (title, media, form) intact.
+      const isReviewSection = wrapper.length &&
+        /review|rating|testimonial|yotpo|stamped|loox|okendo|judge|jdgm/i.test(wrapperId + ' ' + wrapperCls)
+      const target = isReviewSection ? wrapper[0] : el
       if (!replaced.has(target)) {
         replaced.add(target)
         $(target).remove()
@@ -221,6 +238,26 @@ export function cleanHtml(html: string, url = ''): string {
   } else {
     $.root().prepend(baseTag)
   }
+
+  // ── Normalize carousel containers to CSS grid ─────────────────────────────
+  // After JS is stripped, Splide/Swiper/Slick slide wrappers lose their
+  // JavaScript-driven positioning. Without cleanup they render as a horizontal
+  // overflow or, after extractor.ts hides all but the first slide, as a tall
+  // blank space. Reset them to a simple flex-wrap grid so items display cleanly.
+  $('.splide__track, .swiper-container, .swiper, .slick-list').each((_, el) => {
+    const existingStyle = $(el).attr('style') ?? ''
+    $(el).attr('style', existingStyle + ';overflow:visible !important')
+  })
+  $('.splide__list, .swiper-wrapper, .slick-track').each((_, el) => {
+    $(el).attr('style', 'display:flex;flex-wrap:wrap;gap:16px;transform:none !important;width:auto !important')
+    $(el).children().each((_, slide) => {
+      const $slide = $(slide)
+      $slide.removeAttr('aria-hidden')
+      $slide.attr('style', 'flex:0 0 calc(25% - 12px);min-width:200px;display:block !important')
+    })
+  })
+  // Remove non-functional carousel UI (arrows, pagination dots)
+  $('.splide__arrows, .splide__pagination, .swiper-button-prev, .swiper-button-next, .swiper-pagination, .slick-prev, .slick-next, .slick-dots').remove()
 
   let result = $.html()
 
