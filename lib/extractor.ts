@@ -417,6 +417,21 @@ export async function extractSite(url: string): Promise<string> {
       document.body.style.removeProperty('display')
       document.body.style.removeProperty('visibility')
       document.documentElement.style.removeProperty('overflow')
+
+      // ── Remove app-based content gates ────────────────────────────────────────
+      // EasyLockdown (and similar Shopify apps) wrap ALL page content in a
+      // div.easylockdown-content with style="display:none" and rely on their
+      // JS to remove it after an auth check. Our headless browser has no session
+      // cookie so the gate stays locked forever, hiding the entire product section.
+      // Forcibly unwrap it here so Playwright captures the real content.
+      document.querySelectorAll(
+        '.easylockdown-content, [class*="easylockdown"], [id*="easylockdown"]'
+      ).forEach(el => {
+        const h = el as HTMLElement
+        h.style.removeProperty('display')
+        h.style.removeProperty('visibility')
+        h.style.removeProperty('opacity')
+      })
     })
 
     await page.waitForTimeout(300)

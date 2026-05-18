@@ -1,9 +1,20 @@
 import { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 
-// No background override — let the cloned site's own CSS control colors.
-// Forcing white here breaks dark-themed stores (e.g. Death Wish Coffee).
-const CSS_RESET = ``
+// CSS injected into every preview to fix common cloning artifacts.
+// Do NOT add background-color here — it breaks dark-themed stores.
+const CSS_RESET = `<style>
+/* EasyLockdown and similar Shopify app content-gates wrap the full page in
+   a div with style="display:none" pending JS auth. Since static clones have
+   no JS, forcibly show the content. */
+.easylockdown-content,
+[class*="easylockdown"],
+[id*="easylockdown"] {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+</style>`
 
 // Proxy script: retry blocked images through corsproxy.io when they fail to load.
 // Uses no regex — only string methods — to stay template-literal safe.

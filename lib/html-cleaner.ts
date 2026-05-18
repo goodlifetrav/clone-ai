@@ -157,6 +157,21 @@ export function cleanHtml(html: string, url = ''): string {
   // Remove country/region selector overlays (Apple-style geo-redirect banners)
   $('[id*="country"], [class*="country-selector"], [class*="locale-selector"], [id*="locale"], [class*="region-selector"], [id*="region-selector"], [class*="geo-"], [id*="geo-banner"], [class*="country-banner"]').remove()
 
+  // ── Strip EasyLockdown and similar app content-gate inline styles ────────────
+  // These apps set style="display:none" on a wrapper div that contains the full
+  // page content, then remove it via JS after an auth check. Our cloner captures
+  // the page unauthenticated so the wrapper stays hidden. Clear the display
+  // property to expose the real content in all saved clones.
+  $('.easylockdown-content, [class*="easylockdown"], [id*="easylockdown"]').each((_, el) => {
+    const existingStyle = $(el).attr('style') ?? ''
+    const cleaned = existingStyle.replace(/\bdisplay\s*:\s*none\s*;?\s*/gi, '').trim()
+    if (cleaned) {
+      $(el).attr('style', cleaned)
+    } else {
+      $(el).removeAttr('style')
+    }
+  })
+
   // Remove modal backdrops left behind by cookie banners or popups.
   // Only target elements whose id/class explicitly signals a modal/popup backdrop —
   // NOT generic "overlay" which Framer and other frameworks use for real layout containers.
