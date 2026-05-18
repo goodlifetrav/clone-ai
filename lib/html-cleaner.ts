@@ -241,23 +241,35 @@ export function cleanHtml(html: string, url = ''): string {
 
   // ── Normalize carousel containers to CSS grid ─────────────────────────────
   // After JS is stripped, Splide/Swiper/Slick slide wrappers lose their
-  // JavaScript-driven positioning. Without cleanup they render as a horizontal
-  // overflow or, after extractor.ts hides all but the first slide, as a tall
-  // blank space. Reset them to a simple flex-wrap grid so items display cleanly.
+  // JavaScript-driven positioning. Key constraints:
+  //   - Keep overflow:hidden on the TRACK so off-screen slides don't spill
+  //     below the section and add giant blank areas.
+  //   - Reset the LIST transform (Splide uses translateX to scroll slides).
+  //   - Use flex:1 1 200px on slides — avoids calc(25%-Xpx) which collapses
+  //     to 0 when the parent track has no explicit width, causing one character
+  //     per line ("writing-mode"-style vertical text).
   $('.splide__track, .swiper-container, .swiper, .slick-list').each((_, el) => {
-    const existingStyle = $(el).attr('style') ?? ''
-    $(el).attr('style', existingStyle + ';overflow:visible !important')
+    // Preserve other inline styles; only override overflow so layout is clipped correctly
+    const s = ($(el).attr('style') ?? '').replace(/overflow\s*:[^;]+;?\s*/gi, '').trim()
+    $(el).attr('style', s ? `${s};overflow:hidden` : 'overflow:hidden')
   })
   $('.splide__list, .swiper-wrapper, .slick-track').each((_, el) => {
-    $(el).attr('style', 'display:flex;flex-wrap:wrap;gap:16px;transform:none !important;width:auto !important')
+    $(el).attr('style', 'display:flex;flex-wrap:wrap;gap:12px;transform:none;width:100%;list-style:none;padding:0')
     $(el).children().each((_, slide) => {
-      const $slide = $(slide)
-      $slide.removeAttr('aria-hidden')
-      $slide.attr('style', 'flex:0 0 calc(25% - 12px);min-width:200px;display:block !important')
+      $(slide).removeAttr('aria-hidden')
+      // flex:1 1 200px — grow to fill available space, never collapse below 200px
+      // This prevents the slide from getting 0 width (which would render text vertically)
+      $(slide).attr('style', 'flex:1 1 200px;max-width:320px;min-width:180px;display:block;overflow:hidden')
     })
   })
   // Remove non-functional carousel UI (arrows, pagination dots)
   $('.splide__arrows, .splide__pagination, .swiper-button-prev, .swiper-button-next, .swiper-pagination, .slick-prev, .slick-next, .slick-dots').remove()
+  // Add a scoped CSS override: Shopify themes can apply writing-mode:vertical-lr
+  // to product-name elements for decorative purposes; that rule bleeds into carousel
+  // slides after JS is stripped and CSS is inlined, rendering text vertically.
+  if ($('head').length) {
+    $('head').append('<style>.splide__slide *,.swiper-slide *,.slick-slide *{writing-mode:horizontal-tb!important;text-orientation:mixed!important}</style>')
+  }
 
   let result = $.html()
 
