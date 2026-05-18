@@ -38,6 +38,29 @@ export async function extractSite(url: string): Promise<string> {
       await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {})
     }
 
+    // ── Pre-pass: Remove app-based content gates BEFORE any scrolling ────────────
+    // EasyLockdown and similar Shopify apps wrap ALL page content in a
+    // div.easylockdown-content with style="display:none" pending JS auth.
+    // This MUST run before scroll passes so product section images
+    // become visible and load during the scroll phase below.
+    await page.evaluate(() => {
+      document.querySelectorAll(
+        '.easylockdown-content, [class*="easylockdown"], [id*="easylockdown"],' +
+        '.lockdown-content, [class*="content-gate"], [class*="contentgate"],' +
+        '[data-lockdown], [data-content-gate]'
+      ).forEach(el => {
+        const h = el as HTMLElement
+        h.style.removeProperty('display')
+        h.style.removeProperty('visibility')
+        h.style.removeProperty('opacity')
+        h.removeAttribute('hidden')
+      })
+      // Also force all lazy images eager so they load during the scroll passes
+      document.querySelectorAll('img[loading="lazy"]').forEach(img => {
+        (img as HTMLImageElement).loading = 'eager'
+      })
+    })
+
     // ── Pass 1: Scroll full page to trigger lazy-load and intersection observers ──
     await page.evaluate(async () => {
       const totalHeight = document.documentElement.scrollHeight

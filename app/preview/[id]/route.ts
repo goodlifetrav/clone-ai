@@ -16,10 +16,34 @@ const CSS_RESET = `<style>
 }
 </style>`
 
-// Proxy script: retry blocked images through corsproxy.io when they fail to load.
+// Proxy script: runs in-browser on every preview.
+// 1. Removes EasyLockdown and similar content-gate inline styles (JS wins over CSS)
+// 2. Retries blocked images through corsproxy.io when they fail to load.
 // Uses no regex — only string methods — to stay template-literal safe.
 const PROXY_SCRIPT = `<script>
 (function(){
+  // ── Remove app content gates (EasyLockdown etc.) via direct style mutation ──
+  // CSS !important can lose to inlined site styles of same specificity.
+  // Directly removing the inline style property always wins.
+  function unlockGates() {
+    var gates = document.querySelectorAll(
+      '.easylockdown-content, [class*="easylockdown"], [id*="easylockdown"],' +
+      '.lockdown-content, [class*="content-gate"], [class*="contentgate"],' +
+      '[data-lockdown], [data-content-gate]'
+    );
+    gates.forEach(function(el) {
+      el.style.removeProperty('display');
+      el.style.removeProperty('visibility');
+      el.style.removeProperty('opacity');
+      el.removeAttribute('hidden');
+    });
+  }
+  unlockGates();
+  // Re-run after a tick in case the gate element is injected by an inline script
+  setTimeout(unlockGates, 0);
+  setTimeout(unlockGates, 500);
+
+  // ── CORS image proxy ──────────────────────────────────────────────────────────
   var PROXY = 'https://corsproxy.io/?url=';
   function retry(img) {
     if (img.getAttribute('data-proxy')) return;
