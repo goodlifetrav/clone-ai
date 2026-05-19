@@ -261,24 +261,51 @@ export function cleanHtml(html: string, url = ''): string {
   })
   $('.slick-cloned').remove()
 
-  // Step 2: Fix inline writing-mode and narrow-width styles inside every slide
-  $('.splide__slide, .swiper-slide, .slick-slide').each((_, slide) => {
+  // Step 2: Force horizontal text on every text-bearing element inside carousel slides.
+  //
+  // Why inline !important instead of a <style> rule:
+  //   - Shopify themes often use a selector like `.splide__slide .product-name`
+  //     (specificity 0,2,0) with `!important`.
+  //   - Our <style> override `.splide__slide *` only has specificity 0,1,0 — it
+  //     loses to the theme when both use !important.
+  //   - Inline `style="writing-mode:horizontal-tb!important"` has the ABSOLUTE
+  //     highest cascade priority (inline + !important) and beats everything.
+  //
+  // We also strip any CSS-class-sourced narrow width (< 30px) that makes text
+  // render one character per line, adding a width:auto!important override.
+  const SLIDE_SEL = '.splide__slide, .swiper-slide, .slick-slide'
+  $(SLIDE_SEL).each((_, slide) => {
+    // All existing inline styles: fix writing-mode and narrow width
     $(slide).find('[style]').each((_, el) => {
       let s = $(el).attr('style') ?? ''
-      // Fix vertical writing-mode (intentional design element that breaks readability in clone)
-      if (/writing-mode\s*:\s*vertical/i.test(s)) {
-        s = s.replace(/writing-mode\s*:[^;]+;?\s*/gi, '')
-        s = s.replace(/text-orientation\s*:[^;]+;?\s*/gi, '')
-        s += ';writing-mode:horizontal-tb'
-      }
-      // Fix inline widths < 30px — Death Wish Coffee and similar themes use
-      // a ~14px wide vertical strip for the product name beside the product image.
-      // Without carousel JS the strip stays 14px and renders one char per line.
+      s = s.replace(/writing-mode\s*:[^;]+;?\s*/gi, '')
+           .replace(/text-orientation\s*:[^;]+;?\s*/gi, '')
       const wMatch = s.match(/(?:^|;)\s*width\s*:\s*(\d+(?:\.\d+)?)(px)/)
       if (wMatch && parseFloat(wMatch[1]) < 30) {
-        s = s.replace(/(?:^|;)\s*width\s*:\s*\d+(?:\.\d+)?px\s*/gi, ';width:auto;min-width:60px;')
+        s = s.replace(/(?:^|;)\s*width\s*:\s*\d+(?:\.\d+)?px\s*/gi, ';width:auto!important;min-width:60px!important;')
       }
       $(el).attr('style', s.replace(/^;+/, '').replace(/;{2,}/g, ';').trim())
+    })
+    // Text elements: inject writing-mode:horizontal-tb!important unconditionally
+    // so it wins regardless of what the inlined stylesheet declares.
+    $(slide).find('p, h1, h2, h3, h4, h5, h6, span, a, strong, em, li').each((_, el) => {
+      const existing = ($(el).attr('style') ?? '')
+        .replace(/writing-mode\s*:[^;]+;?\s*/gi, '')
+        .replace(/text-orientation\s*:[^;]+;?\s*/gi, '')
+        .replace(/;{2,}/g, ';')
+        .replace(/^;|;$/g, '')
+      $(el).attr('style', existing
+        ? `${existing};writing-mode:horizontal-tb!important`
+        : 'writing-mode:horizontal-tb!important'
+      )
+    })
+    // Product-name containers: also force auto width via inline !important
+    $(slide).find('[class*="title"],[class*="name"],[class*="heading"],[class*="label"],[class*="product__"],[class*="card__"]').each((_, el) => {
+      let s = $(el).attr('style') ?? ''
+      if (!/\bwidth\s*:\s*(auto|[0-9])/i.test(s)) {
+        s = (s ? s + ';' : '') + 'width:auto!important;min-width:0!important'
+        $(el).attr('style', s)
+      }
     })
   })
 
