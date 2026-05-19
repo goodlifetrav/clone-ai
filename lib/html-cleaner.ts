@@ -53,13 +53,16 @@ function injectAjaxPlaceholders(html: string, url: string): string {
   // Always replace regardless of content — even when the static capture picked up
   // product data, the carousel JS is missing so it renders as broken raw text.
   // Catches: Shopify native product-recommendations, common third-party
-  // "Also Bought" apps, upsell/cross-sell widgets, and related-products sections.
-  // Rebuy Smart Cart / product-recommendations / "Also Bought" apps — all require
-  // live Shopify JS and API data. Replace with placeholder regardless of whether
-  // static capture happened to pick up product data, because without the JS the
-  // carousel renders broken (wrong layout, vertical text, non-functional buttons).
-  $('product-recommendations, [data-url*="recommendations/products"], [data-section-type="product-recommendations"], [id*="product-recommendations"], [id*="ProductRecommendations"], [id*="also-bought"], [id*="AlsoBought"], [id*="others-also-bought"], [id*="related-products"], [id*="cross-sell"], [id*="upsell-section"], [class*="also-bought"], [data-section-type="also-bought"], [data-section-type="related-products"], .rebuy-widget, .rebuy-product-grid, .rebuy-recommended-products, [class*="rebuy-widget"], [id*="rebuy"]').each((_, el) => {
+  // "Also Bought" apps, upsell/cross-sell widgets, Rebuy product grids, etc.
+  // NOTE: [class*="rebuy-widget"] and [id*="rebuy"] are intentionally NOT used
+  // here — they match Rebuy's cart flyout, notification modals, and checkout
+  // widgets which are utility sections (not carousels) and appear after the footer.
+  $('product-recommendations, [data-url*="recommendations/products"], [data-section-type="product-recommendations"], [id*="product-recommendations"], [id*="ProductRecommendations"], [id*="also-bought"], [id*="AlsoBought"], [id*="others-also-bought"], [id*="related-products"], [id*="cross-sell"], [id*="upsell-section"], [class*="also-bought"], [data-section-type="also-bought"], [data-section-type="related-products"], .rebuy-product-grid, .rebuy-recommended-products').each((_, el) => {
     const wrapper = $(el).closest('[id*="shopify-section"]')
+    const wrapperId = wrapper.attr('id') ?? ''
+    const wrapperCls = wrapper.attr('class') ?? ''
+    // Skip cart drawers, search modals, and other utility sections
+    if (SKIP_SECTION_RE.test(wrapperId + ' ' + wrapperCls)) return
     const target = wrapper.length ? wrapper[0] : el
     if (!replaced.has(target)) {
       replaced.add(target)
