@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     // generate route returns the cached HTML instantly.
     // If it fails the project stays 'pending' and the generate route falls back
     // to the existing screenshot/Claude Vision approach.
-    runDomPipeline(project.id, url).catch((err) =>
+    runDomPipeline(project.id, url, user.id).catch((err) =>
       console.error('[DOM] Unhandled pipeline error:', err)
     )
 
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 // DOM extraction pipeline (runs asynchronously after the response is sent)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function runDomPipeline(projectId: string, url: string): Promise<void> {
+async function runDomPipeline(projectId: string, url: string, userId: string): Promise<void> {
   const supabase = createServiceClient()
 
   try {
@@ -178,25 +178,41 @@ async function runDomPipeline(projectId: string, url: string): Promise<void> {
     html = cleanHtml(html, url)
     console.log(`[DOM] HTML cleaned — ${html.length} chars`)
 
-    // 6. Sync header/footer from the most recently completed clone of the same domain
+    // 6. Sync header/footer from the most recently completed clone of the same domain,
+    //    scoped to this user's folder (falls back to same user + same domain if no folder).
     const domain = extractDomain(url)
     if (domain) {
-      const { data: sibling } = await supabase
+      // Get the current project's folder_id (may be set by the time the pipeline runs)
+      const { data: currentProject } = await supabase
+        .from('projects')
+        .select('folder_id')
+        .eq('id', projectId)
+        .single()
+
+      const folderId = currentProject?.folder_id ?? null
+
+      let siblingQuery = supabase
         .from('projects')
         .select('html_content')
         .neq('id', projectId)
-        .ilike('url', `%${domain}%`)
+        .eq('user_id', userId)
+        .ilike('url', `%://${domain}/%`)
         .eq('status', 'complete')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
+
+      if (folderId) {
+        siblingQuery = siblingQuery.eq('folder_id', folderId)
+      }
+
+      const { data: sibling } = await siblingQuery.single()
 
       if (sibling?.html_content) {
         const { extractHeaderFooter, applyHeaderFooter } = await import('@/lib/header-footer-sync')
         const hf = extractHeaderFooter(sibling.html_content)
         if (hf.header || hf.footer) {
           html = applyHeaderFooter(html, hf)
-          console.log(`[DOM] Header/footer synced from sibling — header:${!!hf.header} footer:${!!hf.footer}`)
+          console.log(`[DOM] Header/footer synced — folder:${folderId ?? 'none'} header:${!!hf.header} footer:${!!hf.footer}`)
         }
       }
     }
