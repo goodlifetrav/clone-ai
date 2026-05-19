@@ -169,6 +169,36 @@ export async function extractSite(url: string): Promise<string> {
       })
     })
 
+    // ── Pass 3b: Fix vertical writing-mode via computed styles ───────────────────
+    // Shopify themes (e.g. Death Wish Coffee Splide carousel) style inactive slides
+    // with writing-mode:vertical-rl so product names appear rotated as a design
+    // element. Without carousel JS no slides get .is-active, so ALL names go
+    // vertical. Using getComputedStyle here wins over any CSS specificity battle.
+    await page.evaluate(() => {
+      const slideSelectors = [
+        '.splide__slide', '.swiper-slide', '.slick-slide',
+        '.carousel__slide', '.slider__slide',
+        '[class*="slide-item"]', '[class*="slider__item"]',
+      ]
+      slideSelectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(slide => {
+          ;(slide as HTMLElement).querySelectorAll('*').forEach(el => {
+            const h = el as HTMLElement
+            const cs = window.getComputedStyle(h)
+            if (cs.writingMode && cs.writingMode !== 'horizontal-tb') {
+              h.style.setProperty('writing-mode', 'horizontal-tb', 'important')
+              h.style.setProperty('text-orientation', 'mixed', 'important')
+              const w = parseFloat(cs.width)
+              if (!isNaN(w) && w > 0 && w < 40) {
+                h.style.setProperty('width', 'auto', 'important')
+                h.style.setProperty('min-width', '60px', 'important')
+              }
+            }
+          })
+        })
+      })
+    })
+
     // ── Pass 4: Force AOS / GSAP / Intersection Observer animated elements visible ──
     const isProductPage = url.includes('/products/')
     await page.addStyleTag({
