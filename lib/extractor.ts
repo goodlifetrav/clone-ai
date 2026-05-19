@@ -169,36 +169,6 @@ export async function extractSite(url: string): Promise<string> {
       })
     })
 
-    // ── Pass 3b: Fix vertical writing-mode via computed styles ───────────────────
-    // Shopify themes (e.g. Death Wish Coffee Splide carousel) style inactive slides
-    // with writing-mode:vertical-rl so product names appear rotated as a design
-    // element. Without carousel JS no slides get .is-active, so ALL names go
-    // vertical. Using getComputedStyle here wins over any CSS specificity battle.
-    await page.evaluate(() => {
-      const slideSelectors = [
-        '.splide__slide', '.swiper-slide', '.slick-slide',
-        '.carousel__slide', '.slider__slide',
-        '[class*="slide-item"]', '[class*="slider__item"]',
-      ]
-      slideSelectors.forEach(sel => {
-        document.querySelectorAll(sel).forEach(slide => {
-          ;(slide as HTMLElement).querySelectorAll('*').forEach(el => {
-            const h = el as HTMLElement
-            const cs = window.getComputedStyle(h)
-            if (cs.writingMode && cs.writingMode !== 'horizontal-tb') {
-              h.style.setProperty('writing-mode', 'horizontal-tb', 'important')
-              h.style.setProperty('text-orientation', 'mixed', 'important')
-              const w = parseFloat(cs.width)
-              if (!isNaN(w) && w > 0 && w < 40) {
-                h.style.setProperty('width', 'auto', 'important')
-                h.style.setProperty('min-width', '60px', 'important')
-              }
-            }
-          })
-        })
-      })
-    })
-
     // ── Pass 4: Force AOS / GSAP / Intersection Observer animated elements visible ──
     const isProductPage = url.includes('/products/')
     await page.addStyleTag({
@@ -489,13 +459,53 @@ export async function extractSite(url: string): Promise<string> {
 
     await page.waitForTimeout(300)
 
+    // ── Pre-capture: Fix ALL vertical writing-mode via computed styles ───────────
+    // Runs here (after ALL scroll/AJAX passes) so dynamically-loaded content like
+    // Shopify product recommendations is already in the DOM.
+    // We check every element in the body — not just known carousel selectors — so
+    // this works regardless of the theme's class names.
+    const writingModeFixed = await page.evaluate(() => {
+      let count = 0
+      const sample: string[] = []
+      document.body.querySelectorAll('*').forEach(el => {
+        const tag = el.tagName
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK') return
+        const h = el as HTMLElement
+        if (!h.style) return
+        const cs = window.getComputedStyle(h)
+        if (cs.writingMode !== 'horizontal-tb') {
+          h.style.setProperty('writing-mode', 'horizontal-tb', 'important')
+          h.style.setProperty('text-orientation', 'mixed', 'important')
+          const w = parseFloat(cs.width)
+          if (!isNaN(w) && w > 0 && w < 40) {
+            h.style.setProperty('width', 'auto', 'important')
+            h.style.setProperty('min-width', '60px', 'important')
+          }
+          count++
+          if (sample.length < 5) sample.push(`${tag}.${String(el.className).slice(0, 40)}`)
+        }
+      })
+      return { count, sample }
+    })
+    console.log(`[extractor] Writing-mode fixed on ${writingModeFixed.count} elements:`, writingModeFixed.sample)
+
     // ── Extract and inline CSS from CSSOM ─────────────────────────────────────
+    // Also strips writing-mode:vertical-* from rule text so the saved stylesheet
+    // can't re-introduce vertical text when the browser re-evaluates it.
     await page.evaluate(() => {
       const rules: string[] = []
+      const verticalWmRe = /writing-mode\s*:\s*(?:vertical-rl|vertical-lr|sideways-rl|sideways-lr)/i
       for (const sheet of Array.from(document.styleSheets)) {
         try {
           for (const rule of Array.from(sheet.cssRules ?? [])) {
-            rules.push(rule.cssText)
+            let text = rule.cssText
+            if (verticalWmRe.test(text)) {
+              text = text.replace(
+                /writing-mode\s*:\s*(?:vertical-rl|vertical-lr|sideways-rl|sideways-lr)/gi,
+                'writing-mode: horizontal-tb'
+              )
+            }
+            rules.push(text)
           }
         } catch {
           // Cross-origin sheet — skip, leave link tag

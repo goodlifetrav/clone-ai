@@ -240,25 +240,18 @@ export function cleanHtml(html: string, url = ''): string {
   }
 
   // ── Fix vertical writing-mode in inlined CSS ─────────────────────────────────
-  // Some themes (e.g. Death Wish Coffee) style inactive carousel slides with
-  // writing-mode:vertical-rl + a narrow width (~14px) so rotated text acts as a
-  // design label. Without carousel JS, no slides ever receive .is-active, so
-  // ALL product names stay vertical. Rewriting the CSS rule directly is more
-  // reliable than any inline-style override because it eliminates the source.
+  // Direct string replace across ALL <style> blocks — no regex rule-block parsing
+  // needed. The extractor already fixes this in-browser via computed styles, but
+  // this pass covers anything in CSS fetched by css-inliner.ts after extraction.
   $('style').each((_, styleEl) => {
-    const css = $(styleEl).html() ?? ''
+    let css = $(styleEl).html() ?? ''
     if (!css.includes('writing-mode')) return
-    const fixed = css.replace(
-      /(\{[^{}]*writing-mode\s*:\s*vertical[^{}]*\})/gi,
-      (block: string) =>
-        block
-          .replace(/writing-mode\s*:\s*vertical[^;]*;?/gi, 'writing-mode:horizontal-tb;')
-          .replace(/text-orientation\s*:[^;]+;?/gi, '')
-          .replace(/\bwidth\s*:\s*(\d+\.?\d*)\s*px/g, (_m: string, n: string) =>
-            parseFloat(n) < 30 ? 'width:auto' : _m
-          )
-    )
-    if (fixed !== css) $(styleEl).html(fixed)
+    css = css
+      .replace(/writing-mode\s*:\s*vertical-rl/gi, 'writing-mode:horizontal-tb')
+      .replace(/writing-mode\s*:\s*vertical-lr/gi, 'writing-mode:horizontal-tb')
+      .replace(/writing-mode\s*:\s*sideways-rl/gi, 'writing-mode:horizontal-tb')
+      .replace(/writing-mode\s*:\s*sideways-lr/gi, 'writing-mode:horizontal-tb')
+    $(styleEl).html(css)
   })
 
   // ── Normalize carousel containers to CSS grid ─────────────────────────────
