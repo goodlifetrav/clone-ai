@@ -25,7 +25,7 @@ export async function POST(
 
   const { data: project } = await supabase
     .from('projects')
-    .select('html_content, user_id, folder_id')
+    .select('html_content, user_id, folder_id, url')
     .eq('id', id)
     .single()
 
@@ -76,17 +76,50 @@ THIS IS A COLLECTION PAGE. Keep the product grid layout. Style the page with bra
 Keep the exact same layout, sections, and visual structure. Replace all text with brand-appropriate copy.`
   }
 
-  // Load shared header/footer from folder for non-homepage rebuilds
+  // Load shared header/footer for non-homepage rebuilds so all pages match.
+  // Priority: folder.brand_profile (set after a homepage rebuild) → rebuilt sibling
+  // from the same domain (fallback when no folder, or folder has no saved profile yet).
   let sharedHeaderHtml: string | undefined
   let sharedFooterHtml: string | undefined
-  if (project.folder_id && pageType !== 'homepage') {
-    const { data: folder } = await supabase
-      .from('folders')
-      .select('brand_profile')
-      .eq('id', project.folder_id)
-      .single()
-    sharedHeaderHtml = folder?.brand_profile?.headerHtml || undefined
-    sharedFooterHtml = folder?.brand_profile?.footerHtml || undefined
+  if (pageType !== 'homepage') {
+    // 1. Folder brand_profile (fastest path when homepage was already rebuilt)
+    if (project.folder_id) {
+      const { data: folder } = await supabase
+        .from('folders')
+        .select('brand_profile')
+        .eq('id', project.folder_id)
+        .single()
+      sharedHeaderHtml = folder?.brand_profile?.headerHtml || undefined
+      sharedFooterHtml = folder?.brand_profile?.footerHtml || undefined
+    }
+
+    // 2. Domain-based fallback: find any already-rebuilt page from this user + domain
+    if (!sharedHeaderHtml && !sharedFooterHtml && project.url) {
+      let domain = ''
+      try { domain = new URL(project.url).hostname.replace(/^www\./, '') } catch { /* ignore */ }
+      if (domain) {
+        const { data: siblings } = await supabase
+          .from('projects')
+          .select('html_content')
+          .eq('user_id', user.id)
+          .neq('id', id)
+          .ilike('url', `%${domain}%`)
+          .not('html_content', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(5)
+
+        for (const s of siblings ?? []) {
+          if (!s.html_content?.includes('data-igualai-section')) continue
+          const { headerHtml, footerHtml } = extractHeaderFooter(s.html_content)
+          if (headerHtml || footerHtml) {
+            sharedHeaderHtml = headerHtml || undefined
+            sharedFooterHtml = footerHtml || undefined
+            console.log(`[rebuild] Header/footer sourced from sibling project (domain fallback)`)
+            break
+          }
+        }
+      }
+    }
   }
 
   const encoder = new TextEncoder()
