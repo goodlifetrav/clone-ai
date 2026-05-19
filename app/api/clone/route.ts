@@ -178,7 +178,30 @@ async function runDomPipeline(projectId: string, url: string): Promise<void> {
     html = cleanHtml(html, url)
     console.log(`[DOM] HTML cleaned — ${html.length} chars`)
 
-    // 6. Save to database
+    // 6. Sync header/footer from the most recently completed clone of the same domain
+    const domain = extractDomain(url)
+    if (domain) {
+      const { data: sibling } = await supabase
+        .from('projects')
+        .select('html_content')
+        .neq('id', projectId)
+        .ilike('url', `%${domain}%`)
+        .eq('status', 'complete')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (sibling?.html_content) {
+        const { extractHeaderFooter, applyHeaderFooter } = await import('@/lib/header-footer-sync')
+        const hf = extractHeaderFooter(sibling.html_content)
+        if (hf.header || hf.footer) {
+          html = applyHeaderFooter(html, hf)
+          console.log(`[DOM] Header/footer synced from sibling — header:${!!hf.header} footer:${!!hf.footer}`)
+        }
+      }
+    }
+
+    // 7. Save to database
     console.log(`[DOM] Saving ${html.length} chars to DB...`)
     const { error: saveError } = await supabase
       .from('projects')
