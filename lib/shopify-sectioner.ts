@@ -183,17 +183,98 @@ function detectPageBg($: CheerioAPI, customColors: Record<string, string> = {}):
   return '#ffffff'
 }
 
+const SPACING_SCALE: Record<number, string> = {
+  0:'0', 1:'0.25rem', 2:'0.5rem', 3:'0.75rem', 4:'1rem', 5:'1.25rem', 6:'1.5rem',
+  8:'2rem', 10:'2.5rem', 12:'3rem', 14:'3.5rem', 16:'4rem', 20:'5rem', 24:'6rem', 32:'8rem',
+}
+
+const GRADIENT_DIRS: Record<string, string> = {
+  r:'to right', l:'to left', t:'to top', b:'to bottom',
+  tr:'to top right', tl:'to top left', br:'to bottom right', bl:'to bottom left',
+}
+
+/** Convert complex/responsive Tailwind classes to inline styles using Cheerio.
+ *  CSS class shims can't handle responsive prefixes (md:, lg:) or multi-value utilities
+ *  (aspect-*, bg-gradient-to-*, from-*, to-*, bg-opacity-*). We walk the DOM directly. */
+function applyTailwindInlineConversions($: CheerioAPI, customColors: Record<string, string>): void {
+  $('*').each((_, el) => {
+    const $el = $(el)
+    const cls = $el.attr('class') ?? ''
+    if (!cls) return
+
+    const styles: string[] = []
+    const existing = ($el.attr('style') ?? '').trim()
+
+    // ── Responsive grid columns ───────────────────────────────────────────
+    // "grid-cols-1 md:grid-cols-3" → 3 columns (take max across all breakpoints)
+    const gridCols = [...cls.matchAll(/\b(?:(?:sm|md|lg|xl|2xl):)?grid-cols-(\d+)\b/g)]
+    if (gridCols.length > 0 && /\bgrid\b/.test(cls)) {
+      const maxCols = Math.max(...gridCols.map(m => parseInt(m[1])))
+      styles.push(`display:grid`, `grid-template-columns:repeat(${maxCols},minmax(0,1fr))`)
+      // Responsive gap
+      const gapM = cls.match(/\b(?:(?:sm|md|lg|xl|2xl):)?gap-(\d+)\b/)
+      if (gapM) {
+        const v = SPACING_SCALE[parseInt(gapM[1])]
+        if (v) styles.push(`gap:${v}`)
+      }
+    }
+
+    // ── Fixed heights ─────────────────────────────────────────────────────
+    if (/\bh-screen\b/.test(cls) && !existing.includes('height:'))     styles.push(`height:100vh`)
+    if (/\bmin-h-screen\b/.test(cls) && !existing.includes('min-height:')) styles.push(`min-height:100vh`)
+
+    // ── Aspect ratio ──────────────────────────────────────────────────────
+    if (/\baspect-square\b/.test(cls) && !existing.includes('aspect-ratio:')) styles.push(`aspect-ratio:1/1`)
+    if (/\baspect-video\b/.test(cls) && !existing.includes('aspect-ratio:'))  styles.push(`aspect-ratio:16/9`)
+
+    // ── Gradient backgrounds with custom palette colors ───────────────────
+    // bg-gradient-to-{dir} from-{color} to-{color} → inline linear-gradient
+    const dirM = cls.match(/\bbg-gradient-to-(r|l|t|b|tr|tl|br|bl)\b/)
+    if (dirM && !existing.includes('background-image:')) {
+      const dir = GRADIENT_DIRS[dirM[1]]
+      let fromColor = '', toColor = '', viaColor = ''
+
+      for (const [key, val] of Object.entries(customColors)) {
+        if (new RegExp(`\\bfrom-${key}\\b`).test(cls)) fromColor = val
+        if (new RegExp(`\\bto-${key}\\b`).test(cls))   toColor   = val
+        if (new RegExp(`\\bvia-${key}\\b`).test(cls))  viaColor  = val
+      }
+      if (/\bfrom-black\b/.test(cls)) fromColor = '#000000'
+      if (/\bfrom-white\b/.test(cls)) fromColor = '#ffffff'
+      if (/\bto-black\b/.test(cls))   toColor   = '#000000'
+      if (/\bto-white\b/.test(cls))   toColor   = '#ffffff'
+
+      if (fromColor && toColor) {
+        const stops = viaColor ? `${fromColor},${viaColor},${toColor}` : `${fromColor},${toColor}`
+        styles.push(`background-image:linear-gradient(${dir},${stops})`)
+      }
+    }
+
+    // ── bg-opacity with bg-black/white → rgba background ─────────────────
+    const opacityM = cls.match(/\bbg-opacity-(\d+)\b/)
+    if (opacityM && !existing.includes('background-color:rgba')) {
+      const alpha = parseInt(opacityM[1]) / 100
+      if (/\bbg-black\b/.test(cls)) styles.push(`background-color:rgba(0,0,0,${alpha})`)
+      if (/\bbg-white\b/.test(cls)) styles.push(`background-color:rgba(255,255,255,${alpha})`)
+    }
+
+    if (styles.length > 0) {
+      $el.attr('style', [existing, ...styles].filter(Boolean).join(';'))
+    }
+  })
+}
+
 /** Inject background/text colors and Tailwind utility shims into a section's Liquid.
  *
  *  bg/textColor are hardcoded into the {% style %} block so the section renders
  *  correctly even when Shopify hasn't seeded schema defaults (which happens when
  *  templates/index.json has settings:{} and the theme hasn't been opened in the editor).
- *  We also pipe through {{ section.settings.bg_color | default: bg }} so that a
- *  merchant who later opens the Theme Editor and changes the color picker still wins.
+ *  We also set the bg directly as inline style on the outer element as a belt-and-suspenders
+ *  fallback (CSS !important from {%- style -%} wins when the Liquid setting is present).
  *
  *  Tailwind CDN is blocked by Shopify CSP. We shim every Tailwind utility class
  *  present in the section HTML so layout renders 1:1 with the IgualAI preview. */
-function injectColorVars(html: string, bg = '#ffffff', textColor?: string): string {
+function injectColorVars(html: string, bg = '#ffffff', textColor?: string, customColors: Record<string, string> = {}): string {
   const resolvedText = textColor ?? (bg === '#ffffff' || bg === '#fff' ? '#111111' : '#ffffff')
   const $ = load(html)
   const outer = $('body').children().first()
@@ -203,13 +284,13 @@ function injectColorVars(html: string, bg = '#ffffff', textColor?: string): stri
   const shim = (cls: string, css: string) => shimLines.push(`  [data-igualai-id="{{ section.id }}"] .${cls} { ${css} }`)
 
   // ── Display / layout ──────────────────────────────────────────────────────
+  // NOTE: "block" and "hidden" shims intentionally omitted — "block" appears in common words
+  // ("blockchain", text content) causing false positives; "hidden" can hide md:hidden elements
   if (has('"flex') || has(' flex ') || has("'flex") || has('class="flex"') || has('flex items') || has('flex '))
     shim('flex', 'display: flex !important;')
   if (has('inline-flex'))    shim('inline-flex', 'display: inline-flex !important;')
   if (has('grid ') || has('"grid"') || has('grid-cols'))
     shim('grid', 'display: grid !important;')
-  if (has('hidden'))         shim('hidden', 'display: none !important;')
-  if (has('block'))          shim('block', 'display: block !important;')
 
   // ── Flex/grid children ────────────────────────────────────────────────────
   if (has('flex-col'))       shim('flex-col', 'flex-direction: column !important;')
@@ -251,11 +332,15 @@ function injectColorVars(html: string, bg = '#ffffff', textColor?: string): stri
   if (has('whitespace-nowrap'))shim('whitespace-nowrap', 'white-space: nowrap !important;')
 
   // ── Sizing ────────────────────────────────────────────────────────────────
+  // h-screen, min-h-screen, aspect-square handled by applyTailwindInlineConversions (inline styles)
   if (has('w-full'))         shim('w-full', 'width: 100% !important;')
   if (has('h-full'))         shim('h-full', 'height: 100% !important;')
-  if (has('min-h-screen'))   shim('min-h-screen', 'min-height: 100vh !important;')
-  if (has('max-w-'))         shimLines.push(`  [data-igualai-id="{{ section.id }}"] .max-w-7xl { max-width: 80rem !important; } [data-igualai-id="{{ section.id }}"] .max-w-6xl { max-width: 72rem !important; } [data-igualai-id="{{ section.id }}"] .max-w-5xl { max-width: 64rem !important; } [data-igualai-id="{{ section.id }}"] .max-w-4xl { max-width: 56rem !important; }`)
   if (has('mx-auto'))        shim('mx-auto', 'margin-left: auto !important; margin-right: auto !important;')
+  if (has('max-w-7xl'))      shim('max-w-7xl', 'max-width: 80rem !important;')
+  if (has('max-w-6xl'))      shim('max-w-6xl', 'max-width: 72rem !important;')
+  if (has('max-w-5xl'))      shim('max-w-5xl', 'max-width: 64rem !important;')
+  if (has('max-w-4xl'))      shim('max-w-4xl', 'max-width: 56rem !important;')
+  if (has('max-w-3xl'))      shim('max-w-3xl', 'max-width: 48rem !important;')
 
   // ── Padding / gap (common Tailwind scale) ─────────────────────────────────
   const SPACING: Record<number, string> = {1:'0.25rem',2:'0.5rem',3:'0.75rem',4:'1rem',5:'1.25rem',6:'1.5rem',8:'2rem',10:'2.5rem',12:'3rem',16:'4rem',20:'5rem',24:'6rem'}
@@ -322,17 +407,21 @@ function injectColorVars(html: string, bg = '#ffffff', textColor?: string): stri
   [data-igualai-id="{{ section.id }}"] button[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]) { background-color: var(--color-button) !important; color: var(--color-button-text) !important; }${tailwindShims}
 {%- endstyle -%}`
 
+  // Run inline conversions for responsive/complex classes (grid, aspect, gradients, h-screen)
+  applyTailwindInlineConversions($, customColors)
+
   if (outer.length) {
     outer.attr('data-igualai-id', '{{ section.id }}')
-    // Strip any hardcoded background-color from inline style so our scoped CSS rule wins
+    // Set bg directly as inline style — reliable fallback if {%- style -%} Liquid var is empty.
+    // The {%- style -%} CSS has !important so it wins when the Liquid setting resolves.
     const existingStyle = (outer.attr('style') ?? '')
       .replace(/background(?:-color)?\s*:[^;]+;?\s*/gi, '')
       .replace(/^\s*;?\s*|\s*;?\s*$/g, '')
-    if (existingStyle) outer.attr('style', existingStyle)
-    else outer.removeAttr('style')
+    const newStyle = `background-color:${bg}${existingStyle ? ';' + existingStyle : ''}`
+    outer.attr('style', newStyle)
     return styleBlock + '\n' + bodyHtml($)
   }
-  return `${styleBlock}\n<div data-igualai-id="{{ section.id }}">${html}</div>`
+  return `${styleBlock}\n<div data-igualai-id="{{ section.id }}" style="background-color:${bg}">${html}</div>`
 }
 
 /** Count visual "images" — img tags, CSS backgrounds, gradients, and IgualAI product card placeholders */
@@ -1058,11 +1147,11 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
     const textCol = bg === '#ffffff' || bg === '#fff' ? '#111111' : '#ffffff'
     if (type === 'hero') {
       const { liquid, defaults } = liquidifyHero(chunkHtml)
-      sectionContent = injectColorVars(liquid, bg, textCol) + schemaTag(buildHeroSchema(defaults, bg))
+      sectionContent = injectColorVars(liquid, bg, textCol, customColors) + schemaTag(buildHeroSchema(defaults, bg))
     } else if (type === 'collection-list') {
       const $c = load(chunkHtml)
       const heading = $c('h2, h3').first().text().trim()
-      sectionContent = injectColorVars(collectionListLiquid(heading), bg, textCol) + schemaTag(buildCollectionListSchema(heading, bg))
+      sectionContent = injectColorVars(collectionListLiquid(heading), bg, textCol, customColors) + schemaTag(buildCollectionListSchema(heading, bg))
     } else if (type === 'product-main') {
       sectionContent = productMainLiquid(bg) + schemaTag(buildProductMainSchema(bg))
     } else if (type === 'product-grid') {
@@ -1070,17 +1159,17 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
       const heading = $c('h2, h3').first().text().trim()
       if (pageType === 'collection') {
         // Collection pages: dynamic Shopify product loop using built-in `collection` variable
-        sectionContent = injectColorVars(productGridLiquid(heading, true), bg, textCol) + schemaTag(buildProductGridSchema({ heading }, bg))
+        sectionContent = injectColorVars(productGridLiquid(heading, true), bg, textCol, customColors) + schemaTag(buildProductGridSchema({ heading }, bg))
       } else {
         // Homepage / other pages: render the IgualAI-designed product cards as static HTML.
         // A dynamic loop would show "Select a collection in the sidebar" until configured.
         // Static rendering preserves the brand design immediately on push.
         const { liquid, defaults } = liquidifyContent(chunkHtml)
-        sectionContent = injectColorVars(liquid, bg, textCol) + schemaTag(buildContentSchema('Featured Products', { heading: heading || defaults.heading || '', subheading: defaults.subheading || '' }, imgCount >= 2, bg))
+        sectionContent = injectColorVars(liquid, bg, textCol, customColors) + schemaTag(buildContentSchema('Featured Products', { heading: heading || defaults.heading || '', subheading: defaults.subheading || '' }, imgCount >= 2, bg))
       }
     } else if (type === 'newsletter') {
       const { liquid, defaults } = liquidifyHero(chunkHtml)
-      sectionContent = injectColorVars(liquid, bg, textCol) + schemaTag({
+      sectionContent = injectColorVars(liquid, bg, textCol, customColors) + schemaTag({
         name: 'Newsletter',
         settings: [
           setting({ type: 'text', id: 'heading', label: 'Heading' }, defaults.heading),
@@ -1093,7 +1182,7 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
     } else {
       const { liquid, defaults } = liquidifyContent(chunkHtml)
       const displayName = type.charAt(0).toUpperCase() + type.slice(1).replace(/-/g, ' ')
-      sectionContent = injectColorVars(liquid, bg, textCol) + schemaTag(buildContentSchema(displayName, defaults, imgCount >= 2, bg))
+      sectionContent = injectColorVars(liquid, bg, textCol, customColors) + schemaTag(buildContentSchema(displayName, defaults, imgCount >= 2, bg))
     }
 
     sections[name] = sectionContent
