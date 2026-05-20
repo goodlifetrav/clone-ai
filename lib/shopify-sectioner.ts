@@ -35,10 +35,26 @@ function bodyHtml($: CheerioAPI): string {
 
 /** Detect the dominant background color of a section from inline styles or Tailwind classes */
 function detectBgColor(html: string): string {
+  // Inline hex — check first
   const inline = html.match(/background(?:-color)?\s*:\s*(#[0-9a-f]{3,8})/i)
   if (inline) return inline[1]
+
+  // Inline rgb/rgba — Gemini sometimes emits these instead of hex
+  const rgbMatch = html.match(/background(?:-color)?\s*:\s*rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i)
+  if (rgbMatch) {
+    const [r, g, b] = [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map(v => parseInt(v))
+    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+  }
+
+  // CSS color keywords
+  if (/background(?:-color)?\s*:\s*black\b/i.test(html)) return '#000000'
+  if (/background(?:-color)?\s*:\s*white\b/i.test(html)) return '#ffffff'
+
+  // Tailwind arbitrary value
   const arbitrary = html.match(/\bbg-\[#([0-9a-f]{3,8})\]/i)
   if (arbitrary) return `#${arbitrary[1]}`
+
+  // Named Tailwind dark classes
   if (/\b(?:bg-black|bg-gray-9\d\d?|bg-neutral-9\d\d?|bg-zinc-9\d\d?|bg-slate-9\d\d?)\b/i.test(html)) return '#000000'
   if (/\b(?:bg-gray-8\d\d?|bg-neutral-8\d\d?)\b/i.test(html)) return '#1f2937'
   if (/\b(?:bg-gray-7\d\d?|bg-neutral-7\d\d?)\b/i.test(html)) return '#374151'
@@ -53,11 +69,13 @@ function injectColorVars(html: string): string {
   const outer = $('body').children().first()
 
   // Scoped style block: attribute selector handles any characters in section.id safely.
+  // Background uses !important to beat body-level background-color from theme.liquid.
+  // Text color uses *:not([style*="color:"]) so elements with explicit inline color styles
+  // (e.g. gold/orange spans in marquees) keep their designed colors.
   // Buttons with solid Tailwind bg-* classes get global --color-button so theme color picker works.
-  // Outline/transparent buttons are excluded via :not([class*="bg-transparent"]).
   const styleBlock = `{%- style -%}
-  [data-igualai-id="{{ section.id }}"] { background-color: {{ section.settings.bg_color }}; }
-  [data-igualai-id="{{ section.id }}"] * { color: {{ section.settings.text_color }} !important; }
+  [data-igualai-id="{{ section.id }}"] { background-color: {{ section.settings.bg_color }} !important; color: {{ section.settings.text_color }}; }
+  [data-igualai-id="{{ section.id }}"] *:not([style*="color:"]) { color: {{ section.settings.text_color }} !important; }
   [data-igualai-id="{{ section.id }}"] a[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]),
   [data-igualai-id="{{ section.id }}"] button[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]) { background-color: var(--color-button) !important; color: var(--color-button-text) !important; }
 {%- endstyle -%}`
