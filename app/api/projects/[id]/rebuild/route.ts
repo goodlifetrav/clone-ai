@@ -3,7 +3,7 @@ import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 import { chatWithProjectGemini } from '@/lib/gemini'
 import { injectBrandImages } from '@/lib/image-injection'
-import { extractHeaderFooter } from '@/lib/header-footer'
+import { extractHeaderFooter, replaceHeaderFooter } from '@/lib/header-footer'
 
 export async function POST(
   request: NextRequest,
@@ -161,13 +161,14 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
           })
         }
 
+        // Don't pass sharedHeader/Footer to Gemini — Gemini subtly re-interprets
+        // "verbatim" HTML (changes logo position, colors, etc.). Instead we inject
+        // them deterministically after generation via replaceHeaderFooter below.
         const { html: fullHtmlRaw } = await chatWithProjectGemini(
           project.html_content ?? '',
           [{ role: 'user', content: brandMessage }],
           undefined,
-          pageType as string | undefined,
-          sharedHeaderHtml,
-          sharedFooterHtml
+          pageType as string | undefined
         )
 
         if (!fullHtmlRaw || !/<html/i.test(fullHtmlRaw) || !/<\/html>/i.test(fullHtmlRaw)) {
@@ -175,10 +176,19 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
           return
         }
 
+        // Post-generation header/footer injection — surgically replace Gemini's
+        // generated header/footer with the exact HTML from the source page.
+        const fullHtmlSynced = (sharedHeaderHtml || sharedFooterHtml)
+          ? replaceHeaderFooter(fullHtmlRaw, sharedHeaderHtml ?? '', sharedFooterHtml ?? '')
+          : fullHtmlRaw
+        if (sharedHeaderHtml || sharedFooterHtml) {
+          console.log(`[rebuild] Post-injected shared header/footer`)
+        }
+
         // ── Image generation ─────────────────────────────────────────────────
         send({ status: 'generating_images' })
         const fullHtml = await injectBrandImages(
-          fullHtmlRaw,
+          fullHtmlSynced,
           { brandName, brandDescription, primaryColor, secondaryColor, tagline },
           id,
           (current, total) => send({ status: 'generating_images', current, total })
