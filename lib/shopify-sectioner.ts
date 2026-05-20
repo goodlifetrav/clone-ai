@@ -15,6 +15,7 @@ export interface ShopifySections {
   order: string[]                     // order for templates/index.json
   headerSectionName: string           // always 'igualai-header'
   footerSectionName: string           // always 'igualai-footer'
+  pageBg: string                      // detected page background color (for theme settings)
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -33,17 +34,16 @@ function bodyHtml($: CheerioAPI): string {
   return $('body').html() ?? ''
 }
 
-/** Detect the dominant background color of a section using Cheerio DOM traversal.
- *  Walks elements top-down in document order, skipping form controls (input, button, etc.)
- *  and low-alpha rgba backgrounds, so it finds the true section background regardless of
- *  how deeply nested it is. */
-function detectBgColor(html: string): string {
+/** Detect the explicit background color of an HTML chunk using Cheerio DOM traversal.
+ *  Returns null when no explicit background is found (section inherits from its parent).
+ *  Walks elements top-down, skipping form controls and low-alpha rgba overlays. */
+function detectBgColor(html: string): string | null {
   const $ = load(html)
   const SKIP_TAGS = new Set(['input', 'button', 'select', 'textarea', 'label', 'option', 'script', 'style', 'svg', 'path'])
 
-  let found = ''
+  let found: string | null = null
   $('body *').each((_, el) => {
-    if (found) return false
+    if (found !== null) return false
     const tag = ((el as { tagName?: string }).tagName ?? '').toLowerCase()
     if (SKIP_TAGS.has(tag)) return
 
@@ -54,7 +54,7 @@ function detectBgColor(html: string): string {
     const hexMatch = style.match(/background(?:-color)?\s*:\s*(#[0-9a-f]{3,8})/i)
     if (hexMatch) { found = hexMatch[1]; return false }
 
-    // Inline style — rgb/rgba (skip if alpha < 0.5 — translucent overlays are not the bg)
+    // Inline style — rgb/rgba (skip if alpha < 0.5 — translucent overlays are not the section bg)
     const rgbMatch = style.match(/background(?:-color)?\s*:\s*rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/i)
     if (rgbMatch) {
       const alpha = rgbMatch[4] !== undefined ? parseFloat(rgbMatch[4]) : 1
@@ -69,16 +69,58 @@ function detectBgColor(html: string): string {
     if (/background(?:-color)?\s*:\s*black\b/i.test(style)) { found = '#000000'; return false }
     if (/background(?:-color)?\s*:\s*white\b/i.test(style)) { found = '#ffffff'; return false }
 
-    // Tailwind classes
+    // Tailwind classes — dark
     const arbitrary = cls.match(/\bbg-\[#([0-9a-f]{3,8})\]/i)
     if (arbitrary) { found = `#${arbitrary[1]}`; return false }
 
     if (/\b(?:bg-black|bg-gray-9\d{2}|bg-neutral-9\d{2}|bg-zinc-9\d{2}|bg-slate-9\d{2})\b/.test(cls)) { found = '#000000'; return false }
     if (/\b(?:bg-gray-8\d{2}|bg-neutral-8\d{2})\b/.test(cls)) { found = '#1f2937'; return false }
     if (/\b(?:bg-gray-7\d{2}|bg-neutral-7\d{2})\b/.test(cls)) { found = '#374151'; return false }
+    // Tailwind classes — light (explicit white so we don't override with page bg)
+    if (/\b(?:bg-white|bg-gray-[1-5]\d{2}|bg-neutral-[1-5]\d{2}|bg-zinc-[1-5]\d{2}|bg-slate-[1-5]\d{2})\b/.test(cls)) { found = '#ffffff'; return false }
   })
 
-  return found || '#ffffff'
+  return found // null means "no explicit bg — inherit from page"
+}
+
+/** Detect the page-level background color from the <body> element and its first wrapper div.
+ *  Brand rebuilds typically set bg-black on <body>; individual sections inherit it without
+ *  their own bg declarations. In Shopify, sections are isolated, so this page bg becomes
+ *  the fallback for any section that doesn't specify its own background. */
+function detectPageBg($: CheerioAPI): string {
+  const checks: Array<{ cls: string; style: string }> = []
+
+  const bodyEl = $('body').first()
+  checks.push({ cls: bodyEl.attr('class') ?? '', style: bodyEl.attr('style') ?? '' })
+
+  // Also check first non-semantic wrapper div (some rebuilds wrap all sections in one div)
+  const firstDiv = bodyEl.children('div').first()
+  if (firstDiv.length) checks.push({ cls: firstDiv.attr('class') ?? '', style: firstDiv.attr('style') ?? '' })
+
+  for (const { cls, style } of checks) {
+    const hexMatch = style.match(/background(?:-color)?\s*:\s*(#[0-9a-f]{3,8})/i)
+    if (hexMatch) return hexMatch[1]
+
+    const rgbMatch = style.match(/background(?:-color)?\s*:\s*rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/i)
+    if (rgbMatch) {
+      const alpha = rgbMatch[4] !== undefined ? parseFloat(rgbMatch[4]) : 1
+      if (alpha >= 0.5) {
+        const [r, g, b] = [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map(v => parseInt(v))
+        return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+      }
+    }
+
+    if (/background(?:-color)?\s*:\s*black\b/i.test(style)) return '#000000'
+
+    const arbitrary = cls.match(/\bbg-\[#([0-9a-f]{3,8})\]/i)
+    if (arbitrary) return `#${arbitrary[1]}`
+
+    if (/\b(?:bg-black|bg-gray-9\d{2}|bg-neutral-9\d{2}|bg-zinc-9\d{2}|bg-slate-9\d{2})\b/.test(cls)) return '#000000'
+    if (/\b(?:bg-gray-8\d{2}|bg-neutral-8\d{2})\b/.test(cls)) return '#1f2937'
+    if (/\b(?:bg-gray-7\d{2}|bg-neutral-7\d{2})\b/.test(cls)) return '#374151'
+  }
+
+  return '#ffffff'
 }
 
 /** Inject bg_color and text_color Liquid vars using a scoped {% style %} block with !important.
@@ -723,7 +765,7 @@ function buildFooterSection(rawFooterHtml: string): string {
     )
   }
 
-  const bg = detectBgColor(rawFooterHtml) || '#000000'
+  const bg = detectBgColor(rawFooterHtml) ?? '#000000'
   const isDark = /^#(?:0[0-9a-f]|1[0-5][0-9a-f]|2[0-3])/i.test(bg) || bg === '#000000'
   const textDefault = isDark ? '#ffffff' : '#111111'
 
@@ -745,6 +787,13 @@ function buildFooterSection(rawFooterHtml: string): string {
 
 export async function htmlToShopifySections(html: string, sectionPrefix = '', pageType?: string): Promise<ShopifySections> {
   const $ = load(html, { xmlMode: false } as never)
+
+  // ── Detect page-level background ─────────────────────────────────────────
+  // Brand rebuilds set bg-black on <body>; individual sections inherit it.
+  // In Shopify each section is isolated — we use this as the fallback bg for
+  // any section that doesn't have its own explicit background declaration.
+  const pageBg = detectPageBg($)
+  console.log(`[sectioner] page bg: "${pageBg}" pageType="${pageType ?? 'index'}"`)
 
   // ── Extract footer ────────────────────────────────────────────────────────
   let footerHtml = ''
@@ -848,8 +897,10 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
     const imgCount = countImages(chunkHtml)
 
     let sectionContent = ''
-    const bg = detectBgColor(chunkHtml)
-    console.log(`[sectioner] section="${name}" type="${type}" bg="${bg}" htmlLen=${chunkHtml.length}`)
+    // Use the section's own explicit bg if found; fall back to the page-level bg
+    // (sections that inherit bg-black from <body> have no own bg declaration)
+    const bg = detectBgColor(chunkHtml) ?? pageBg
+    console.log(`[sectioner] section="${name}" type="${type}" bg="${bg}" (pageBg="${pageBg}") htmlLen=${chunkHtml.length}`)
 
     if (type === 'hero') {
       const { liquid, defaults } = liquidifyHero(chunkHtml)
@@ -909,5 +960,6 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
     order,
     headerSectionName: 'igualai-header',
     footerSectionName: footerHtml ? 'igualai-footer' : '',
+    pageBg,
   }
 }

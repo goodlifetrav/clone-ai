@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
       if (!headInner && hi) headInner = hi
 
       console.log(`[Shopify Folder] Processing "${project.name}" → ${tmplPath}`)
-      const { sections, order, headerSectionName, footerSectionName } = await htmlToShopifySections(project.html_content, sectionPrefix, pageType)
+      const { sections, order, headerSectionName, footerSectionName, pageBg } = await htmlToShopifySections(project.html_content, sectionPrefix, pageType)
 
       // Add section files (prefixed names prevent collisions)
       for (const [name, content] of Object.entries(sections)) {
@@ -170,9 +170,10 @@ export async function POST(request: NextRequest) {
       }
       allThemeFiles[tmplPath] = JSON.stringify({ sections: sectionsJson, order: sectionOrder }, null, 2)
 
-      // Only set header/footer from the first (index) project
+      // Only set header/footer + theme settings from the first (index) project
       if (pageType === 'index' || !allThemeFiles['layout/theme.liquid']) {
         allThemeFiles['layout/theme.liquid'] = buildThemeLiquid(headInner, headerSectionName, footerSectionName ?? '')
+        allThemeFiles['config/settings_data.json'] = buildSettingsData(pageBg)
       }
     }
 
@@ -181,6 +182,10 @@ export async function POST(request: NextRequest) {
 
     // Required Shopify theme files
     allThemeFiles['config/settings_schema.json'] = buildSettingsSchema(folder.name)
+    // settings_data.json is set above from the index page's pageBg; ensure it exists as fallback
+    if (!allThemeFiles['config/settings_data.json']) {
+      allThemeFiles['config/settings_data.json'] = buildSettingsData('#ffffff')
+    }
     allThemeFiles['templates/404.json'] = JSON.stringify({ sections: { main: { type: 'igualai-404', settings: {} } }, order: ['main'] }, null, 2)
     allThemeFiles['templates/password.json'] = JSON.stringify({ sections: { main: { type: 'igualai-password', settings: {} } }, order: ['main'] }, null, 2)
     allThemeFiles['sections/igualai-404.liquid'] = `<div style="text-align:center;padding:6rem 2rem">
@@ -223,11 +228,12 @@ export async function POST(request: NextRequest) {
     }
     const themeId = themeData.theme.id
 
-    // Upload order: layout → assets → locales → sections → templates
+    // Upload order: layout → assets → config → locales → sections → templates
     const uploadOrder = [
       'layout/theme.liquid',
       'assets/style.css',
       'config/settings_schema.json',
+      'config/settings_data.json',
       'locales/en.default.json',
       ...Object.keys(allThemeFiles).filter(k => k.startsWith('sections/')),
       ...Object.keys(allThemeFiles).filter(k => k.startsWith('templates/')),
@@ -334,4 +340,18 @@ function buildSettingsSchema(folderName: string): string {
       { type: 'range', id: 'content_max_width', label: 'Content max width', min: 800, max: 1600, step: 80, default: 1280, unit: 'px' },
     ]},
   ], null, 2)
+}
+
+/** settings_data.json — seeds the actual current values for theme settings.
+ *  Unlike settings_schema.json (which only defines defaults for the editor UI),
+ *  settings_data.json stores the real values Shopify renders at runtime.
+ *  We use this to set the page background to match the brand-rebuilt design. */
+function buildSettingsData(pageBg: string): string {
+  const isDark = pageBg !== '#ffffff' && pageBg !== '#fff'
+  return JSON.stringify({
+    current: {
+      page_bg: pageBg,
+      text_color: isDark ? '#ffffff' : '#111111',
+    }
+  }, null, 2)
 }
