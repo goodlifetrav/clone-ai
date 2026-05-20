@@ -556,9 +556,16 @@ export default function DashboardPage() {
                 <span className="font-medium">Theme pushed successfully!</span>
               </div>
               {shopifyResult.pagesDeployed.length > 0 && (
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Pages deployed: {shopifyResult.pagesDeployed.join(', ')}
-                </p>
+                <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3">
+                  <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">Pages deployed:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {shopifyResult.pagesDeployed.map((p) => (
+                      <span key={p} className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
               <div className="space-y-2">
                 <a href={shopifyResult.themeEditorUrl} target="_blank" rel="noopener noreferrer"
@@ -570,7 +577,10 @@ export default function DashboardPage() {
                   <ExternalLink className="w-3 h-3" /> Preview Theme
                 </a>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  The theme is unpublished. Publish it from Shopify when ready.
+                  The theme is unpublished — preview it first, then publish from Shopify when ready.
+                </p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Need to make changes? Edit pages in IgualAI and push again — each push creates a fresh theme version.
                 </p>
               </div>
               <Button className="w-full" onClick={() => { setShopifyFolder(null); setShopifyResult(null) }}>Done</Button>
