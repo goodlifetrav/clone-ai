@@ -1147,42 +1147,48 @@ BENTO GRID — card pair (use for comparison/highlight sections):
 
 Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 
-    // Product page checklist — Shopify product pages are JS-rendered so the clone is always sparse.
-    // Use a fixed structure instead of the (empty) headingChecklist derived from the sparse clone.
-    const productPageChecklist = `PRODUCT PAGE STRUCTURE — Shopify product pages load data via JavaScript so the cloned HTML is sparse. Ignore the section count from the clone. Generate a COMPLETE product page with EXACTLY these sections in order:
+    // Product page minimum requirements — the PRODUCT MAIN section is always required.
+    // All other sections are driven by the actual original site structure (passed below),
+    // so Gemini replicates whatever layout the original had rather than a hardcoded template.
+    const productPageChecklist = `PRODUCT PAGE MINIMUM REQUIREMENT:
 1. PRODUCT MAIN — two-column flex row: LEFT side (55%) is a tall product image placeholder (dark gradient div, min-h-[500px], brand accent icon centered), RIGHT side (45%) has: product name (text-3xl font-bold), star rating row, price (text-2xl), short product description (2-3 sentences), variant selector buttons (e.g. Grind Type: Whole Bean / Ground; Size: 1lb / 2lb / 5lb), quantity picker, "Add to Cart" button (full-width, brand accent color), and 1-2 trust badges (free shipping, satisfaction guarantee). data-igualai-section="product-main"
-2. PRODUCT DETAILS ACCORDION — a full-width section with 3 expandable accordion panels: (a) Flavor Profile & Tasting Notes — list 4-6 flavor descriptors as tags/badges + 2-3 sentences of tasting copy; (b) Brew Recommendations — 2-3 brew methods with parameters (grind, ratio, temp, time); (c) Shipping & Returns — standard policy text. Each panel has a bold header row with a +/− toggle icon, border-bottom separator, brand-colored accents. data-igualai-section="content"
-3. BRAND LIFESTYLE — a split two-column section: one side is a tall brand-colored gradient placeholder (min-h-[400px]) with a thematic icon; other side has a bold brand mission heading (text-3xl), 2-3 paragraphs of brand story copy, and a secondary CTA button. This is a brand story / "why we exist" section. data-igualai-section="lifestyle"
-4. RELATED PRODUCTS — "You May Also Like" heading, horizontal scroll of 3-4 product cards (each: square image placeholder, product name, price, "Add to Cart" link). data-igualai-section="product-grid"
-5. NEWSLETTER SIGNUP — one full-width email capture bar: bold heading on left, email input + submit button on right, brand accent background. data-igualai-section="newsletter"`
+
+For ALL sections after product-main: follow the ORIGINAL SITE SECTION STRUCTURE exactly. Replicate every section the original had with the same layout:
+- Multi-column product info (e.g. Flavor Profile | Attributes/Sliders | Details | Certifications) → replicate as 4-column grid, NOT an accordion
+- Brand story / lifestyle split section → replicate as two-column split
+- Related products carousel → replicate the card grid
+- Newsletter bar → replicate
+Do NOT invent sections the original didn't have. Do NOT collapse a multi-column layout into an accordion.`
 
     const prompt = `BRAND: ${userMessage}
 
 ━━━ REQUIRED SECTION CHECKLIST ━━━
 ${isProductPage ? productPageChecklist : headingChecklist}
 
-${!isProductPage ? `━━━ ORIGINAL SITE SECTION STRUCTURE ━━━
+━━━ ORIGINAL SITE SECTION STRUCTURE ━━━
 ${siteStructure}
 
-` : ''}━━━ ORIGINAL SITE HTML (CSS stripped — structure above is your layout guide) ━━━
+━━━ ORIGINAL SITE HTML (CSS stripped — structure above is your layout guide) ━━━
 ${htmlForRebuild}
 
 ━━━ YOUR TASK ━━━
 Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
 ${isProductPage
-  ? `1. USE THE PRODUCT PAGE STRUCTURE in the checklist above. Output ALL 5 sections (product-main, accordion, brand lifestyle, related products, newsletter). Do NOT reduce sections because the cloned HTML looks sparse — Shopify loads product data via JavaScript so empty black areas are expected.
-2. PRODUCT MAIN must be a two-column product detail layout — NOT a homepage hero with a massive headline. The first big visual element is the product image placeholder, not a full-bleed hero banner.`
+  ? `1. PRODUCT MAIN must be a two-column product detail layout — NOT a homepage hero with a massive headline. The first big visual element is the product image placeholder, not a full-bleed hero banner.
+2. ALL OTHER SECTIONS — match the original structure exactly. If the original has a 4-column product info section with sliders and icons, output a 4-column section. If it has a lifestyle split, output a lifestyle split. NEVER simplify or replace the original layout.
+3. SECTION COUNT — match the original. Output every section from the original site structure.`
   : `1. SECTION COUNT IS FIXED — the original has a specific number of sections listed in the structure above. Output THAT EXACT number of sections. Count them. Do not add sections. Do not remove sections.
 2. ONLY the sections listed in the REQUIRED SECTION CHECKLIST above may appear. NEVER invent a testimonial section, review section, social proof section, community section, or feature grid that does not appear in the checklist. If the original has no testimonials, your output has no testimonials.`}
-3. PRESERVE SECTION ORDER — output sections in the same order they appear in the checklist.
-4. EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
-5. APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
-6. MAXIMUM 1 NEWSLETTER/EMAIL SIGNUP SECTION total. Never repeat email signup bars.
-7. REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
-8. PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
+${isProductPage ? '4.' : '3.'} PRESERVE SECTION ORDER — output sections in the same order they appear in the original.
+${isProductPage ? '5.' : '4.'} EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
+${isProductPage ? '6.' : '5.'} APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
+${isProductPage ? '7.' : '6.'} MAXIMUM 1 NEWSLETTER/EMAIL SIGNUP SECTION total. Never repeat email signup bars.
+${isProductPage ? '8.' : '7.'} REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
+${isProductPage ? '9.' : '8.'} PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
 LAYOUT RULES FOR SPECIFIC SECTION TYPES:
-${isProductPage ? `- PRODUCT MAIN: Two-column flex layout (flex-col lg:flex-row). LEFT: tall product image placeholder (gradient div, min-h-[500px], rounded-2xl, centered thematic icon). RIGHT: product title (text-3xl font-bold), price, short description, variant selector buttons, qty picker, full-width "Add to Cart" button (brand accent). data-igualai-section="product-main". DO NOT make this a homepage hero.` : `- HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.`}
+${isProductPage ? `- PRODUCT MAIN: Two-column flex layout (flex-col lg:flex-row). LEFT: tall product image placeholder (gradient div, min-h-[500px], rounded-2xl, centered thematic icon). RIGHT: product title (text-3xl font-bold), price, short description, variant selector buttons, qty picker, full-width "Add to Cart" button (brand accent). data-igualai-section="product-main". DO NOT make this a homepage hero.
+- MULTI-COLUMN PRODUCT INFO: If the original has columns for Flavor Profile, Attributes (with visual sliders), Details text, and Certification icons — recreate as a CSS grid (grid-cols-4) with the same column content. Visual sliders: styled range inputs or custom div bars with brand accent color. Certification icons: Font Awesome or SVG icons with bold labels. data-igualai-section="content"` : `- HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.`}
 - CAROUSEL: each card MUST have a fixed width (max-w-xs or w-72) and flex-shrink-0 so exactly 2-3 cards are visible. Outer container: overflow-x-auto. Inner: flex gap-4.
 - SCROLLING MARQUEE TICKER: use CSS @keyframes marquee with translateX(-50%) and a duplicated list of phrases for seamless looping.
 - LIFESTYLE PHOTO STRIP: heading MUST be a brand values or mission statement. NEVER "Join Our Community".
