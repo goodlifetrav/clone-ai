@@ -55,13 +55,14 @@ const DEFAULT_BRAND: BrandData = {
   productDescription: '',
 }
 
-function detectPageType(url?: string): 'homepage' | 'product' | 'collection' | 'other' {
+function detectPageType(url?: string): 'homepage' | 'product' | 'collection' | 'cart' | 'other' {
   if (!url) return 'homepage'
   try {
     const path = new URL(url).pathname
     if (/\/products\//i.test(path)) return 'product'
     if (/\/collections\//i.test(path)) return 'collection'
-    if (/\/cart|\/account|\/pages\//i.test(path)) return 'other'
+    if (/^\/cart(\/|$)/i.test(path)) return 'cart'
+    if (/\/account|\/pages\//i.test(path)) return 'other'
     if (path === '/' || path === '') return 'homepage'
     return 'other'
   } catch {

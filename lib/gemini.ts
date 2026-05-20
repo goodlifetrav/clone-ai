@@ -1011,6 +1011,7 @@ export async function chatWithProjectGemini(
 
     const isProductPage = pageType === 'product'
     const isCollectionPage = pageType === 'collection'
+    const isCartPage = pageType === 'cart'
 
     // Shared header/footer instructions — when a homepage has already been rebuilt in this folder
     const sharedHeaderFooterInstructions = (sharedHeaderHtml || sharedFooterHtml) ? `
@@ -1024,6 +1025,18 @@ ${sharedFooterHtml ? `FOOTER — paste this verbatim as the last element before 
 ${sharedFooterHtml}` : ''}
 
 CRITICAL: Do NOT generate your own header or footer. Do NOT modify the logo, nav links, colors, or structure above. Copy them EXACTLY.
+` : ''
+
+    const cartPageInstructions = isCartPage ? `
+━━━ THIS IS A CART PAGE ━━━
+CRITICAL: The main content is a CART LAYOUT — not a homepage hero.
+- Two-column layout: LEFT (wider, ~65%) is the cart items list; RIGHT (~35%) is the order summary
+- Cart items: each row has an image placeholder, product name, variant details, quantity selector (−/+), price, and a remove/trash icon
+- Order summary: subtotal, shipping estimate, discount/promo code input, order total, and a large full-width "Checkout" button (brand accent color)
+- Below or above the items: a "Continue Shopping" link
+- Optional upsell strip: "You May Also Like" or "Others Also Bought" product cards
+- Do NOT add a hero section, brand story, or feature grid
+- If the original is a cart DRAWER (slide-in panel), replicate it as a full-page two-column layout instead
 ` : ''
 
     const collectionPageInstructions = isCollectionPage ? `
@@ -1093,7 +1106,7 @@ DARK THEME ENFORCEMENT — add this exact <style> block immediately after the Ta
 </style>
 Every top-level section wrapper MUST have one of: bg-[#0a0f1e] bg-[#0f1629] bg-gray-950 bg-gray-900 bg-slate-950
 NO bg-white, NO bg-gray-50, NO bg-gray-100 on any section — the CSS above overrides them but avoid them anyway.` : ''}
-${sharedHeaderFooterInstructions}${collectionPageInstructions}${productPageInstructions}
+${sharedHeaderFooterInstructions}${cartPageInstructions}${collectionPageInstructions}${productPageInstructions}
 ━━━ STYLE SIGNALS (detected from original — OBEY THESE STRICTLY) ━━━
 ${styleSignals}
 
@@ -1171,6 +1184,15 @@ For ALL sections after product-main: follow the ORIGINAL SITE SECTION STRUCTURE 
 - Newsletter bar → replicate
 Do NOT invent sections the original didn't have. Do NOT collapse a multi-column layout into an accordion.`
 
+    const cartPageChecklist = `CART PAGE STRUCTURE — output EXACTLY these sections in order:
+1. CART HEADER ROW — "Your Cart" heading with item count badge, and a "Continue Shopping" link on the right. data-igualai-section="content"
+2. CART BODY — two-column flex layout (flex-col lg:flex-row):
+   LEFT column (lg:w-2/3): list of 2-3 sample cart item rows. Each row: square image placeholder (brand gradient + icon, w-20 h-20), product name (font-semibold), variant text (text-sm, muted), quantity selector (− number +, bordered), line price (font-semibold), trash/remove icon. Rows separated by border-b.
+   RIGHT column (lg:w-1/3): order summary card with: "Order Summary" heading, subtotal row, shipping estimate row, promo/discount code input field + Apply button, divider, bold order total row, full-width "Checkout" button (brand accent color, large), and a small "Secure checkout" trust note with a lock icon. data-igualai-section="content"
+3. UPSELL STRIP — "You May Also Like" heading, horizontal scroll of 3-4 small product cards (image placeholder, name, price, "Add" button). data-igualai-section="product-grid"
+
+DO NOT add a hero, brand story, feature grid, or newsletter above these sections.`
+
     const collectionPageChecklist = `COLLECTION PAGE STRUCTURE — output EXACTLY these sections in order:
 1. FILTER & SORT BAR — full-width horizontal bar with filter dropdowns (Type, Format, Roast, Flavor, Certification) on the left and a Sort By dropdown on the right. Show product count (e.g. "53 Products"). Thin top border, compact height. data-igualai-section="content"
 2. PRODUCT GRID — 3–4 column CSS grid of product cards. Each card: square image placeholder (brand gradient + thematic icon), product name (font-semibold), price, star rating row (filled stars + count). Cards have subtle border or shadow. data-igualai-section="product-grid"
@@ -1182,7 +1204,7 @@ DO NOT add a hero section, brand story section, lifestyle section, or feature gr
     const prompt = `BRAND: ${userMessage}
 
 ━━━ REQUIRED SECTION CHECKLIST ━━━
-${isProductPage ? productPageChecklist : isCollectionPage ? collectionPageChecklist : headingChecklist}
+${isProductPage ? productPageChecklist : isCollectionPage ? collectionPageChecklist : isCartPage ? cartPageChecklist : headingChecklist}
 
 ━━━ ORIGINAL SITE SECTION STRUCTURE ━━━
 ${siteStructure}
@@ -1200,19 +1222,24 @@ ${isProductPage
   ? `1. COLLECTION PAGE — the page starts with the filter/sort bar then goes straight into the product grid. Do NOT add a hero, brand story, lifestyle strip, or feature grid.
 2. PRODUCT GRID must use a 3–4 column CSS grid. Each card must have an image placeholder, product name, price, and star rating. No empty cards.
 3. SECTION COUNT — output exactly the 4 sections in the checklist (filter bar, product grid, pagination, newsletter).`
+  : isCartPage
+  ? `1. CART PAGE — output the 3 sections in the checklist (cart header, cart body two-column, upsell strip). Do NOT add a hero, brand story, or newsletter.
+2. CART BODY must be two columns: items list on the left, order summary card on the right. The checkout button must be prominent (full-width, brand accent color).
+3. If the original is a cart drawer, still output a full-page two-column layout — not a slide-in panel.`
   : `1. SECTION COUNT IS FIXED — the original has a specific number of sections listed in the structure above. Output THAT EXACT number of sections. Count them. Do not add sections. Do not remove sections.
 2. ONLY the sections listed in the REQUIRED SECTION CHECKLIST above may appear. NEVER invent a testimonial section, review section, social proof section, community section, or feature grid that does not appear in the checklist. If the original has no testimonials, your output has no testimonials.`}
-${(isProductPage || isCollectionPage) ? '4.' : '3.'} PRESERVE SECTION ORDER — output sections in the same order they appear in the original.
-${(isProductPage || isCollectionPage) ? '5.' : '4.'} EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
-${(isProductPage || isCollectionPage) ? '6.' : '5.'} APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
-${(isProductPage || isCollectionPage) ? '7.' : '6.'} MAXIMUM 1 NEWSLETTER/EMAIL SIGNUP SECTION total. Never repeat email signup bars.
-${(isProductPage || isCollectionPage) ? '8.' : '7.'} REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
-${(isProductPage || isCollectionPage) ? '9.' : '8.'} PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
+${(isProductPage || isCollectionPage || isCartPage) ? '4.' : '3.'} PRESERVE SECTION ORDER — output sections in the same order they appear in the original.
+${(isProductPage || isCollectionPage || isCartPage) ? '5.' : '4.'} EVERY image placeholder MUST have visible content (icon + gradient, UI mockup, or illustration). NEVER an empty div.
+${(isProductPage || isCollectionPage || isCartPage) ? '6.' : '5.'} APPLY ${isDarkTheme ? 'DARK THEME — near-black background (#0a0f1e or #0f0f0f) throughout, ALL sections dark, light text' : 'LIGHT THEME — white/light gray background throughout'}
+${(isProductPage || isCollectionPage || isCartPage) ? '7.' : '6.'} MAXIMUM 1 NEWSLETTER/EMAIL SIGNUP SECTION total. Never repeat email signup bars.
+${(isProductPage || isCollectionPage || isCartPage) ? '8.' : '7.'} REPLACE only: colors → brand palette, text → brand copy, images → icon/gradient/mockup placeholders
+${(isProductPage || isCollectionPage || isCartPage) ? '9.' : '8.'} PRESERVE: every section's layout type, alignment, spacing, and structure exactly as described above
 
 LAYOUT RULES FOR SPECIFIC SECTION TYPES:
 ${isProductPage ? `- PRODUCT MAIN: Two-column flex layout (flex-col lg:flex-row). LEFT: tall product image placeholder (gradient div, min-h-[500px], rounded-2xl, centered thematic icon). RIGHT: product title (text-3xl font-bold), price, short description, variant selector buttons, qty picker, full-width "Add to Cart" button (brand accent). data-igualai-section="product-main". DO NOT make this a homepage hero.
 - MULTI-COLUMN PRODUCT INFO: If the original has columns for Flavor Profile, Attributes (with visual sliders), Details text, and Certification icons — recreate as a CSS grid (grid-cols-4) with the same column content. Visual sliders: styled range inputs or custom div bars with brand accent color. Certification icons: Font Awesome or SVG icons with bold labels. data-igualai-section="content"` : isCollectionPage ? `- FILTER BAR: flex row, justify-between, py-3 px-4, border-b. Left side: label "FILTER:" + filter buttons (Type, Format, Roast, Flavor, Certification) each as a small pill/dropdown. Right side: "SORT BY: Featured" dropdown + product count text.
-- PRODUCT GRID: CSS grid, grid-cols-2 md:grid-cols-3 lg:grid-cols-4, gap-6. Each card: square image placeholder (aspect-square, brand gradient + centered FA icon), product name (text-sm font-semibold mt-2), price (text-sm), star rating (filled FA stars + review count). No card borders needed — spacing provides separation.` : `- HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.`}
+- PRODUCT GRID: CSS grid, grid-cols-2 md:grid-cols-3 lg:grid-cols-4, gap-6. Each card: square image placeholder (aspect-square, brand gradient + centered FA icon), product name (text-sm font-semibold mt-2), price (text-sm), star rating (filled FA stars + review count). No card borders needed — spacing provides separation.` : isCartPage ? `- CART BODY: flex row (flex-col lg:flex-row), gap-8. Items column (lg:w-2/3): each item is a flex row with image placeholder (w-20 h-20, brand gradient), product info column, qty selector, price, trash icon. Summary column (lg:w-1/3): sticky card with subtotal/shipping/total rows, promo input, checkout button.
+- CHECKOUT BUTTON: full-width, brand accent background, large (py-4 text-lg font-bold), with lock icon prefix.` : `- HERO: headline must be HUGE — use text-6xl md:text-8xl font-black. The text IS the hero. No icon in the background div.`}
 - CAROUSEL: each card MUST have a fixed width (max-w-xs or w-72) and flex-shrink-0 so exactly 2-3 cards are visible. Outer container: overflow-x-auto. Inner: flex gap-4.
 - SCROLLING MARQUEE TICKER: use CSS @keyframes marquee with translateX(-50%) and a duplicated list of phrases for seamless looping.
 - LIFESTYLE PHOTO STRIP: heading MUST be a brand values or mission statement. NEVER "Join Our Community".

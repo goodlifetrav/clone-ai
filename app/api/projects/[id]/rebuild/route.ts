@@ -60,6 +60,17 @@ THIS IS A PRODUCT PAGE. Keep the product detail layout (image on left, title/pri
 - Brand Description: ${brandDescription}
 
 THIS IS A COLLECTION PAGE. Keep the product grid layout. Style the page with brand colors and copy.`
+  } else if (pageType === 'cart') {
+    brandMessage = `Rebuild this CART PAGE for my brand:
+- Brand Name: ${brandName}
+- Tagline: ${tagline || ''}
+- Primary Color: ${primaryColor}
+- Secondary Color: ${secondaryColor || ''}
+- Accent Color: ${accentColor || ''}
+- Logo: ${logoUrl ? logoUrl : 'use brand name as text logo'}
+- Brand Description: ${brandDescription}
+
+THIS IS A CART PAGE. Keep the cart layout (items list + order summary). Style with brand colors. Do NOT generate a homepage hero.`
   } else {
     brandMessage = `Rebuild this website for my brand:
 - Brand Name: ${brandName}
