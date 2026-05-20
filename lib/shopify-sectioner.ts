@@ -20,6 +20,34 @@ export interface ShopifySections {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Parse custom Tailwind color palette from an inline tailwind.config script block.
+ *  Returns a map of "paletteName-shade" → "#hexcolor", e.g. { "brand-500": "#1c1c1c" }.
+ *  Brand rebuilds inject a tailwind.config with custom colors; without this map,
+ *  bg-brand-500 looks like an unknown class and detectBgColor returns null. */
+function parseTailwindCustomColors(html: string): Record<string, string> {
+  const colors: Record<string, string> = {}
+  const scriptMatch = html.match(/tailwind\.config\s*=\s*\{[\s\S]*?\}\s*<\/script>/i)
+  if (!scriptMatch) return colors
+
+  const configStr = scriptMatch[0]
+  const IGNORED = new Set(['theme', 'extend', 'colors', 'fontFamily', 'spacing', 'borderRadius', 'screens', 'plugins', 'variants', 'animation', 'keyframes'])
+
+  // Match: paletteName: { shade: '#hex', ... }
+  const paletteRe = /\b(\w+)\s*:\s*\{([^}]+)\}/g
+  let pm
+  while ((pm = paletteRe.exec(configStr)) !== null) {
+    const name = pm[1]
+    if (IGNORED.has(name)) continue
+    const body = pm[2]
+    const entryRe = /['"]?(\w+)['"]?\s*:\s*['"]?(#[0-9a-f]{3,8})['"]?/gi
+    let em
+    while ((em = entryRe.exec(body)) !== null) {
+      colors[`${name}-${em[1]}`] = em[2]
+    }
+  }
+  return colors
+}
+
 function schemaTag(obj: object): string {
   return `\n{% schema %}\n${JSON.stringify(obj, null, 2)}\n{% endschema %}`
 }
@@ -36,8 +64,8 @@ function bodyHtml($: CheerioAPI): string {
 
 /** Detect the explicit background color of an HTML chunk using Cheerio DOM traversal.
  *  Returns null when no explicit background is found (section inherits from its parent).
- *  Walks elements top-down, skipping form controls and low-alpha rgba overlays. */
-function detectBgColor(html: string): string | null {
+ *  Pass customColors (from parseTailwindCustomColors) to resolve brand-* palette classes. */
+function detectBgColor(html: string, customColors: Record<string, string> = {}): string | null {
   const $ = load(html)
   const SKIP_TAGS = new Set(['input', 'button', 'select', 'textarea', 'label', 'option', 'script', 'style', 'svg', 'path'])
 
@@ -69,31 +97,35 @@ function detectBgColor(html: string): string | null {
     if (/background(?:-color)?\s*:\s*black\b/i.test(style)) { found = '#000000'; return false }
     if (/background(?:-color)?\s*:\s*white\b/i.test(style)) { found = '#ffffff'; return false }
 
-    // Tailwind classes — dark
+    // Custom Tailwind palette colors (e.g. bg-brand-500 → #1c1c1c)
+    for (const [key, val] of Object.entries(customColors)) {
+      if (new RegExp(`\\bbg-${key}\\b`).test(cls)) { found = val; return false }
+    }
+
+    // Built-in Tailwind dark classes
     const arbitrary = cls.match(/\bbg-\[#([0-9a-f]{3,8})\]/i)
     if (arbitrary) { found = `#${arbitrary[1]}`; return false }
 
     if (/\b(?:bg-black|bg-gray-9\d{2}|bg-neutral-9\d{2}|bg-zinc-9\d{2}|bg-slate-9\d{2})\b/.test(cls)) { found = '#000000'; return false }
     if (/\b(?:bg-gray-8\d{2}|bg-neutral-8\d{2})\b/.test(cls)) { found = '#1f2937'; return false }
     if (/\b(?:bg-gray-7\d{2}|bg-neutral-7\d{2})\b/.test(cls)) { found = '#374151'; return false }
-    // Tailwind classes — light (explicit white so we don't override with page bg)
+    // Built-in Tailwind light classes (explicit white — don't override with page bg)
     if (/\b(?:bg-white|bg-gray-[1-5]\d{2}|bg-neutral-[1-5]\d{2}|bg-zinc-[1-5]\d{2}|bg-slate-[1-5]\d{2})\b/.test(cls)) { found = '#ffffff'; return false }
   })
 
-  return found // null means "no explicit bg — inherit from page"
+  return found // null means "no explicit bg — caller should use pageBg as fallback"
 }
 
 /** Detect the page-level background color from the <body> element and its first wrapper div.
  *  Brand rebuilds typically set bg-black on <body>; individual sections inherit it without
  *  their own bg declarations. In Shopify, sections are isolated, so this page bg becomes
  *  the fallback for any section that doesn't specify its own background. */
-function detectPageBg($: CheerioAPI): string {
+function detectPageBg($: CheerioAPI, customColors: Record<string, string> = {}): string {
   const checks: Array<{ cls: string; style: string }> = []
 
   const bodyEl = $('body').first()
   checks.push({ cls: bodyEl.attr('class') ?? '', style: bodyEl.attr('style') ?? '' })
 
-  // Also check first non-semantic wrapper div (some rebuilds wrap all sections in one div)
   const firstDiv = bodyEl.children('div').first()
   if (firstDiv.length) checks.push({ cls: firstDiv.attr('class') ?? '', style: firstDiv.attr('style') ?? '' })
 
@@ -111,6 +143,11 @@ function detectPageBg($: CheerioAPI): string {
     }
 
     if (/background(?:-color)?\s*:\s*black\b/i.test(style)) return '#000000'
+
+    // Custom palette colors on body/wrapper
+    for (const [key, val] of Object.entries(customColors)) {
+      if (new RegExp(`\\bbg-${key}\\b`).test(cls)) return val
+    }
 
     const arbitrary = cls.match(/\bbg-\[#([0-9a-f]{3,8})\]/i)
     if (arbitrary) return `#${arbitrary[1]}`
@@ -736,7 +773,7 @@ ${schemaTag(buildHeaderSchema(d))}`
   return { liquid, defaults: d }
 }
 
-function buildFooterSection(rawFooterHtml: string): string {
+function buildFooterSection(rawFooterHtml: string, customColors: Record<string, string> = {}): string {
   // Strip inline scripts — they can break Liquid parsing and aren't needed in Shopify
   const cleanHtml = rawFooterHtml.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
 
@@ -765,7 +802,7 @@ function buildFooterSection(rawFooterHtml: string): string {
     )
   }
 
-  const bg = detectBgColor(rawFooterHtml) ?? '#000000'
+  const bg = detectBgColor(rawFooterHtml, customColors) ?? '#000000'
   const isDark = /^#(?:0[0-9a-f]|1[0-5][0-9a-f]|2[0-3])/i.test(bg) || bg === '#000000'
   const textDefault = isDark ? '#ffffff' : '#111111'
 
@@ -788,11 +825,14 @@ function buildFooterSection(rawFooterHtml: string): string {
 export async function htmlToShopifySections(html: string, sectionPrefix = '', pageType?: string): Promise<ShopifySections> {
   const $ = load(html, { xmlMode: false } as never)
 
+  // ── Parse custom Tailwind colors from inline tailwind.config ─────────────
+  // Brand rebuilds inject custom palette colors (e.g. brand-500: '#1c1c1c').
+  // Without this, bg-brand-500 is unrecognized and sections default to white.
+  const customColors = parseTailwindCustomColors(html)
+  console.log(`[sectioner] custom colors: ${JSON.stringify(customColors)}`)
+
   // ── Detect page-level background ─────────────────────────────────────────
-  // Brand rebuilds set bg-black on <body>; individual sections inherit it.
-  // In Shopify each section is isolated — we use this as the fallback bg for
-  // any section that doesn't have its own explicit background declaration.
-  const pageBg = detectPageBg($)
+  const pageBg = detectPageBg($, customColors)
   console.log(`[sectioner] page bg: "${pageBg}" pageType="${pageType ?? 'index'}"`)
 
   // ── Extract footer ────────────────────────────────────────────────────────
@@ -898,8 +938,7 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
 
     let sectionContent = ''
     // Use the section's own explicit bg if found; fall back to the page-level bg
-    // (sections that inherit bg-black from <body> have no own bg declaration)
-    const bg = detectBgColor(chunkHtml) ?? pageBg
+    const bg = detectBgColor(chunkHtml, customColors) ?? pageBg
     console.log(`[sectioner] section="${name}" type="${type}" bg="${bg}" (pageBg="${pageBg}") htmlLen=${chunkHtml.length}`)
 
     if (type === 'hero') {
@@ -952,7 +991,7 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
 
   // ── Build footer static section ───────────────────────────────────────────
   if (footerHtml) {
-    sections['igualai-footer'] = buildFooterSection(footerHtml)
+    sections['igualai-footer'] = buildFooterSection(footerHtml, customColors)
   }
 
   return {
