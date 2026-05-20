@@ -30,6 +30,41 @@ export function extractHeaderFooter(html: string): { headerHtml: string; footerH
   return { headerHtml, footerHtml }
 }
 
+// ── Font link sync ────────────────────────────────────────────────────────────
+
+/**
+ * Copy any Google Fonts / FontAwesome <link> tags from sourceHtml into
+ * targetHtml that are not already present. Prevents font-rendering mismatches
+ * when the same nav HTML is shared across pages with different <head> imports.
+ */
+export function mergeFontLinks(targetHtml: string, sourceHtml: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const $src = load(sourceHtml, { xmlMode: false } as any)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const $tgt = load(targetHtml, { xmlMode: false } as any)
+
+  const existing = new Set<string>()
+  $tgt('link[rel="stylesheet"]').each((_, el) => {
+    const href = $tgt(el).attr('href')
+    if (href) existing.add(href)
+  })
+
+  const toInject: string[] = []
+  $src('link[href*="fonts.googleapis.com"], link[href*="fonts.gstatic.com"], link[href*="cdnjs.cloudflare.com"], link[href*="fontawesome"]').each((_, el) => {
+    const href = $src(el).attr('href')
+    if (href && !existing.has(href)) {
+      toInject.push($src.html(el) ?? '')
+      existing.add(href)
+    }
+  })
+
+  if (toInject.length) {
+    $tgt('head').append('\n' + toInject.join('\n'))
+  }
+
+  return $tgt.html() ?? targetHtml
+}
+
 // ── Replacement ───────────────────────────────────────────────────────────────
 
 /**

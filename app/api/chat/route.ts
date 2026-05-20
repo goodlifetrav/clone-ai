@@ -5,7 +5,7 @@ import { chatWithProjectGemini } from '@/lib/gemini'
 import { isAdminEmail } from '@/lib/admin'
 import { reportError } from '@/lib/error-report'
 import { createJob, completeJob, failJob } from '@/lib/chat-jobs'
-import { extractHeaderFooter, replaceHeaderFooter } from '@/lib/header-footer'
+import { extractHeaderFooter, replaceHeaderFooter, mergeFontLinks } from '@/lib/header-footer'
 
 const FREE_CHAT_LIMIT = 2
 
@@ -253,10 +253,12 @@ async function syncHeaderFooterToFolder(
   // Patch each sibling's header/footer — skip raw clones (no data-igualai-section)
   const updates = siblings
     .filter((s) => s.html_content && s.html_content.includes('data-igualai-section'))
-    .map((s) => ({
-      id: s.id,
-      html: replaceHeaderFooter(s.html_content, headerHtml, footerHtml),
-    }))
+    .map((s) => {
+      const replaced = replaceHeaderFooter(s.html_content, headerHtml, footerHtml)
+      // Also sync font <link> tags so the nav fonts render identically on all pages
+      const html = mergeFontLinks(replaced, editedHtml)
+      return { id: s.id, html }
+    })
     .filter((u) => u.html !== siblings.find((s) => s.id === u.id)?.html_content)
 
   await Promise.all(
@@ -304,10 +306,11 @@ async function syncHeaderFooterByDomain(
 
   const updates = siblings
     .filter((s) => s.html_content && s.html_content.includes('data-igualai-section'))
-    .map((s) => ({
-      id: s.id,
-      html: replaceHeaderFooter(s.html_content, headerHtml, footerHtml),
-    }))
+    .map((s) => {
+      const replaced = replaceHeaderFooter(s.html_content, headerHtml, footerHtml)
+      const html = mergeFontLinks(replaced, editedHtml)
+      return { id: s.id, html }
+    })
     .filter((u) => u.html !== siblings.find((s) => s.id === u.id)?.html_content)
 
   await Promise.all(

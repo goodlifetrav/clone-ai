@@ -3,7 +3,7 @@ import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 import { chatWithProjectGemini } from '@/lib/gemini'
 import { injectBrandImages } from '@/lib/image-injection'
-import { extractHeaderFooter, replaceHeaderFooter } from '@/lib/header-footer'
+import { extractHeaderFooter, replaceHeaderFooter, mergeFontLinks } from '@/lib/header-footer'
 
 export async function POST(
   request: NextRequest,
@@ -255,7 +255,8 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
               let propagated = 0
               for (const s of siblings ?? []) {
                 if (!s.html_content?.includes('data-igualai-section')) continue
-                const updated = replaceHeaderFooter(s.html_content, headerHtml, footerHtml)
+                const replaced = replaceHeaderFooter(s.html_content, headerHtml, footerHtml)
+                const updated = mergeFontLinks(replaced, fullHtml)
                 if (updated !== s.html_content) {
                   await supabase
                     .from('projects')

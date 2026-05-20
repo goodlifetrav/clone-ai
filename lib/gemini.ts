@@ -817,6 +817,7 @@ For every image in the original, replace it with one of these — pick based on 
 
 ALWAYS include a Font Awesome icon inside gradient placeholders so they are never blank.
 EXCEPTION: The HERO background div (full-bleed section behind the headline) must be a plain dark gradient — NO icon inside it. The hero IS the headline text. A large icon in the hero background looks like a mistake.
+For dark (non-gradient) image placeholders always use bg-gray-900 — NOT bg-neutral-900, bg-zinc-900, or bg-slate-900. This ensures consistent dark shading across all pages.
 Never use picsum.photos or random external images.
 UI mockup style for THIS site:
 ${uiMockupExample}
@@ -1144,6 +1145,7 @@ For every image in the original, replace it with one of these — pick based on 
 
 ALWAYS include a Font Awesome icon inside gradient placeholders so they are never blank.
 EXCEPTION: The HERO background div (full-bleed section behind the headline) must be a plain dark gradient — NO icon inside it. The hero IS the headline text. A large icon in the hero background looks like a mistake.
+For dark (non-gradient) image placeholders always use bg-gray-900 — NOT bg-neutral-900, bg-zinc-900, or bg-slate-900. This ensures consistent dark shading across all pages.
 Never use picsum.photos or random external images.
 UI mockup style for THIS site:
 ${uiMockupExample}
