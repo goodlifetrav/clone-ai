@@ -849,6 +849,7 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
 
     let sectionContent = ''
     const bg = detectBgColor(chunkHtml)
+    console.log(`[sectioner] section="${name}" type="${type}" bg="${bg}" htmlLen=${chunkHtml.length}`)
 
     if (type === 'hero') {
       const { liquid, defaults } = liquidifyHero(chunkHtml)
