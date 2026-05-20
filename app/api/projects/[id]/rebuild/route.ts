@@ -201,26 +201,64 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
           .update({ html_content: fullHtml, updated_at: new Date().toISOString() })
           .eq('id', id)
 
-        // After a homepage rebuild, save the header/footer to the folder so
-        // subsequent product/collection page rebuilds can use the same header/footer.
-        if (pageType === 'homepage' && project.folder_id) {
+        // After a homepage rebuild: save header/footer to folder AND immediately
+        // propagate to all other already-rebuilt pages in the same folder/domain.
+        if (pageType === 'homepage') {
           try {
             const { headerHtml, footerHtml } = extractHeaderFooter(fullHtml)
             if (headerHtml || footerHtml) {
-              const { data: folder } = await supabase
-                .from('folders')
-                .select('brand_profile')
-                .eq('id', project.folder_id)
-                .single()
-              const existing = folder?.brand_profile ?? {}
-              await supabase
-                .from('folders')
-                .update({ brand_profile: { ...existing, headerHtml, footerHtml } })
-                .eq('id', project.folder_id)
-              console.log(`[rebuild] saved header (${headerHtml.length} chars) + footer (${footerHtml.length} chars) to folder ${project.folder_id}`)
+              // 1. Save to folder brand_profile
+              if (project.folder_id) {
+                const { data: folder } = await supabase
+                  .from('folders')
+                  .select('brand_profile')
+                  .eq('id', project.folder_id)
+                  .single()
+                const existing = folder?.brand_profile ?? {}
+                await supabase
+                  .from('folders')
+                  .update({ brand_profile: { ...existing, headerHtml, footerHtml } })
+                  .eq('id', project.folder_id)
+                console.log(`[rebuild] saved header/footer to folder ${project.folder_id}`)
+              }
+
+              // 2. Propagate to all sibling pages that have already been rebuilt
+              const domain = project.url ? (() => {
+                try { return new URL(project.url).hostname.replace(/^www\./, '') } catch { return '' }
+              })() : ''
+
+              let siblingQuery = supabase
+                .from('projects')
+                .select('id, html_content')
+                .eq('user_id', user.id)
+                .neq('id', id)
+                .not('html_content', 'is', null)
+
+              if (project.folder_id) {
+                siblingQuery = siblingQuery.eq('folder_id', project.folder_id)
+              } else if (domain) {
+                siblingQuery = siblingQuery.ilike('url', `%${domain}%`)
+              }
+
+              const { data: siblings } = await siblingQuery
+              let propagated = 0
+              for (const s of siblings ?? []) {
+                if (!s.html_content?.includes('data-igualai-section')) continue
+                const updated = replaceHeaderFooter(s.html_content, headerHtml, footerHtml)
+                if (updated !== s.html_content) {
+                  await supabase
+                    .from('projects')
+                    .update({ html_content: updated, updated_at: new Date().toISOString() })
+                    .eq('id', s.id)
+                  propagated++
+                }
+              }
+              if (propagated > 0) {
+                console.log(`[rebuild] propagated header/footer to ${propagated} sibling page(s)`)
+              }
             }
           } catch (e) {
-            console.error('[rebuild] failed to save header/footer to folder:', e)
+            console.error('[rebuild] failed to propagate header/footer:', e)
           }
         }
 

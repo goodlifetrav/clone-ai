@@ -1,85 +1,79 @@
 /**
- * Shared header/footer utilities.
+ * Header/footer extraction and replacement utilities.
  *
- * IgualAI pages rebuilt by Gemini contain data-igualai-section attributes on
- * every section. This lets us find clean boundaries between the header region
- * (announcement-bar + nav), the main content sections, and the footer.
+ * Extracts source nav/announcement/footer via Cheerio.
+ * Injects into target pages using element-level replacement so the
+ * result is always structurally correct regardless of Gemini's layout.
  */
 
-/**
- * Extract the header region and footer from a Gemini-rebuilt HTML page.
- * Returns empty strings if the page has not been rebuilt (no section attrs).
- */
+import { load } from 'cheerio'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Return the outer HTML of the first element matched by selector. */
+function outerHtml(html: string, selector: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const $ = load(html, { xmlMode: false } as any)
+  const el = $(selector).first()
+  if (!el.length) return ''
+  // Cheerio's $.html(collection) returns outer HTML of the collection.
+  return $.html(el) ?? ''
+}
+
+// ── Extraction ────────────────────────────────────────────────────────────────
+
 export function extractHeaderFooter(html: string): { headerHtml: string; footerHtml: string } {
-  const bodyMatch = html.match(/<body[^>]*>/i)
-  if (!bodyMatch) return { headerHtml: '', footerHtml: '' }
-  const bodyStart = html.indexOf(bodyMatch[0]) + bodyMatch[0].length
-
-  // The header ends just before the first NON-header content section.
-  // announcement-bar and nav are part of the header region.
-  const contentSectionRe = /<(?:section|div)\b[^>]*data-igualai-section="(?!announcement-bar)(?!nav)[^"]+"/i
-  const contentMatch = html.search(contentSectionRe)
-
-  let headerHtml = ''
-  if (contentMatch > bodyStart) {
-    const tagStart = html.lastIndexOf('<', contentMatch)
-    headerHtml = html.slice(bodyStart, tagStart).trim()
-  } else {
-    // Fallback: just the <nav> element
-    const navMatch = html.match(/<nav\b[^>]*>[\s\S]*?<\/nav>/i)
-    headerHtml = navMatch?.[0] ?? ''
-  }
-
-  const footerMatch = html.match(/<footer\b[^>]*>[\s\S]*?<\/footer>/i)
-  const footerHtml = footerMatch?.[0] ?? ''
-
+  const announcementHtml = outerHtml(html, '[data-igualai-section="announcement-bar"]')
+  const navHtml = outerHtml(html, 'nav')
+  const footerHtml = outerHtml(html, 'footer')
+  const headerHtml = [announcementHtml, navHtml].filter(Boolean).join('\n')
   return { headerHtml, footerHtml }
 }
 
+// ── Replacement ───────────────────────────────────────────────────────────────
+
 /**
- * Replace the header and footer in a page's HTML with new ones.
- * Returns the original HTML unchanged if boundaries can't be found.
+ * Replace the nav, announcement bar, and footer in targetHtml with the ones
+ * found in newHeaderHtml / newFooterHtml.
  */
 export function replaceHeaderFooter(
-  pageHtml: string,
+  targetHtml: string,
   newHeaderHtml: string,
   newFooterHtml: string
 ): string {
-  if (!newHeaderHtml && !newFooterHtml) return pageHtml
+  if (!newHeaderHtml && !newFooterHtml) return targetHtml
 
-  let result = pageHtml
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const $page = load(targetHtml, { xmlMode: false } as any)
 
-  // ── Replace header ───────────────────────────────────────────────────────
   if (newHeaderHtml) {
-    const bodyMatch = result.match(/<body[^>]*>/i)
-    if (bodyMatch) {
-      const bodyStart = result.indexOf(bodyMatch[0]) + bodyMatch[0].length
+    // Extract source elements as raw HTML strings
+    const srcNav = outerHtml(newHeaderHtml, 'nav')
+    const srcAnn = outerHtml(newHeaderHtml, '[data-igualai-section="announcement-bar"]')
 
-      // Strategy 1: find the closing </nav> tag — everything from <body> to
-      // the end of </nav> is the header region (announcement bar + nav).
-      const navEndIdx = result.search(/<\/nav>/i)
-      if (navEndIdx > bodyStart) {
-        const afterNav = navEndIdx + '</nav>'.length
-        result = result.slice(0, bodyStart) + '\n' + newHeaderHtml + '\n' + result.slice(afterNav)
+    if (srcNav) {
+      const $pageNav = $page('nav').first()
+      if ($pageNav.length) $pageNav.replaceWith(srcNav)
+    }
+
+    if (srcAnn) {
+      const $pageAnn = $page('[data-igualai-section="announcement-bar"]').first()
+      if ($pageAnn.length) {
+        $pageAnn.replaceWith(srcAnn)
       } else {
-        // Strategy 2: fall back to first non-header data-igualai-section boundary
-        const contentSectionRe = /<(?:section|div)\b[^>]*data-igualai-section="(?!announcement-bar)(?!nav)(?!header)[^"]+"/i
-        const contentMatch = result.search(contentSectionRe)
-        if (contentMatch > bodyStart) {
-          // lastIndexOf finds the opening < of the matched section tag
-          const tagStart = result.lastIndexOf('<', contentMatch)
-          if (tagStart > bodyStart) {
-            result = result.slice(0, bodyStart) + '\n' + newHeaderHtml + '\n' + result.slice(tagStart)
-          }
-        }
+        // Insert before nav if target has no announcement bar
+        $page('nav').first().before(srcAnn)
       }
     }
   }
 
-  // ── Replace footer ───────────────────────────────────────────────────────
   if (newFooterHtml) {
-    result = result.replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/i, newFooterHtml)
+    const srcFooter = outerHtml(newFooterHtml, 'footer')
+    if (srcFooter) {
+      const $pageFooter = $page('footer').first()
+      if ($pageFooter.length) $pageFooter.replaceWith(srcFooter)
+    }
   }
 
-  return result
+  return $page.html() ?? targetHtml
 }
