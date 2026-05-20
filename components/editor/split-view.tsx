@@ -486,6 +486,7 @@ export function SplitView({
         <ConnectIntegrationModal
           service={integrationModal}
           projectId={project.id}
+          folderId={activeFolderId}
           userPlan={userPlan}
           onClose={() => setIntegrationModal(null)}
         />

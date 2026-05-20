@@ -11,6 +11,7 @@ type Service = 'github' | 'vercel' | 'shopify'
 interface ConnectIntegrationModalProps {
   service: Service
   projectId: string
+  folderId?: string | null
   userPlan?: string
   onClose: () => void
 }
@@ -36,6 +37,7 @@ const META: Record<Service, { label: string; icon: React.ReactNode; color: strin
 export function ConnectIntegrationModal({
   service,
   projectId,
+  folderId,
   userPlan,
   onClose,
 }: ConnectIntegrationModalProps) {
@@ -75,7 +77,7 @@ export function ConnectIntegrationModal({
           <VercelPanel projectId={projectId} onClose={onClose} />
         )}
         {service === 'shopify' && (
-          <ShopifyPanel projectId={projectId} userPlan={userPlan} onClose={onClose} />
+          <ShopifyPanel projectId={projectId} folderId={folderId} userPlan={userPlan} onClose={onClose} />
         )}
       </div>
     </div>
@@ -321,10 +323,12 @@ function VercelPanel({ projectId, onClose }: { projectId: string; onClose: () =>
 
 function ShopifyPanel({
   projectId,
+  folderId,
   userPlan,
   onClose,
 }: {
   projectId: string
+  folderId?: string | null
   userPlan?: string
   onClose: () => void
 }) {
@@ -336,7 +340,7 @@ function ShopifyPanel({
   )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [result, setResult] = useState<{ themeEditorUrl: string; themePreviewUrl: string } | null>(null)
+  const [result, setResult] = useState<{ themeEditorUrl: string; themePreviewUrl: string; pagesDeployed?: string[] } | null>(null)
 
   // Gate behind Pro plan
   const allowedPlans = ['pro', 'growth', 'max']
@@ -371,6 +375,18 @@ function ShopifyPanel({
           <CheckCircle2 className="w-5 h-5" />
           <span className="font-medium">Theme pushed to Shopify!</span>
         </div>
+        {result.pagesDeployed && result.pagesDeployed.length > 0 && (
+          <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3">
+            <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">Pages deployed:</p>
+            <div className="flex flex-wrap gap-1">
+              {result.pagesDeployed.map((p) => (
+                <span key={p} className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
+                  {p}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="space-y-2">
           <a
             href={result.themeEditorUrl}
@@ -409,10 +425,17 @@ function ShopifyPanel({
         localStorage.setItem('shopify_shop', shop)
       }
 
-      const res = await fetch('/api/integrations/shopify/push', {
+      const endpoint = folderId
+        ? '/api/integrations/shopify/push-folder'
+        : '/api/integrations/shopify/push'
+      const body = folderId
+        ? { folderId, shop: shop.trim(), accessToken: accessToken.trim() }
+        : { projectId, shop: shop.trim(), accessToken: accessToken.trim() }
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, shop: shop.trim(), accessToken: accessToken.trim() }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -422,7 +445,7 @@ function ShopifyPanel({
         }
         throw new Error(data.error || 'Push failed')
       }
-      setResult({ themeEditorUrl: data.themeEditorUrl, themePreviewUrl: data.themePreviewUrl })
+      setResult({ themeEditorUrl: data.themeEditorUrl, themePreviewUrl: data.themePreviewUrl, pagesDeployed: data.pagesDeployed })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Push failed')
     } finally {
@@ -433,6 +456,11 @@ function ShopifyPanel({
   return (
     <div className="space-y-4">
       <div className="text-sm text-neutral-600 dark:text-neutral-400 space-y-1">
+        {folderId && (
+          <p className="text-xs bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 rounded-lg px-3 py-2">
+            All pages in this folder will be pushed as a single Shopify theme (homepage, product, collection, etc.)
+          </p>
+        )}
         <p>
           You need a{' '}
           <a
@@ -481,7 +509,7 @@ function ShopifyPanel({
         disabled={loading || !shop.trim() || !accessToken.trim()}
       >
         {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingBag className="w-4 h-4" />}
-        Push to Shopify
+        {folderId ? 'Push All Pages to Shopify' : 'Push to Shopify'}
       </Button>
     </div>
   )
