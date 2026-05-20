@@ -1,23 +1,22 @@
 /**
  * Header/footer extraction and replacement utilities.
- *
- * Extracts source nav/announcement/footer via Cheerio.
- * Injects into target pages using element-level replacement so the
- * result is always structurally correct regardless of Gemini's layout.
  */
 
 import { load } from 'cheerio'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Return the outer HTML of the first element matched by selector. */
+/**
+ * Extract the outer HTML of the first element matched by `selector`.
+ * Uses `$.html(rawNode)` (not a Cheerio wrapper) which always returns outer HTML.
+ */
 function outerHtml(html: string, selector: string): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const $ = load(html, { xmlMode: false } as any)
   const el = $(selector).first()
   if (!el.length) return ''
-  // Cheerio's $.html(collection) returns outer HTML of the collection.
-  return $.html(el) ?? ''
+  // el[0] is the raw CheerioElement — $.html(rawNode) reliably returns outer HTML
+  return $.html(el[0]) ?? ''
 }
 
 // ── Extraction ────────────────────────────────────────────────────────────────
@@ -27,14 +26,15 @@ export function extractHeaderFooter(html: string): { headerHtml: string; footerH
   const navHtml = outerHtml(html, 'nav')
   const footerHtml = outerHtml(html, 'footer')
   const headerHtml = [announcementHtml, navHtml].filter(Boolean).join('\n')
+  console.log(`[header-footer] extracted: ann=${announcementHtml.length}c nav=${navHtml.length}c footer=${footerHtml.length}c`)
   return { headerHtml, footerHtml }
 }
 
 // ── Replacement ───────────────────────────────────────────────────────────────
 
 /**
- * Replace the nav, announcement bar, and footer in targetHtml with the ones
- * found in newHeaderHtml / newFooterHtml.
+ * Replace the <nav>, announcement bar, and <footer> in targetHtml with the
+ * ones found in newHeaderHtml / newFooterHtml.
  */
 export function replaceHeaderFooter(
   targetHtml: string,
@@ -47,13 +47,16 @@ export function replaceHeaderFooter(
   const $page = load(targetHtml, { xmlMode: false } as any)
 
   if (newHeaderHtml) {
-    // Extract source elements as raw HTML strings
     const srcNav = outerHtml(newHeaderHtml, 'nav')
     const srcAnn = outerHtml(newHeaderHtml, '[data-igualai-section="announcement-bar"]')
 
+    console.log(`[header-footer] inject: srcNav=${srcNav.length}c srcAnn=${srcAnn.length}c pageNavFound=${$page('nav').first().length > 0}`)
+
     if (srcNav) {
       const $pageNav = $page('nav').first()
-      if ($pageNav.length) $pageNav.replaceWith(srcNav)
+      if ($pageNav.length) {
+        $pageNav.replaceWith(srcNav)
+      }
     }
 
     if (srcAnn) {
@@ -61,7 +64,6 @@ export function replaceHeaderFooter(
       if ($pageAnn.length) {
         $pageAnn.replaceWith(srcAnn)
       } else {
-        // Insert before nav if target has no announcement bar
         $page('nav').first().before(srcAnn)
       }
     }
@@ -69,6 +71,7 @@ export function replaceHeaderFooter(
 
   if (newFooterHtml) {
     const srcFooter = outerHtml(newFooterHtml, 'footer')
+    console.log(`[header-footer] inject footer: srcFooter=${srcFooter.length}c pageFooterFound=${$page('footer').first().length > 0}`)
     if (srcFooter) {
       const $pageFooter = $page('footer').first()
       if ($pageFooter.length) $pageFooter.replaceWith(srcFooter)
