@@ -101,7 +101,7 @@ function countCardChildren($el: ReturnType<CheerioAPI>): number {
 
 // ── Classifiers ─────────────────────────────────────────────────────────────
 
-function classifySection(html: string, isFirst: boolean): string {
+function classifySection(html: string, isFirst: boolean, pageType?: string): string {
   // Check for explicit data-igualai-section attribute set by Gemini during brand rebuild
   const dataAttr = html.match(/data-igualai-section="([^"]+)"/i)?.[1]
   if (dataAttr) {
@@ -133,7 +133,10 @@ function classifySection(html: string, isFirst: boolean): string {
 
   // Product / content grid: multiple images or card children — check BEFORE hero
   // (hero sections have 0–1 large images; 3+ visual images = card/product grid)
-  if (imgCount >= 3) return 'product-grid'
+  // On product pages, skip this heuristic — feature/lifestyle sections with several
+  // gradient placeholders would otherwise become empty collection grids. Only an
+  // explicit data-igualai-section="product-grid" (set by Gemini) should trigger that.
+  if (imgCount >= 3 && pageType !== 'product') return 'product-grid'
 
   // Hero: has a large heading + CTA button
   if (
@@ -669,7 +672,7 @@ function buildFooterSection(rawFooterHtml: string): string {
 
 // ── Main export ──────────────────────────────────────────────────────────────
 
-export async function htmlToShopifySections(html: string, sectionPrefix = ''): Promise<ShopifySections> {
+export async function htmlToShopifySections(html: string, sectionPrefix = '', pageType?: string): Promise<ShopifySections> {
   const $ = load(html, { xmlMode: false } as never)
 
   // ── Extract footer ────────────────────────────────────────────────────────
@@ -739,7 +742,7 @@ export async function htmlToShopifySections(html: string, sectionPrefix = ''): P
 
   for (let i = 0; i < chunks.length; i++) {
     const chunkHtml = chunks[i]
-    const type = classifySection(chunkHtml, i === 0)
+    const type = classifySection(chunkHtml, i === 0, pageType)
 
     if (type === 'announcement-bar') {
       announcementBarHtml = chunkHtml

@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
       if (!headInner && hi) headInner = hi
 
       console.log(`[Shopify Folder] Processing "${project.name}" → ${tmplPath}`)
-      const { sections, order, headerSectionName, footerSectionName } = await htmlToShopifySections(project.html_content, sectionPrefix)
+      const { sections, order, headerSectionName, footerSectionName } = await htmlToShopifySections(project.html_content, sectionPrefix, pageType)
 
       // Add section files (prefixed names prevent collisions)
       for (const [name, content] of Object.entries(sections)) {
