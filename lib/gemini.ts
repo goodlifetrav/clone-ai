@@ -1037,6 +1037,8 @@ CRITICAL: The main content section is a PRODUCT DETAIL SECTION — not a homepag
 
 ━━━ PRODUCT PAGE SECTION LIMIT ━━━
 Product pages are FOCUSED. After the product-main section, include ONLY what the original product page had:
+- Product details accordion (Flavor Profile, Brew Recommendations, Shipping) — always include
+- Brand lifestyle / brand story section — include if the original had one (split layout: image one side, brand copy other side)
 - Related products carousel ("Others Also Bought" / "You May Also Like") — max 1 carousel
 - Reviews section — ONLY if the original clearly had customer reviews
 - ONE newsletter signup bar — max 1
@@ -1044,12 +1046,9 @@ Product pages are FOCUSED. After the product-main section, include ONLY what the
 
 DO NOT ADD on product pages:
 - Multiple newsletter/email signup bars (max 1 total)
-- Brand storytelling split sections ("Our Story", "The Difference", "Crafted for...")
-- Core values sections
-- Feature grids with icons
-- Multiple lifestyle photo strips
+- Core values icon grids
 - Logo/press bars ("Featured On")
-These sections belong on the HOMEPAGE. Product pages stay focused on the product.
+- Homepage-style full-bleed hero sections
 ` : ''
 
     const systemPrompt = `You are an elite web designer rebuilding a cloned site for a new brand. Your #1 goal is HIGH VISUAL FIDELITY to the original site's layout — the rebuilt page must look structurally identical to the original, with only brand content, colors, and text swapped in.
@@ -1152,9 +1151,10 @@ Output ONLY raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanatio
     // Use a fixed structure instead of the (empty) headingChecklist derived from the sparse clone.
     const productPageChecklist = `PRODUCT PAGE STRUCTURE — Shopify product pages load data via JavaScript so the cloned HTML is sparse. Ignore the section count from the clone. Generate a COMPLETE product page with EXACTLY these sections in order:
 1. PRODUCT MAIN — two-column flex row: LEFT side (55%) is a tall product image placeholder (dark gradient div, min-h-[500px], brand accent icon centered), RIGHT side (45%) has: product name (text-3xl font-bold), star rating row, price (text-2xl), short product description (2-3 sentences), variant selector buttons (e.g. Grind Type: Whole Bean / Ground; Size: 1lb / 2lb / 5lb), quantity picker, "Add to Cart" button (full-width, brand accent color), and 1-2 trust badges (free shipping, satisfaction guarantee). data-igualai-section="product-main"
-2. PRODUCT DETAILS ACCORDION — three collapsed accordion items below product-main: Flavor Profile / Tasting Notes, Brew Recommendations, Shipping & Returns. Styled with brand colors, click-to-expand pattern. data-igualai-section="content"
-3. RELATED PRODUCTS — "You May Also Like" heading, horizontal scroll of 3-4 product cards (each: square image placeholder, product name, price, "Add to Cart" link). data-igualai-section="product-grid"
-4. NEWSLETTER SIGNUP — one full-width email capture bar: bold heading on left, email input + submit button on right, brand accent background. data-igualai-section="newsletter"`
+2. PRODUCT DETAILS ACCORDION — a full-width section with 3 expandable accordion panels: (a) Flavor Profile & Tasting Notes — list 4-6 flavor descriptors as tags/badges + 2-3 sentences of tasting copy; (b) Brew Recommendations — 2-3 brew methods with parameters (grind, ratio, temp, time); (c) Shipping & Returns — standard policy text. Each panel has a bold header row with a +/− toggle icon, border-bottom separator, brand-colored accents. data-igualai-section="content"
+3. BRAND LIFESTYLE — a split two-column section: one side is a tall brand-colored gradient placeholder (min-h-[400px]) with a thematic icon; other side has a bold brand mission heading (text-3xl), 2-3 paragraphs of brand story copy, and a secondary CTA button. This is a brand story / "why we exist" section. data-igualai-section="lifestyle"
+4. RELATED PRODUCTS — "You May Also Like" heading, horizontal scroll of 3-4 product cards (each: square image placeholder, product name, price, "Add to Cart" link). data-igualai-section="product-grid"
+5. NEWSLETTER SIGNUP — one full-width email capture bar: bold heading on left, email input + submit button on right, brand accent background. data-igualai-section="newsletter"`
 
     const prompt = `BRAND: ${userMessage}
 
@@ -1170,7 +1170,7 @@ ${htmlForRebuild}
 ━━━ YOUR TASK ━━━
 Rebuild this page for the brand described. NON-NEGOTIABLE RULES:
 ${isProductPage
-  ? `1. USE THE PRODUCT PAGE STRUCTURE in the checklist above. Output ALL 4 sections (product-main, accordion, related products, newsletter). Do NOT reduce sections because the cloned HTML looks sparse — Shopify loads product data via JavaScript so empty black areas are expected.
+  ? `1. USE THE PRODUCT PAGE STRUCTURE in the checklist above. Output ALL 5 sections (product-main, accordion, brand lifestyle, related products, newsletter). Do NOT reduce sections because the cloned HTML looks sparse — Shopify loads product data via JavaScript so empty black areas are expected.
 2. PRODUCT MAIN must be a two-column product detail layout — NOT a homepage hero with a massive headline. The first big visual element is the product image placeholder, not a full-bleed hero banner.`
   : `1. SECTION COUNT IS FIXED — the original has a specific number of sections listed in the structure above. Output THAT EXACT number of sections. Count them. Do not add sections. Do not remove sections.
 2. ONLY the sections listed in the REQUIRED SECTION CHECKLIST above may appear. NEVER invent a testimonial section, review section, social proof section, community section, or feature grid that does not appear in the checklist. If the original has no testimonials, your output has no testimonials.`}
