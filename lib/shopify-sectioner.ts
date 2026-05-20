@@ -70,12 +70,20 @@ function injectColorVars(html: string): string {
 
   // Scoped style block: attribute selector handles any characters in section.id safely.
   // Background uses !important to beat body-level background-color from theme.liquid.
-  // Text color uses *:not([style*="color:"]) so elements with explicit inline color styles
-  // (e.g. gold/orange spans in marquees) keep their designed colors.
+  // Text color targets block-level text elements (p, headings, li) so Tailwind accent
+  // colors on inline elements (span, i) — e.g. gold star ratings — are not overridden.
+  // Inherited color on the wrapper handles divs/other containers as a fallback.
   // Buttons with solid Tailwind bg-* classes get global --color-button so theme color picker works.
   const styleBlock = `{%- style -%}
   [data-igualai-id="{{ section.id }}"] { background-color: {{ section.settings.bg_color }} !important; color: {{ section.settings.text_color }}; }
-  [data-igualai-id="{{ section.id }}"] *:not([style*="color:"]) { color: {{ section.settings.text_color }} !important; }
+  [data-igualai-id="{{ section.id }}"] p,
+  [data-igualai-id="{{ section.id }}"] h1,
+  [data-igualai-id="{{ section.id }}"] h2,
+  [data-igualai-id="{{ section.id }}"] h3,
+  [data-igualai-id="{{ section.id }}"] h4,
+  [data-igualai-id="{{ section.id }}"] h5,
+  [data-igualai-id="{{ section.id }}"] h6,
+  [data-igualai-id="{{ section.id }}"] li { color: {{ section.settings.text_color }} !important; }
   [data-igualai-id="{{ section.id }}"] a[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]),
   [data-igualai-id="{{ section.id }}"] button[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]) { background-color: var(--color-button) !important; color: var(--color-button-text) !important; }
 {%- endstyle -%}`
@@ -708,22 +716,44 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
   }
 
   // ── Split body into chunks ────────────────────────────────────────────────
-  const bodyChildren = $('body').children().toArray()
-  const rawChunks: string[] = []
-  let buffer = ''
-
-  for (const el of bodyChildren) {
-    const elHtml = $.html(el) ?? ''
-    const tag = (el as { tagName?: string }).tagName?.toLowerCase() ?? ''
-    if (['section', 'article', 'aside', 'main', 'div'].includes(tag) && elHtml.length > 200) {
-      if (buffer.trim()) { rawChunks.push(buffer); buffer = '' }
-      rawChunks.push(elHtml)
-    } else {
-      buffer += elHtml
+  // Priority 1: use data-igualai-section markers set by Gemini during brand rebuild.
+  // Gemini may wrap all sections inside a single container div; querying for marked
+  // elements directly gives correct sections even in that case.
+  const allMarked = $('[data-igualai-section]').toArray()
+  // Keep only top-level markers — skip any nested inside another marked element.
+  const markedEls = allMarked.filter(el => {
+    let parent = $(el).parent()
+    while (parent.length && !parent.is('html')) {
+      if (parent.attr('data-igualai-section')) return false
+      parent = parent.parent()
     }
+    return true
+  })
+
+  const rawChunks: string[] = []
+
+  if (markedEls.length >= 2) {
+    for (const el of markedEls) {
+      const elHtml = $.html(el) ?? ''
+      if (elHtml.length > 50) rawChunks.push(elHtml)
+    }
+  } else {
+    // Priority 2: split body's direct children by semantic block elements
+    const bodyChildren = $('body').children().toArray()
+    let buffer = ''
+    for (const el of bodyChildren) {
+      const elHtml = $.html(el) ?? ''
+      const tag = (el as { tagName?: string }).tagName?.toLowerCase() ?? ''
+      if (['section', 'article', 'aside', 'main', 'div'].includes(tag) && elHtml.length > 200) {
+        if (buffer.trim()) { rawChunks.push(buffer); buffer = '' }
+        rawChunks.push(elHtml)
+      } else {
+        buffer += elHtml
+      }
+    }
+    if (buffer.trim()) rawChunks.push(buffer)
+    if (rawChunks.length === 0) rawChunks.push($('body').html() ?? html)
   }
-  if (buffer.trim()) rawChunks.push(buffer)
-  if (rawChunks.length === 0) rawChunks.push($('body').html() ?? html)
 
   // ── Merge consecutive card-like chunks into product grids ─────────────────
   // Gemini sometimes generates each product card as a separate top-level div.
