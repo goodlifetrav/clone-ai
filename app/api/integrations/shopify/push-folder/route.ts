@@ -61,11 +61,14 @@ function extractStyles(html: string): { css: string; headInner: string } {
 }
 
 export async function POST(request: NextRequest) {
+  console.log('[push-folder] request received')
   try {
     const { userId } = await getAuth()
+    console.log('[push-folder] auth:', userId ? 'ok' : 'unauthorized')
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { folderId, shop, accessToken } = await request.json()
+    console.log('[push-folder] params: folderId=%s shop=%s', folderId, shop)
     if (!folderId || !shop || !accessToken) {
       return NextResponse.json({ error: 'folderId, shop, and accessToken are required' }, { status: 400 })
     }
