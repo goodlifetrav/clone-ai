@@ -33,49 +33,88 @@ function bodyHtml($: CheerioAPI): string {
   return $('body').html() ?? ''
 }
 
-/** Detect the dominant background color of a section from inline styles or Tailwind classes.
- *  Only inspects the outer element's opening tag + its first child tag (2 levels max).
- *  Scanning the full HTML causes false positives from inner elements such as inputs,
- *  buttons, and product cards that have their own background colors. */
+/** Detect the dominant background color of a section using Cheerio DOM traversal.
+ *  Walks elements top-down in document order, skipping form controls (input, button, etc.)
+ *  and low-alpha rgba backgrounds, so it finds the true section background regardless of
+ *  how deeply nested it is. */
 function detectBgColor(html: string): string {
-  // Extract outer tag + first child tag only
-  const m = html.match(/^(<[a-z][a-z0-9-]*[^>]*>)\s*(<[a-z][a-z0-9-]*[^>]*>)?/i)
-  const candidates = `${m?.[1] ?? ''} ${m?.[2] ?? ''}`
+  const $ = load(html)
+  const SKIP_TAGS = new Set(['input', 'button', 'select', 'textarea', 'label', 'option', 'script', 'style', 'svg', 'path'])
 
-  const hex = candidates.match(/background(?:-color)?\s*:\s*(#[0-9a-f]{3,8})/i)
-  if (hex) return hex[1]
+  let found = ''
+  $('body *').each((_, el) => {
+    if (found) return false
+    const tag = ((el as { tagName?: string }).tagName ?? '').toLowerCase()
+    if (SKIP_TAGS.has(tag)) return
 
-  const rgbMatch = candidates.match(/background(?:-color)?\s*:\s*rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i)
-  if (rgbMatch) {
-    const [r, g, b] = [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map(v => parseInt(v))
-    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
-  }
+    const style = ($(el).attr('style') ?? '')
+    const cls = ($(el).attr('class') ?? '')
 
-  if (/background(?:-color)?\s*:\s*black\b/i.test(candidates)) return '#000000'
-  if (/background(?:-color)?\s*:\s*white\b/i.test(candidates)) return '#ffffff'
+    // Inline style — hex
+    const hexMatch = style.match(/background(?:-color)?\s*:\s*(#[0-9a-f]{3,8})/i)
+    if (hexMatch) { found = hexMatch[1]; return false }
 
-  const arbitrary = candidates.match(/\bbg-\[#([0-9a-f]{3,8})\]/i)
-  if (arbitrary) return `#${arbitrary[1]}`
+    // Inline style — rgb/rgba (skip if alpha < 0.5 — translucent overlays are not the bg)
+    const rgbMatch = style.match(/background(?:-color)?\s*:\s*rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/i)
+    if (rgbMatch) {
+      const alpha = rgbMatch[4] !== undefined ? parseFloat(rgbMatch[4]) : 1
+      if (alpha >= 0.5) {
+        const [r, g, b] = [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map(v => parseInt(v))
+        found = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+        return false
+      }
+      return // low-alpha tint — skip and keep looking
+    }
 
-  if (/\b(?:bg-black|bg-gray-9\d\d?|bg-neutral-9\d\d?|bg-zinc-9\d\d?|bg-slate-9\d\d?)\b/i.test(candidates)) return '#000000'
-  if (/\b(?:bg-gray-8\d\d?|bg-neutral-8\d\d?)\b/i.test(candidates)) return '#1f2937'
-  if (/\b(?:bg-gray-7\d\d?|bg-neutral-7\d\d?)\b/i.test(candidates)) return '#374151'
-  return '#ffffff'
+    if (/background(?:-color)?\s*:\s*black\b/i.test(style)) { found = '#000000'; return false }
+    if (/background(?:-color)?\s*:\s*white\b/i.test(style)) { found = '#ffffff'; return false }
+
+    // Tailwind classes
+    const arbitrary = cls.match(/\bbg-\[#([0-9a-f]{3,8})\]/i)
+    if (arbitrary) { found = `#${arbitrary[1]}`; return false }
+
+    if (/\b(?:bg-black|bg-gray-9\d{2}|bg-neutral-9\d{2}|bg-zinc-9\d{2}|bg-slate-9\d{2})\b/.test(cls)) { found = '#000000'; return false }
+    if (/\b(?:bg-gray-8\d{2}|bg-neutral-8\d{2})\b/.test(cls)) { found = '#1f2937'; return false }
+    if (/\b(?:bg-gray-7\d{2}|bg-neutral-7\d{2})\b/.test(cls)) { found = '#374151'; return false }
+  })
+
+  return found || '#ffffff'
 }
 
 /** Inject bg_color and text_color Liquid vars using a scoped {% style %} block with !important.
- *  !important is required because child elements often have Tailwind text-* classes that
- *  would otherwise override inherited color values. */
+ *  Also injects Tailwind utility shims for layout-critical classes that Shopify CSP blocks
+ *  (Tailwind CDN is not allowed in Shopify storefronts). */
 function injectColorVars(html: string): string {
   const $ = load(html)
   const outer = $('body').children().first()
 
-  // Scoped style block: attribute selector handles any characters in section.id safely.
-  // Background uses !important to beat body-level background-color from theme.liquid.
-  // Text color targets block-level text elements (p, headings, li) so Tailwind accent
-  // colors on inline elements (span, i) — e.g. gold star ratings — are not overridden.
-  // Inherited color on the wrapper handles divs/other containers as a fallback.
-  // Buttons with solid Tailwind bg-* classes get global --color-button so theme color picker works.
+  // Tailwind shims — only inject classes actually present in this section's HTML.
+  // Scoped to [data-igualai-id] so they don't leak to other theme sections.
+  const shimLines: string[] = []
+  const has = (s: string) => html.includes(s)
+
+  if (has('overflow-hidden'))  shimLines.push(`  [data-igualai-id="{{ section.id }}"] .overflow-hidden { overflow: hidden !important; }`)
+  if (has('whitespace-nowrap')) shimLines.push(`  [data-igualai-id="{{ section.id }}"] .whitespace-nowrap { white-space: nowrap !important; }`)
+  if (has('"flex') || has(' flex ') || has("'flex") || has('class="flex"') || has('flex items'))
+    shimLines.push(`  [data-igualai-id="{{ section.id }}"] .flex { display: flex !important; }`)
+  if (has('inline-flex'))      shimLines.push(`  [data-igualai-id="{{ section.id }}"] .inline-flex { display: inline-flex !important; }`)
+  if (has('items-center'))     shimLines.push(`  [data-igualai-id="{{ section.id }}"] .items-center { align-items: center !important; }`)
+  if (has('justify-center'))   shimLines.push(`  [data-igualai-id="{{ section.id }}"] .justify-center { justify-content: center !important; }`)
+  if (has('justify-between'))  shimLines.push(`  [data-igualai-id="{{ section.id }}"] .justify-between { justify-content: space-between !important; }`)
+
+  // Marquee animation — Shopify CSP blocks Tailwind CDN so animate-marquee never fires.
+  // Inject the keyframe + animation rule directly so the ticker works out of the box.
+  if (has('animate-marquee') || has('animate-scroll') || has('animate-ticker')) {
+    shimLines.push(
+      `  @keyframes igualai-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }`,
+      `  [data-igualai-id="{{ section.id }}"] .animate-marquee,`,
+      `  [data-igualai-id="{{ section.id }}"] .animate-scroll,`,
+      `  [data-igualai-id="{{ section.id }}"] .animate-ticker { animation: igualai-marquee 20s linear infinite !important; white-space: nowrap !important; }`,
+    )
+  }
+
+  const tailwindShims = shimLines.length ? '\n' + shimLines.join('\n') : ''
+
   const styleBlock = `{%- style -%}
   [data-igualai-id="{{ section.id }}"] { background-color: {{ section.settings.bg_color }} !important; color: {{ section.settings.text_color }}; }
   [data-igualai-id="{{ section.id }}"] p,
@@ -87,7 +126,7 @@ function injectColorVars(html: string): string {
   [data-igualai-id="{{ section.id }}"] h6,
   [data-igualai-id="{{ section.id }}"] li { color: {{ section.settings.text_color }} !important; }
   [data-igualai-id="{{ section.id }}"] a[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]),
-  [data-igualai-id="{{ section.id }}"] button[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]) { background-color: var(--color-button) !important; color: var(--color-button-text) !important; }
+  [data-igualai-id="{{ section.id }}"] button[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]) { background-color: var(--color-button) !important; color: var(--color-button-text) !important; }${tailwindShims}
 {%- endstyle -%}`
 
   if (outer.length) {
@@ -823,7 +862,16 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
     } else if (type === 'product-grid') {
       const $c = load(chunkHtml)
       const heading = $c('h2, h3').first().text().trim()
-      sectionContent = injectColorVars(productGridLiquid(heading, pageType === 'collection')) + schemaTag(buildProductGridSchema({ heading }, bg))
+      if (pageType === 'collection') {
+        // Collection pages: dynamic Shopify product loop using built-in `collection` variable
+        sectionContent = injectColorVars(productGridLiquid(heading, true)) + schemaTag(buildProductGridSchema({ heading }, bg))
+      } else {
+        // Homepage / other pages: render the IgualAI-designed product cards as static HTML.
+        // A dynamic loop would show "Select a collection in the sidebar" until configured.
+        // Static rendering preserves the brand design immediately on push.
+        const { liquid, defaults } = liquidifyContent(chunkHtml)
+        sectionContent = injectColorVars(liquid) + schemaTag(buildContentSchema('Featured Products', { heading: heading || defaults.heading || '', subheading: defaults.subheading || '' }, imgCount >= 2, bg))
+      }
     } else if (type === 'newsletter') {
       const { liquid, defaults } = liquidifyHero(chunkHtml)
       sectionContent = injectColorVars(liquid) + schemaTag({
