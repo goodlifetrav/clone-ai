@@ -33,31 +33,33 @@ function bodyHtml($: CheerioAPI): string {
   return $('body').html() ?? ''
 }
 
-/** Detect the dominant background color of a section from inline styles or Tailwind classes */
+/** Detect the dominant background color of a section from inline styles or Tailwind classes.
+ *  Only inspects the outer element's opening tag + its first child tag (2 levels max).
+ *  Scanning the full HTML causes false positives from inner elements such as inputs,
+ *  buttons, and product cards that have their own background colors. */
 function detectBgColor(html: string): string {
-  // Inline hex — check first
-  const inline = html.match(/background(?:-color)?\s*:\s*(#[0-9a-f]{3,8})/i)
-  if (inline) return inline[1]
+  // Extract outer tag + first child tag only
+  const m = html.match(/^(<[a-z][a-z0-9-]*[^>]*>)\s*(<[a-z][a-z0-9-]*[^>]*>)?/i)
+  const candidates = `${m?.[1] ?? ''} ${m?.[2] ?? ''}`
 
-  // Inline rgb/rgba — Gemini sometimes emits these instead of hex
-  const rgbMatch = html.match(/background(?:-color)?\s*:\s*rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i)
+  const hex = candidates.match(/background(?:-color)?\s*:\s*(#[0-9a-f]{3,8})/i)
+  if (hex) return hex[1]
+
+  const rgbMatch = candidates.match(/background(?:-color)?\s*:\s*rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i)
   if (rgbMatch) {
     const [r, g, b] = [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map(v => parseInt(v))
     return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
   }
 
-  // CSS color keywords
-  if (/background(?:-color)?\s*:\s*black\b/i.test(html)) return '#000000'
-  if (/background(?:-color)?\s*:\s*white\b/i.test(html)) return '#ffffff'
+  if (/background(?:-color)?\s*:\s*black\b/i.test(candidates)) return '#000000'
+  if (/background(?:-color)?\s*:\s*white\b/i.test(candidates)) return '#ffffff'
 
-  // Tailwind arbitrary value
-  const arbitrary = html.match(/\bbg-\[#([0-9a-f]{3,8})\]/i)
+  const arbitrary = candidates.match(/\bbg-\[#([0-9a-f]{3,8})\]/i)
   if (arbitrary) return `#${arbitrary[1]}`
 
-  // Named Tailwind dark classes
-  if (/\b(?:bg-black|bg-gray-9\d\d?|bg-neutral-9\d\d?|bg-zinc-9\d\d?|bg-slate-9\d\d?)\b/i.test(html)) return '#000000'
-  if (/\b(?:bg-gray-8\d\d?|bg-neutral-8\d\d?)\b/i.test(html)) return '#1f2937'
-  if (/\b(?:bg-gray-7\d\d?|bg-neutral-7\d\d?)\b/i.test(html)) return '#374151'
+  if (/\b(?:bg-black|bg-gray-9\d\d?|bg-neutral-9\d\d?|bg-zinc-9\d\d?|bg-slate-9\d\d?)\b/i.test(candidates)) return '#000000'
+  if (/\b(?:bg-gray-8\d\d?|bg-neutral-8\d\d?)\b/i.test(candidates)) return '#1f2937'
+  if (/\b(?:bg-gray-7\d\d?|bg-neutral-7\d\d?)\b/i.test(candidates)) return '#374151'
   return '#ffffff'
 }
 
@@ -157,12 +159,11 @@ function classifySection(html: string, isFirst: boolean, pageType?: string): str
   const collectionLinks = (html.match(/href=["'][^"']*\/collections\/[^"']+["']/gi) ?? []).length
   if (collectionLinks >= 2 && imgCount >= 2) return 'collection-list'
 
-  // Product / content grid: multiple images or card children — check BEFORE hero
-  // (hero sections have 0–1 large images; 3+ visual images = card/product grid)
-  // On product pages, skip this heuristic — feature/lifestyle sections with several
-  // gradient placeholders would otherwise become empty collection grids. Only an
-  // explicit data-igualai-section="product-grid" (set by Gemini) should trigger that.
-  if (imgCount >= 3 && pageType !== 'product') return 'product-grid'
+  // NOTE: imgCount >= 3 no longer auto-classifies as product-grid.
+  // A dynamic Shopify collection grid is only generated when Gemini explicitly marks
+  // a section with data-igualai-section="product-grid". All other multi-image sections
+  // (feature cards, product showcases, lifestyle grids) render as static HTML so the
+  // designed layout from IgualAI is preserved across all page types.
 
   // Hero: has a large heading + CTA button
   if (
@@ -349,7 +350,12 @@ function liquidifyContent(chunkHtml: string): { liquid: string; defaults: Record
 
 // ── Product loop Liquid ──────────────────────────────────────────────────────
 
-function productGridLiquid(heading: string): string {
+function productGridLiquid(heading: string, isCollectionPage = false): string {
+  // Collection pages: `collection` is already Shopify's current collection — no sidebar config needed.
+  // Other pages: user selects a collection in the Theme Editor sidebar.
+  const collAssign = isCollectionPage ? '' : `{% assign coll = collections[section.settings.collection] %}`
+  const collVar = isCollectionPage ? 'collection' : 'coll'
+
   return `<div class="igualai-product-section">
   {% if section.settings.heading != blank %}
     <h2 style="text-align:center;padding:2rem 1rem 0.5rem;font-size:1.75rem;font-weight:700">
@@ -357,9 +363,9 @@ function productGridLiquid(heading: string): string {
     </h2>
   {% endif %}
   <div style="display:grid;grid-template-columns:repeat({{ section.settings.columns }},1fr);gap:1.5rem;padding:1.5rem 2rem;max-width:1280px;margin:0 auto">
-    {% assign coll = collections[section.settings.collection] %}
-    {% if coll != blank %}
-      {% for product in coll.products limit: section.settings.products_to_show %}
+    ${collAssign}
+    {% if ${collVar} != blank %}
+      {% for product in ${collVar}.products limit: section.settings.products_to_show %}
         <a href="{{ product.url }}" style="display:block;text-decoration:none;color:inherit;border-radius:12px;overflow:hidden;border:1px solid rgba(0,0,0,.08)">
           <div style="aspect-ratio:1;overflow:hidden;background:#f5f5f5">
             <img src="{{ product.featured_image | img_url: '600x600' }}" alt="{{ product.title }}" loading="lazy" style="width:100%;height:100%;object-fit:cover">
@@ -817,7 +823,7 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
     } else if (type === 'product-grid') {
       const $c = load(chunkHtml)
       const heading = $c('h2, h3').first().text().trim()
-      sectionContent = injectColorVars(productGridLiquid(heading)) + schemaTag(buildProductGridSchema({ heading }, bg))
+      sectionContent = injectColorVars(productGridLiquid(heading, pageType === 'collection')) + schemaTag(buildProductGridSchema({ heading }, bg))
     } else if (type === 'newsletter') {
       const { liquid, defaults } = liquidifyHero(chunkHtml)
       sectionContent = injectColorVars(liquid) + schemaTag({
