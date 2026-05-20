@@ -23,21 +23,44 @@ export interface ShopifySections {
 /** Parse custom Tailwind color palette from an inline tailwind.config script block.
  *  Returns a map of "paletteName-shade" → "#hexcolor", e.g. { "brand-500": "#1c1c1c" }.
  *  Brand rebuilds inject a tailwind.config with custom colors; without this map,
- *  bg-brand-500 looks like an unknown class and detectBgColor returns null. */
+ *  bg-brand-500 looks like an unknown class and detectBgColor returns null.
+ *
+ *  NOTE: the naive regex /\b(\w+)\s*:\s*\{([^}]+)\}/ only matches ONE level deep
+ *  because [^}]+ stops at the first }. With theme→extend→colors→brand nesting,
+ *  the outer match captures `theme:{...}` (IGNORED) and nothing else.
+ *  Fix: locate the `colors:` key with balanced brace counting, then parse within it. */
 function parseTailwindCustomColors(html: string): Record<string, string> {
   const colors: Record<string, string> = {}
   const scriptMatch = html.match(/tailwind\.config\s*=\s*\{[\s\S]*?\}\s*<\/script>/i)
   if (!scriptMatch) return colors
 
   const configStr = scriptMatch[0]
-  const IGNORED = new Set(['theme', 'extend', 'colors', 'fontFamily', 'spacing', 'borderRadius', 'screens', 'plugins', 'variants', 'animation', 'keyframes'])
 
-  // Match: paletteName: { shade: '#hex', ... }
-  const paletteRe = /\b(\w+)\s*:\s*\{([^}]+)\}/g
+  // Find the `colors:` block using balanced brace counting so nesting works correctly
+  const colorsKeyMatch = configStr.match(/\bcolors\s*:\s*\{/)
+  if (!colorsKeyMatch) return colors
+
+  const start = colorsKeyMatch.index! + colorsKeyMatch[0].length
+  let depth = 1
+  let end = start
+  while (end < configStr.length && depth > 0) {
+    if (configStr[end] === '{') depth++
+    else if (configStr[end] === '}') depth--
+    end++
+  }
+  const colorsBody = configStr.slice(start, end - 1)
+
+  // Skip built-in Tailwind palette names — only extract custom ones (e.g. "brand")
+  const BUILT_IN = new Set(['red','blue','green','yellow','purple','pink','orange','gray','grey',
+    'slate','zinc','neutral','stone','amber','lime','emerald','teal','cyan','sky','indigo','violet',
+    'fuchsia','rose','white','black','inherit','current','transparent'])
+
+  // Within the colors body, match palette-name: { shade: '#hex', ... } — now only one level deep
+  const paletteRe = /\b(\w+)\s*:\s*\{([^{}]+)\}/g
   let pm
-  while ((pm = paletteRe.exec(configStr)) !== null) {
+  while ((pm = paletteRe.exec(colorsBody)) !== null) {
     const name = pm[1]
-    if (IGNORED.has(name)) continue
+    if (BUILT_IN.has(name)) continue
     const body = pm[2]
     const entryRe = /['"]?(\w+)['"]?\s*:\s*['"]?(#[0-9a-f]{3,8})['"]?/gi
     let em
@@ -160,42 +183,133 @@ function detectPageBg($: CheerioAPI, customColors: Record<string, string> = {}):
   return '#ffffff'
 }
 
-/** Inject bg_color and text_color Liquid vars using a scoped {% style %} block with !important.
- *  Also injects Tailwind utility shims for layout-critical classes that Shopify CSP blocks
- *  (Tailwind CDN is not allowed in Shopify storefronts). */
-function injectColorVars(html: string): string {
+/** Inject background/text colors and Tailwind utility shims into a section's Liquid.
+ *
+ *  bg/textColor are hardcoded into the {% style %} block so the section renders
+ *  correctly even when Shopify hasn't seeded schema defaults (which happens when
+ *  templates/index.json has settings:{} and the theme hasn't been opened in the editor).
+ *  We also pipe through {{ section.settings.bg_color | default: bg }} so that a
+ *  merchant who later opens the Theme Editor and changes the color picker still wins.
+ *
+ *  Tailwind CDN is blocked by Shopify CSP. We shim every Tailwind utility class
+ *  present in the section HTML so layout renders 1:1 with the IgualAI preview. */
+function injectColorVars(html: string, bg = '#ffffff', textColor?: string): string {
+  const resolvedText = textColor ?? (bg === '#ffffff' || bg === '#fff' ? '#111111' : '#ffffff')
   const $ = load(html)
   const outer = $('body').children().first()
 
-  // Tailwind shims — only inject classes actually present in this section's HTML.
-  // Scoped to [data-igualai-id] so they don't leak to other theme sections.
   const shimLines: string[] = []
   const has = (s: string) => html.includes(s)
+  const shim = (cls: string, css: string) => shimLines.push(`  [data-igualai-id="{{ section.id }}"] .${cls} { ${css} }`)
 
-  if (has('overflow-hidden'))  shimLines.push(`  [data-igualai-id="{{ section.id }}"] .overflow-hidden { overflow: hidden !important; }`)
-  if (has('whitespace-nowrap')) shimLines.push(`  [data-igualai-id="{{ section.id }}"] .whitespace-nowrap { white-space: nowrap !important; }`)
-  if (has('"flex') || has(' flex ') || has("'flex") || has('class="flex"') || has('flex items'))
-    shimLines.push(`  [data-igualai-id="{{ section.id }}"] .flex { display: flex !important; }`)
-  if (has('inline-flex'))      shimLines.push(`  [data-igualai-id="{{ section.id }}"] .inline-flex { display: inline-flex !important; }`)
-  if (has('items-center'))     shimLines.push(`  [data-igualai-id="{{ section.id }}"] .items-center { align-items: center !important; }`)
-  if (has('justify-center'))   shimLines.push(`  [data-igualai-id="{{ section.id }}"] .justify-center { justify-content: center !important; }`)
-  if (has('justify-between'))  shimLines.push(`  [data-igualai-id="{{ section.id }}"] .justify-between { justify-content: space-between !important; }`)
+  // ── Display / layout ──────────────────────────────────────────────────────
+  if (has('"flex') || has(' flex ') || has("'flex") || has('class="flex"') || has('flex items') || has('flex '))
+    shim('flex', 'display: flex !important;')
+  if (has('inline-flex'))    shim('inline-flex', 'display: inline-flex !important;')
+  if (has('grid ') || has('"grid"') || has('grid-cols'))
+    shim('grid', 'display: grid !important;')
+  if (has('hidden'))         shim('hidden', 'display: none !important;')
+  if (has('block'))          shim('block', 'display: block !important;')
 
-  // Marquee animation — Shopify CSP blocks Tailwind CDN so animate-marquee never fires.
-  // Inject the keyframe + animation rule directly so the ticker works out of the box.
+  // ── Flex/grid children ────────────────────────────────────────────────────
+  if (has('flex-col'))       shim('flex-col', 'flex-direction: column !important;')
+  if (has('flex-row'))       shim('flex-row', 'flex-direction: row !important;')
+  if (has('flex-wrap'))      shim('flex-wrap', 'flex-wrap: wrap !important;')
+  if (has('flex-1'))         shim('flex-1', 'flex: 1 1 0% !important;')
+  if (has('flex-none'))      shim('flex-none', 'flex: none !important;')
+  if (has('items-center'))   shim('items-center', 'align-items: center !important;')
+  if (has('items-start'))    shim('items-start', 'align-items: flex-start !important;')
+  if (has('items-end'))      shim('items-end', 'align-items: flex-end !important;')
+  if (has('self-center'))    shim('self-center', 'align-self: center !important;')
+  if (has('self-end'))       shim('self-end', 'align-self: flex-end !important;')
+  if (has('justify-center')) shim('justify-center', 'justify-content: center !important;')
+  if (has('justify-between'))shim('justify-between', 'justify-content: space-between !important;')
+  if (has('justify-end'))    shim('justify-end', 'justify-content: flex-end !important;')
+
+  // ── Grid columns ──────────────────────────────────────────────────────────
+  for (const n of [1,2,3,4,5,6]) {
+    if (has(`grid-cols-${n}`)) shim(`grid-cols-${n}`, `grid-template-columns: repeat(${n}, minmax(0, 1fr)) !important;`)
+  }
+
+  // ── Positioning ───────────────────────────────────────────────────────────
+  if (has('absolute'))       shim('absolute', 'position: absolute !important;')
+  if (has('relative'))       shim('relative', 'position: relative !important;')
+  if (has('fixed'))          shim('fixed', 'position: fixed !important;')
+  if (has('sticky'))         shim('sticky', 'position: sticky !important;')
+  if (has('inset-0'))        shim('inset-0', 'top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important;')
+  if (has('top-0'))          shim('top-0', 'top: 0 !important;')
+  if (has('left-0'))         shim('left-0', 'left: 0 !important;')
+  if (has('right-0'))        shim('right-0', 'right: 0 !important;')
+  if (has('bottom-0'))       shim('bottom-0', 'bottom: 0 !important;')
+  if (has('z-10'))           shim('z-10', 'z-index: 10 !important;')
+  if (has('z-20'))           shim('z-20', 'z-index: 20 !important;')
+  if (has('z-50'))           shim('z-50', 'z-index: 50 !important;')
+
+  // ── Overflow / whitespace ─────────────────────────────────────────────────
+  if (has('overflow-hidden'))  shim('overflow-hidden', 'overflow: hidden !important;')
+  if (has('overflow-auto'))    shim('overflow-auto', 'overflow: auto !important;')
+  if (has('whitespace-nowrap'))shim('whitespace-nowrap', 'white-space: nowrap !important;')
+
+  // ── Sizing ────────────────────────────────────────────────────────────────
+  if (has('w-full'))         shim('w-full', 'width: 100% !important;')
+  if (has('h-full'))         shim('h-full', 'height: 100% !important;')
+  if (has('min-h-screen'))   shim('min-h-screen', 'min-height: 100vh !important;')
+  if (has('max-w-'))         shimLines.push(`  [data-igualai-id="{{ section.id }}"] .max-w-7xl { max-width: 80rem !important; } [data-igualai-id="{{ section.id }}"] .max-w-6xl { max-width: 72rem !important; } [data-igualai-id="{{ section.id }}"] .max-w-5xl { max-width: 64rem !important; } [data-igualai-id="{{ section.id }}"] .max-w-4xl { max-width: 56rem !important; }`)
+  if (has('mx-auto'))        shim('mx-auto', 'margin-left: auto !important; margin-right: auto !important;')
+
+  // ── Padding / gap (common Tailwind scale) ─────────────────────────────────
+  const SPACING: Record<number, string> = {1:'0.25rem',2:'0.5rem',3:'0.75rem',4:'1rem',5:'1.25rem',6:'1.5rem',8:'2rem',10:'2.5rem',12:'3rem',16:'4rem',20:'5rem',24:'6rem'}
+  for (const [n, val] of Object.entries(SPACING)) {
+    if (has(`p-${n}`))   shim(`p-${n}`,   `padding: ${val} !important;`)
+    if (has(`px-${n}`))  shim(`px-${n}`,  `padding-left: ${val} !important; padding-right: ${val} !important;`)
+    if (has(`py-${n}`))  shim(`py-${n}`,  `padding-top: ${val} !important; padding-bottom: ${val} !important;`)
+    if (has(`pt-${n}`))  shim(`pt-${n}`,  `padding-top: ${val} !important;`)
+    if (has(`pb-${n}`))  shim(`pb-${n}`,  `padding-bottom: ${val} !important;`)
+    if (has(`gap-${n}`)) shim(`gap-${n}`, `gap: ${val} !important;`)
+    if (has(`space-x-${n}`)) shimLines.push(`  [data-igualai-id="{{ section.id }}"] .space-x-${n} > * + * { margin-left: ${val} !important; }`)
+    if (has(`space-y-${n}`)) shimLines.push(`  [data-igualai-id="{{ section.id }}"] .space-y-${n} > * + * { margin-top: ${val} !important; }`)
+  }
+
+  // ── Typography ────────────────────────────────────────────────────────────
+  if (has('text-center'))    shim('text-center', 'text-align: center !important;')
+  if (has('text-left'))      shim('text-left', 'text-align: left !important;')
+  if (has('text-right'))     shim('text-right', 'text-align: right !important;')
+  if (has('uppercase'))      shim('uppercase', 'text-transform: uppercase !important;')
+  if (has('font-bold'))      shim('font-bold', 'font-weight: 700 !important;')
+  if (has('font-black'))     shim('font-black', 'font-weight: 900 !important;')
+  if (has('font-semibold'))  shim('font-semibold', 'font-weight: 600 !important;')
+  if (has('tracking-wider')) shim('tracking-wider', 'letter-spacing: 0.05em !important;')
+  if (has('tracking-widest'))shim('tracking-widest', 'letter-spacing: 0.1em !important;')
+
+  // ── Border radius ─────────────────────────────────────────────────────────
+  if (has('rounded-full'))   shim('rounded-full', 'border-radius: 9999px !important;')
+  if (has('rounded-xl'))     shim('rounded-xl', 'border-radius: 0.75rem !important;')
+  if (has('rounded-lg'))     shim('rounded-lg', 'border-radius: 0.5rem !important;')
+  if (has('rounded-md'))     shim('rounded-md', 'border-radius: 0.375rem !important;')
+  if (has('rounded-sm'))     shim('rounded-sm', 'border-radius: 0.125rem !important;')
+
+  // ── Object fit ────────────────────────────────────────────────────────────
+  if (has('object-cover'))   shim('object-cover', 'object-fit: cover !important;')
+  if (has('object-contain')) shim('object-contain', 'object-fit: contain !important;')
+
+  // ── Marquee animation — Tailwind CDN blocked, inject keyframe + animation ─
   if (has('animate-marquee') || has('animate-scroll') || has('animate-ticker')) {
     shimLines.push(
       `  @keyframes igualai-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }`,
       `  [data-igualai-id="{{ section.id }}"] .animate-marquee,`,
       `  [data-igualai-id="{{ section.id }}"] .animate-scroll,`,
-      `  [data-igualai-id="{{ section.id }}"] .animate-ticker { animation: igualai-marquee 20s linear infinite !important; white-space: nowrap !important; }`,
+      `  [data-igualai-id="{{ section.id }}"] .animate-ticker { animation: igualai-marquee 20s linear infinite !important; white-space: nowrap !important; display: inline-flex !important; }`,
     )
   }
 
   const tailwindShims = shimLines.length ? '\n' + shimLines.join('\n') : ''
 
+  // Use hardcoded bg/text as the base CSS value. Also pipe through the Liquid setting
+  // with | default: so merchant editor changes still take effect after the first paint.
+  // If section.settings.bg_color is empty (schema default not applied), the | default
+  // kicks in and renders the detected color. Either way the section is never white.
   const styleBlock = `{%- style -%}
-  [data-igualai-id="{{ section.id }}"] { background-color: {{ section.settings.bg_color }} !important; color: {{ section.settings.text_color }}; }
+  [data-igualai-id="{{ section.id }}"] { background-color: {{ section.settings.bg_color | default: '${bg}' }} !important; color: {{ section.settings.text_color | default: '${resolvedText}' }}; }
   [data-igualai-id="{{ section.id }}"] p,
   [data-igualai-id="{{ section.id }}"] h1,
   [data-igualai-id="{{ section.id }}"] h2,
@@ -203,14 +317,14 @@ function injectColorVars(html: string): string {
   [data-igualai-id="{{ section.id }}"] h4,
   [data-igualai-id="{{ section.id }}"] h5,
   [data-igualai-id="{{ section.id }}"] h6,
-  [data-igualai-id="{{ section.id }}"] li { color: {{ section.settings.text_color }} !important; }
+  [data-igualai-id="{{ section.id }}"] li { color: {{ section.settings.text_color | default: '${resolvedText}' }} !important; }
   [data-igualai-id="{{ section.id }}"] a[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]),
   [data-igualai-id="{{ section.id }}"] button[class*="bg-"]:not([class*="bg-transparent"]):not([class*="bg-white"]):not([class*="bg-opacity-0"]) { background-color: var(--color-button) !important; color: var(--color-button-text) !important; }${tailwindShims}
 {%- endstyle -%}`
 
   if (outer.length) {
     outer.attr('data-igualai-id', '{{ section.id }}')
-    // Strip any hardcoded background-color from inline style so our scoped rule wins
+    // Strip any hardcoded background-color from inline style so our scoped CSS rule wins
     const existingStyle = (outer.attr('style') ?? '')
       .replace(/background(?:-color)?\s*:[^;]+;?\s*/gi, '')
       .replace(/^\s*;?\s*|\s*;?\s*$/g, '')
@@ -941,13 +1055,14 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
     const bg = detectBgColor(chunkHtml, customColors) ?? pageBg
     console.log(`[sectioner] section="${name}" type="${type}" bg="${bg}" (pageBg="${pageBg}") htmlLen=${chunkHtml.length}`)
 
+    const textCol = bg === '#ffffff' || bg === '#fff' ? '#111111' : '#ffffff'
     if (type === 'hero') {
       const { liquid, defaults } = liquidifyHero(chunkHtml)
-      sectionContent = injectColorVars(liquid) + schemaTag(buildHeroSchema(defaults, bg))
+      sectionContent = injectColorVars(liquid, bg, textCol) + schemaTag(buildHeroSchema(defaults, bg))
     } else if (type === 'collection-list') {
       const $c = load(chunkHtml)
       const heading = $c('h2, h3').first().text().trim()
-      sectionContent = injectColorVars(collectionListLiquid(heading)) + schemaTag(buildCollectionListSchema(heading, bg))
+      sectionContent = injectColorVars(collectionListLiquid(heading), bg, textCol) + schemaTag(buildCollectionListSchema(heading, bg))
     } else if (type === 'product-main') {
       sectionContent = productMainLiquid(bg) + schemaTag(buildProductMainSchema(bg))
     } else if (type === 'product-grid') {
@@ -955,30 +1070,30 @@ export async function htmlToShopifySections(html: string, sectionPrefix = '', pa
       const heading = $c('h2, h3').first().text().trim()
       if (pageType === 'collection') {
         // Collection pages: dynamic Shopify product loop using built-in `collection` variable
-        sectionContent = injectColorVars(productGridLiquid(heading, true)) + schemaTag(buildProductGridSchema({ heading }, bg))
+        sectionContent = injectColorVars(productGridLiquid(heading, true), bg, textCol) + schemaTag(buildProductGridSchema({ heading }, bg))
       } else {
         // Homepage / other pages: render the IgualAI-designed product cards as static HTML.
         // A dynamic loop would show "Select a collection in the sidebar" until configured.
         // Static rendering preserves the brand design immediately on push.
         const { liquid, defaults } = liquidifyContent(chunkHtml)
-        sectionContent = injectColorVars(liquid) + schemaTag(buildContentSchema('Featured Products', { heading: heading || defaults.heading || '', subheading: defaults.subheading || '' }, imgCount >= 2, bg))
+        sectionContent = injectColorVars(liquid, bg, textCol) + schemaTag(buildContentSchema('Featured Products', { heading: heading || defaults.heading || '', subheading: defaults.subheading || '' }, imgCount >= 2, bg))
       }
     } else if (type === 'newsletter') {
       const { liquid, defaults } = liquidifyHero(chunkHtml)
-      sectionContent = injectColorVars(liquid) + schemaTag({
+      sectionContent = injectColorVars(liquid, bg, textCol) + schemaTag({
         name: 'Newsletter',
         settings: [
           setting({ type: 'text', id: 'heading', label: 'Heading' }, defaults.heading),
           setting({ type: 'text', id: 'btn1_label', label: 'Button text' }, defaults.btn1_label),
           { type: 'color', id: 'bg_color', label: 'Background color', default: bg },
-          { type: 'color', id: 'text_color', label: 'Text color', default: bg === '#ffffff' ? '#111111' : '#ffffff' },
+          { type: 'color', id: 'text_color', label: 'Text color', default: textCol },
         ],
         presets: [{ name: 'Newsletter' }],
       })
     } else {
       const { liquid, defaults } = liquidifyContent(chunkHtml)
       const displayName = type.charAt(0).toUpperCase() + type.slice(1).replace(/-/g, ' ')
-      sectionContent = injectColorVars(liquid) + schemaTag(buildContentSchema(displayName, defaults, imgCount >= 2, bg))
+      sectionContent = injectColorVars(liquid, bg, textCol) + schemaTag(buildContentSchema(displayName, defaults, imgCount >= 2, bg))
     }
 
     sections[name] = sectionContent
