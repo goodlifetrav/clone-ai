@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
 
   // ── Fetch current state ──────────────────────────────────────────────────
   const [{ data: project }, { data: chatHistory }] = await Promise.all([
-    supabase.from('projects').select('html_content, folder_id').eq('id', projectId).single(),
+    supabase.from('projects').select('html_content, folder_id, url').eq('id', projectId).single(),
     supabase
       .from('chat_messages')
       .select('role, content')
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
   createJob(jobId, projectId)
 
   // eslint-disable-next-line @typescript-eslint/no-floating-promises
-  runChatJob(jobId, projectId, currentHtml, chatMessages, uploadedImageUrls, user, adminOverride, message, project?.folder_id ?? null)
+  runChatJob(jobId, projectId, currentHtml, chatMessages, uploadedImageUrls, user, adminOverride, message, project?.folder_id ?? null, project?.url ?? null)
 
   return NextResponse.json({ jobId })
 }
@@ -133,7 +133,8 @@ async function runChatJob(
   user: { id: string; plan: string; tokens_used: number; free_chats_used: number | null },
   adminOverride: boolean,
   originalMessage: string,
-  folderId: string | null
+  folderId: string | null,
+  projectUrl: string | null
 ) {
   const supabase = createServiceClient()
 
@@ -160,11 +161,15 @@ async function runChatJob(
         .update({ html_content: finalHtml, updated_at: new Date().toISOString() })
         .eq('id', projectId)
 
-      // Auto-sync header/footer to all sibling pages in the folder.
+      // Auto-sync header/footer to all sibling pages.
       // Fire-and-forget — does not block the response to the user.
       if (folderId) {
         syncHeaderFooterToFolder(projectId, folderId, finalHtml, supabase).catch((e) =>
           console.error('[header-sync] failed:', e)
+        )
+      } else if (projectUrl) {
+        syncHeaderFooterByDomain(projectId, user.id, projectUrl, finalHtml, supabase).catch((e) =>
+          console.error('[header-sync] domain-sync failed:', e)
         )
       }
     }
@@ -264,4 +269,55 @@ async function syncHeaderFooterToFolder(
   )
 
   console.log(`[header-sync] synced header/footer from project ${editedProjectId} to ${updates.length} sibling(s) in folder ${folderId}`)
+}
+
+/**
+ * Same as syncHeaderFooterToFolder but scoped to user_id + domain when pages
+ * are not organized in a folder. Ensures chat edits to the homepage header/footer
+ * propagate to all other pages from the same domain even without a folder.
+ */
+async function syncHeaderFooterByDomain(
+  editedProjectId: string,
+  userId: string,
+  projectUrl: string,
+  editedHtml: string,
+  supabase: ReturnType<typeof createServiceClient>
+): Promise<void> {
+  if (!editedHtml.includes('data-igualai-section')) return
+
+  const { headerHtml, footerHtml } = extractHeaderFooter(editedHtml)
+  if (!headerHtml && !footerHtml) return
+
+  let domain = ''
+  try { domain = new URL(projectUrl).hostname.replace(/^www\./, '') } catch { return }
+  if (!domain) return
+
+  const { data: siblings } = await supabase
+    .from('projects')
+    .select('id, html_content')
+    .eq('user_id', userId)
+    .neq('id', editedProjectId)
+    .ilike('url', `%${domain}%`)
+    .not('html_content', 'is', null)
+
+  if (!siblings || siblings.length === 0) return
+
+  const updates = siblings
+    .filter((s) => s.html_content && s.html_content.includes('data-igualai-section'))
+    .map((s) => ({
+      id: s.id,
+      html: replaceHeaderFooter(s.html_content, headerHtml, footerHtml),
+    }))
+    .filter((u) => u.html !== siblings.find((s) => s.id === u.id)?.html_content)
+
+  await Promise.all(
+    updates.map((u) =>
+      supabase
+        .from('projects')
+        .update({ html_content: u.html, updated_at: new Date().toISOString() })
+        .eq('id', u.id)
+    )
+  )
+
+  console.log(`[header-sync] domain-synced header/footer from project ${editedProjectId} to ${updates.length} sibling(s) for domain ${domain}`)
 }
