@@ -67,6 +67,18 @@ export default function DashboardPage() {
   const [shopifyError, setShopifyError] = useState('')
   const [shopifyResult, setShopifyResult] = useState<{ themeEditorUrl: string; themePreviewUrl: string; pagesDeployed: string[] } | null>(null)
 
+  // Track which folders have been pushed before (persisted in localStorage)
+  const getPushedFolders = (): Set<string> => {
+    if (typeof window === 'undefined') return new Set()
+    try { return new Set(JSON.parse(localStorage.getItem('shopify_pushed_folders') ?? '[]')) } catch { return new Set() }
+  }
+  const markFolderPushed = (folderId: string) => {
+    if (typeof window === 'undefined') return
+    const s = getPushedFolders(); s.add(folderId)
+    localStorage.setItem('shopify_pushed_folders', JSON.stringify([...s]))
+  }
+  const isFolderAlreadyPushed = (folderId: string) => getPushedFolders().has(folderId)
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
@@ -222,6 +234,7 @@ export default function DashboardPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Push failed')
+      markFolderPushed(shopifyFolder.id)
       setShopifyResult({ themeEditorUrl: data.themeEditorUrl, themePreviewUrl: data.themePreviewUrl, pagesDeployed: data.pagesDeployed ?? [] })
     } catch (err) {
       setShopifyError(err instanceof Error ? err.message : 'Push failed')
@@ -588,8 +601,18 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-4">
               <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                All completed pages in this folder will be pushed into one Shopify theme — home page, product pages, collection pages, and more.
+                All completed pages in this folder will be pushed as one Shopify theme — homepage, product pages, collection pages, and more.
               </p>
+              {shopifyFolder && isFolderAlreadyPushed(shopifyFolder.id) && (
+                <div className="flex gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                  <span className="text-amber-500 mt-0.5 shrink-0">⚠️</span>
+                  <div className="text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                    <p className="font-semibold">You&apos;ve pushed this folder before.</p>
+                    <p>Re-pushing creates a new Shopify theme. Any changes you made in Shopify&apos;s Theme Editor will <strong>not</strong> carry over to the new theme.</p>
+                    <p className="text-amber-600 dark:text-amber-400">Your products, collections, and store data are unaffected — only Theme Editor customizations are at risk.</p>
+                  </div>
+                </div>
+              )}
               <div className="space-y-3">
                 <div>
                   <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1 block">Store URL</label>
