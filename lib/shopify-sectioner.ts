@@ -621,104 +621,50 @@ ${schemaTag(buildHeaderSchema(d))}`
 }
 
 function buildFooterSection(rawFooterHtml: string): string {
-  // Detect newsletter heading from content before the email input
-  let newsletterHeading = ''
-  let subscribeBtn = 'Subscribe'
-  const emailPos = rawFooterHtml.search(/type=["']email["']|placeholder=["'][^"']*email/i)
-  if (emailPos > 0) {
-    const headingMatches = [...rawFooterHtml.slice(0, emailPos).matchAll(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/gi)]
-    if (headingMatches.length > 0) {
-      newsletterHeading = headingMatches[headingMatches.length - 1][1].replace(/<[^>]+>/g, '').trim()
-    }
-    const btnMatch = rawFooterHtml.match(/(<(?:button|a)[^>]*>)([\s\S]*?SUBSCRIBE[\s\S]*?)(<\/(?:button|a)>)/i)
-    if (btnMatch) subscribeBtn = btnMatch[2].trim()
+  // Strip inline scripts — they can break Liquid parsing and aren't needed in Shopify
+  const cleanHtml = rawFooterHtml.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+
+  // Replace any email subscribe <form> with a Shopify-native contact form so the
+  // newsletter actually works when pushed to Shopify.
+  const hasEmailForm = /type=["']email["']|placeholder=["'][^"']*email/i.test(cleanHtml)
+  let footerHtml = cleanHtml
+  if (hasEmailForm) {
+    footerHtml = footerHtml.replace(
+      /<form[^>]*>[\s\S]*?<\/form>/gi,
+      `{%- form 'customer', class: 'igualai-footer-form' -%}
+        <input type="hidden" name="contact[tags]" value="newsletter">
+        {%- if form.posted_successfully? -%}
+          <p style="margin:0;font-size:.875rem;opacity:.8">Thanks for subscribing!</p>
+        {%- else -%}
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <input type="email" name="contact[email]" placeholder="Enter your email" required
+              style="padding:.5rem 1rem;border-radius:.375rem;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font-size:.875rem;min-width:180px">
+            <button type="submit"
+              style="padding:.5rem 1.25rem;border-radius:.375rem;background:var(--color-button,#111);color:var(--color-button-text,#fff);border:none;cursor:pointer;font-weight:600;font-size:.875rem">
+              Subscribe
+            </button>
+          </div>
+        {%- endif -%}
+      {%- endform -%}`
+    )
   }
 
-  // Detect footer background color
   const bg = detectBgColor(rawFooterHtml) || '#000000'
   const isDark = /^#(?:0[0-9a-f]|1[0-5][0-9a-f]|2[0-3])/i.test(bg) || bg === '#000000'
   const textDefault = isDark ? '#ffffff' : '#111111'
 
-  // Build a fully Liquid-powered footer — nav columns render from link_list settings
-  // so users can edit/replace menus directly in the Shopify theme editor.
-  const colStyle = 'style="display:inline-block;vertical-align:top;min-width:140px;margin-right:2rem;margin-bottom:1.5rem"'
-  const navColLiquid = (menuId: string) => `
-  {%- assign _nav = linklists[section.settings.${menuId}] -%}
-  {% if _nav.links.size > 0 %}
-  <div ${colStyle}>
-    <h4 style="font-weight:700;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;margin:0 0 .75rem;opacity:.65">{{ _nav.title }}</h4>
-    <ul style="list-style:none;padding:0;margin:0">
-      {% for _link in _nav.links %}
-      <li style="margin-bottom:.4rem"><a href="{{ _link.url }}" style="color:inherit;text-decoration:none;font-size:.875rem;opacity:.8">{{ _link.title }}</a></li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}`
-
-  const liquid = `<footer style="background-color:{{ section.settings.bg_color }};color:{{ section.settings.text_color }};padding:3rem 2rem 2rem">
-
-  {% if section.settings.newsletter_heading != blank %}
-  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;padding-bottom:2rem;margin-bottom:2rem;border-bottom:1px solid rgba(128,128,128,.3)">
-    <h2 style="font-size:1.4rem;font-weight:700;margin:0;letter-spacing:.04em">{{ section.settings.newsletter_heading }}</h2>
-    <form method="post" action="/contact#ContactFooter" accept-charset="UTF-8" style="display:flex;gap:.5rem;flex-wrap:wrap">
-      <input type="hidden" name="form_type" value="customer">
-      <input type="hidden" name="utf8" value="✓">
-      <input type="email" name="contact[email]" placeholder="Enter your email" required
-        style="padding:.5rem 1rem;border-radius:.375rem;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font-size:.875rem;min-width:180px">
-      <button type="submit"
-        style="padding:.5rem 1.25rem;border-radius:.375rem;background:{{ section.settings.btn_color }};color:{{ section.settings.btn_text_color }};border:none;cursor:pointer;font-weight:600;font-size:.875rem">
-        {{ section.settings.subscribe_btn }}
-      </button>
-    </form>
-  </div>
-  {% endif %}
-
-  <div style="margin-bottom:2rem">
-    {% if section.settings.logo != blank or section.settings.brand_text != blank %}
-    <div style="display:inline-block;vertical-align:top;min-width:180px;margin-right:2.5rem;margin-bottom:1.5rem;max-width:240px">
-      {% if section.settings.logo != blank %}
-        <img src="{{ section.settings.logo | img_url: '200x' }}" alt="{{ shop.name }}" style="max-height:50px;width:auto;margin-bottom:.75rem;display:block">
-      {% endif %}
-      {% if section.settings.brand_text != blank %}
-        <p style="font-weight:700;font-size:1rem;margin:0 0 .375rem">{{ section.settings.brand_text }}</p>
-      {% endif %}
-      {% if section.settings.brand_description != blank %}
-        <p style="font-size:.8rem;opacity:.65;margin:0;line-height:1.5">{{ section.settings.brand_description }}</p>
-      {% endif %}
-    </div>
-    {% endif %}
-    ${navColLiquid('menu1')}${navColLiquid('menu2')}${navColLiquid('menu3')}
-  </div>
-
-  <div style="padding-top:1.25rem;border-top:1px solid rgba(128,128,128,.3);font-size:.75rem;opacity:.55">
-    {{ section.settings.copyright | default: shop.name }}
-  </div>
-
-</footer>`
-
+  // Embed the actual designed footer HTML directly — this guarantees visual fidelity
+  // without requiring Theme Editor configuration. Color overrides are available in settings.
   const schema = {
     name: 'Footer',
     class: 'section-footer',
     settings: [
-      { type: 'image_picker', id: 'logo', label: 'Footer logo' },
-      { type: 'text', id: 'brand_text', label: 'Brand name / tagline' },
-      { type: 'textarea', id: 'brand_description', label: 'Brand description (optional)' },
-      ...(newsletterHeading ? [
-        setting({ type: 'text', id: 'newsletter_heading', label: 'Newsletter heading' }, newsletterHeading),
-        setting({ type: 'text', id: 'subscribe_btn', label: 'Subscribe button text' }, subscribeBtn),
-        { type: 'color', id: 'btn_color', label: 'Subscribe button color', default: '#1a5c3a' },
-        { type: 'color', id: 'btn_text_color', label: 'Subscribe button text color', default: '#ffffff' },
-      ] : []),
-      { type: 'link_list', id: 'menu1', label: 'Footer links column 1', default: 'footer' },
-      { type: 'link_list', id: 'menu2', label: 'Footer links column 2' },
-      { type: 'link_list', id: 'menu3', label: 'Footer links column 3' },
-      { type: 'text', id: 'copyright', label: 'Copyright text' },
       { type: 'color', id: 'bg_color', label: 'Background color', default: bg },
       { type: 'color', id: 'text_color', label: 'Text color', default: textDefault },
     ],
   }
 
-  return liquid + schemaTag(schema)
+  return footerHtml + '\n' + schemaTag(schema)
 }
 
 // ── Main export ──────────────────────────────────────────────────────────────
