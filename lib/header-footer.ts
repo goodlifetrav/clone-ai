@@ -38,7 +38,6 @@ export function extractHeaderFooter(html: string): { headerHtml: string; footerH
 
 /**
  * Replace the header and footer in a page's HTML with new ones.
- * Only operates on pages that have already been rebuilt (contain data-igualai-section).
  * Returns the original HTML unchanged if boundaries can't be found.
  */
 export function replaceHeaderFooter(
@@ -48,9 +47,6 @@ export function replaceHeaderFooter(
 ): string {
   if (!newHeaderHtml && !newFooterHtml) return pageHtml
 
-  // Only patch pages that have been rebuilt — raw clones have no section boundaries
-  if (!pageHtml.includes('data-igualai-section')) return pageHtml
-
   let result = pageHtml
 
   // ── Replace header ───────────────────────────────────────────────────────
@@ -58,12 +54,23 @@ export function replaceHeaderFooter(
     const bodyMatch = result.match(/<body[^>]*>/i)
     if (bodyMatch) {
       const bodyStart = result.indexOf(bodyMatch[0]) + bodyMatch[0].length
-      const contentSectionRe = /<(?:section|div)\b[^>]*data-igualai-section="(?!announcement-bar)(?!nav)[^"]+"/i
-      const contentMatch = result.search(contentSectionRe)
-      if (contentMatch > bodyStart) {
-        const tagStart = result.lastIndexOf('<', contentMatch)
-        if (tagStart > bodyStart) {
-          result = result.slice(0, bodyStart) + '\n' + newHeaderHtml + '\n' + result.slice(tagStart)
+
+      // Strategy 1: find the closing </nav> tag — everything from <body> to
+      // the end of </nav> is the header region (announcement bar + nav).
+      const navEndIdx = result.search(/<\/nav>/i)
+      if (navEndIdx > bodyStart) {
+        const afterNav = navEndIdx + '</nav>'.length
+        result = result.slice(0, bodyStart) + '\n' + newHeaderHtml + '\n' + result.slice(afterNav)
+      } else {
+        // Strategy 2: fall back to first non-header data-igualai-section boundary
+        const contentSectionRe = /<(?:section|div)\b[^>]*data-igualai-section="(?!announcement-bar)(?!nav)(?!header)[^"]+"/i
+        const contentMatch = result.search(contentSectionRe)
+        if (contentMatch > bodyStart) {
+          // lastIndexOf finds the opening < of the matched section tag
+          const tagStart = result.lastIndexOf('<', contentMatch)
+          if (tagStart > bodyStart) {
+            result = result.slice(0, bodyStart) + '\n' + newHeaderHtml + '\n' + result.slice(tagStart)
+          }
         }
       }
     }

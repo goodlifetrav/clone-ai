@@ -161,14 +161,15 @@ Keep the exact same layout, sections, and visual structure. Replace all text wit
           })
         }
 
-        // Don't pass sharedHeader/Footer to Gemini — Gemini subtly re-interprets
-        // "verbatim" HTML (changes logo position, colors, etc.). Instead we inject
-        // them deterministically after generation via replaceHeaderFooter below.
+        // Pass sharedHeader/Footer so Gemini uses the right brand colors/style,
+        // then override its output with the exact source HTML post-generation.
         const { html: fullHtmlRaw } = await chatWithProjectGemini(
           project.html_content ?? '',
           [{ role: 'user', content: brandMessage }],
           undefined,
-          pageType as string | undefined
+          pageType as string | undefined,
+          sharedHeaderHtml,
+          sharedFooterHtml
         )
 
         if (!fullHtmlRaw || !/<html/i.test(fullHtmlRaw) || !/<\/html>/i.test(fullHtmlRaw)) {
