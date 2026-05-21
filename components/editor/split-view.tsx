@@ -8,6 +8,7 @@ import { VisualEditor } from './visual-editor'
 import { BrandWizard } from './brand-wizard'
 import { VersionHistory } from './version-history'
 import { ConnectIntegrationModal } from './connect-integration-modal'
+import { FolderPageSwitcher } from './folder-page-switcher'
 import { Button } from '@/components/ui/button'
 import {
   Eye,
@@ -225,6 +226,14 @@ export function SplitView({
         <div className="font-medium text-sm truncate max-w-32 sm:max-w-40 text-neutral-700 dark:text-neutral-300 flex-shrink-0">
           {project.name}
         </div>
+
+        {/* Folder page switcher — only shown when project is in a folder */}
+        {project.folder_id && (
+          <FolderPageSwitcher
+            folderId={project.folder_id}
+            currentProjectId={project.id}
+          />
+        )}
 
         {/* Generating indicator — shown during initial clone AND AI chat streaming */}
         {isGenerating && (
