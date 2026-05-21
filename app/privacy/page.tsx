@@ -50,8 +50,8 @@ export default function PrivacyPage() {
             <h3 className="font-medium text-neutral-800 dark:text-neutral-200 mb-2 mt-4">2.3 Cloned Website Content</h3>
             <p>The HTML content of websites you clone is stored in our database (Supabase) and associated with your account. This content is used to power the editor, version history, and preview features.</p>
 
-            <h3 className="font-medium text-neutral-800 dark:text-neutral-200 mb-2 mt-4">2.4 Payment Information (via Stripe)</h3>
-            <p>Payment processing is handled entirely by Stripe. We do not store your credit card number, CVV, or full payment details. We store only your Stripe customer ID and subscription status to manage your plan. Stripe's data practices are governed by <a href="https://stripe.com/privacy" className="underline hover:text-neutral-900 dark:hover:text-white" target="_blank" rel="noopener noreferrer">Stripe's Privacy Policy</a>.</p>
+            <h3 className="font-medium text-neutral-800 dark:text-neutral-200 mb-2 mt-4">2.4 Payment Information (via Whop)</h3>
+            <p>Payment processing is handled entirely by Whop. We do not store your credit card number, CVV, or full payment details. We store only your subscription status and plan to manage your account. Whop's data practices are governed by <a href="https://whop.com/privacy/" className="underline hover:text-neutral-900 dark:hover:text-white" target="_blank" rel="noopener noreferrer">Whop's Privacy Policy</a>.</p>
 
             <h3 className="font-medium text-neutral-800 dark:text-neutral-200 mb-2 mt-4">2.5 Technical Data</h3>
             <p>Like most web services, we may log standard server-side request data including IP addresses, browser user agents, and timestamps. This is used for security, debugging, and abuse prevention.</p>
@@ -79,7 +79,7 @@ export default function PrivacyPage() {
               <li><strong className="text-neutral-800 dark:text-neutral-200">Supabase (PostgreSQL)</strong> — stores your account record, projects, version history, and chat messages</li>
               <li><strong className="text-neutral-800 dark:text-neutral-200">Supabase Storage</strong> — stores project thumbnail screenshots</li>
               <li><strong className="text-neutral-800 dark:text-neutral-200">Clerk</strong> — manages authentication credentials and session tokens</li>
-              <li><strong className="text-neutral-800 dark:text-neutral-200">Stripe</strong> — manages payment methods and subscription billing</li>
+              <li><strong className="text-neutral-800 dark:text-neutral-200">Whop</strong> — manages payment methods and subscription billing</li>
             </ul>
             <p className="mt-3">All data is encrypted in transit (TLS) and at rest.</p>
           </section>
@@ -99,7 +99,7 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-semibold text-neutral-900 dark:text-white mb-3">6. Data Sharing</h2>
             <p className="mb-3">We share your data only in the following limited circumstances:</p>
             <ul className="list-disc pl-5 space-y-1">
-              <li><strong className="text-neutral-800 dark:text-neutral-200">Service providers</strong> — Clerk, Stripe, Supabase, and Anthropic (Claude AI) as necessary to operate the Service. Each is bound by their own privacy policies and data processing agreements.</li>
+              <li><strong className="text-neutral-800 dark:text-neutral-200">Service providers</strong> — Clerk, Whop, Supabase, and Google (Gemini AI) as necessary to operate the Service. Each is bound by their own privacy policies and data processing agreements.</li>
               <li><strong className="text-neutral-800 dark:text-neutral-200">Legal requirements</strong> — if required by law, court order, or to protect the rights, safety, or property of IgualAI or others.</li>
               <li><strong className="text-neutral-800 dark:text-neutral-200">Business transfer</strong> — in connection with a merger, acquisition, or sale of assets, your data may be transferred as part of that transaction.</li>
             </ul>

@@ -13,8 +13,6 @@ import { Button } from '@/components/ui/button'
 import {
   Eye,
   Code2,
-  Paintbrush,
-  History,
   Download,
   HelpCircle,
   GitFork,
@@ -28,8 +26,13 @@ import {
   PanelLeftOpen,
   Bot,
   Sparkles,
-  MoreHorizontal,
+  Settings,
+  ArrowRight,
+  AlertCircle,
+  X,
 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { isValidUrl } from '@/lib/utils'
 import Link from 'next/link'
 import type { Project, ProjectVersion, ChatMessage } from '@/types'
 import { useRouter } from 'next/navigation'
@@ -101,6 +104,39 @@ export function SplitView({
   // Image upload state
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [chatInputAppend, setChatInputAppend] = useState<string | null>(null)
+
+  // New Clone popup state
+  const [showClonePopup, setShowClonePopup] = useState(false)
+  const [cloneUrl, setCloneUrl] = useState('')
+  const [cloneLoading, setCloneLoading] = useState(false)
+  const [cloneError, setCloneError] = useState('')
+
+  const handleNewClone = async () => {
+    setCloneError('')
+    let url = cloneUrl.trim()
+    if (!url) return
+    if (!url.startsWith('http://') && !url.startsWith('https://')) url = `https://${url}`
+    if (!isValidUrl(url)) { setCloneError('Please enter a valid URL'); return }
+    setCloneLoading(true)
+    try {
+      const res = await fetch('/api/clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, ...(activeFolderId ? { folder_id: activeFolderId } : {}) }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setCloneError(data.error || 'Something went wrong')
+        setCloneLoading(false)
+        return
+      }
+      // Navigate to the new editor
+      router.push(`/editor/${data.projectId as string}`)
+    } catch {
+      setCloneError('Something went wrong. Please try again.')
+      setCloneLoading(false)
+    }
+  }
 
   // Auto-switch tabs based on project.status transitions (clone streaming)
   useEffect(() => {
@@ -206,12 +242,15 @@ export function SplitView({
         <div className="hidden sm:block h-4 w-px bg-neutral-200 dark:bg-neutral-700 flex-shrink-0" />
 
         {/* Navigation */}
-        <Link href="/">
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 flex-shrink-0">
-            <Plus className="w-3 h-3" />
-            <span className="hidden sm:inline">New Clone</span>
-          </Button>
-        </Link>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs gap-1 flex-shrink-0"
+          onClick={() => { setCloneUrl(''); setCloneError(''); setShowClonePopup(true) }}
+        >
+          <Plus className="w-3 h-3" />
+          <span className="hidden sm:inline">New Clone</span>
+        </Button>
 
         <Link href="/dashboard">
           <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 flex-shrink-0">
@@ -227,13 +266,13 @@ export function SplitView({
           {project.name}
         </div>
 
-        {/* Folder page switcher — only shown when project is in a folder */}
-        {project.folder_id && (
-          <FolderPageSwitcher
-            folderId={project.folder_id}
-            currentProjectId={project.id}
-          />
-        )}
+        {/* Folder page switcher — always visible */}
+        <FolderPageSwitcher
+          projectId={project.id}
+          folderId={activeFolderId}
+          projectName={project.name}
+          onFolderChanged={(id) => setActiveFolderId(id ?? undefined)}
+        />
 
         {/* Generating indicator — shown during initial clone AND AI chat streaming */}
         {isGenerating && (
@@ -283,6 +322,13 @@ export function SplitView({
           <Download className="w-3 h-3" />
           <span className="hidden sm:inline">Download</span>
         </Button>
+
+        <Link href="/settings" title="Settings & Custom Domains">
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 flex-shrink-0">
+            <Settings className="w-3 h-3" />
+            <span className="hidden sm:inline">Settings</span>
+          </Button>
+        </Link>
 
         <a href="https://whop.com/joined/igualai/" target="_blank" rel="noopener noreferrer">
           <Button
@@ -492,6 +538,57 @@ export function SplitView({
           projectId={project.id}
           onClose={() => setIntegrationModal(null)}
         />
+      )}
+
+      {/* New Clone popup */}
+      {showClonePopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setShowClonePopup(false)}
+          />
+          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-xl p-6 max-w-sm w-full border border-neutral-200 dark:border-neutral-800">
+            <button
+              className="absolute top-3 right-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+              onClick={() => setShowClonePopup(false)}
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h2 className="text-base font-bold text-neutral-900 dark:text-white mb-1">Clone a new page</h2>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+              {activeFolderId ? 'Will be added to the same folder.' : 'Paste any public URL to clone.'}
+            </p>
+            <div className="flex gap-2">
+              <Input
+                type="url"
+                placeholder="https://example.com"
+                value={cloneUrl}
+                onChange={(e) => setCloneUrl(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleNewClone()}
+                className="h-9 text-sm flex-1"
+                disabled={cloneLoading}
+                autoFocus
+              />
+              <Button
+                onClick={handleNewClone}
+                disabled={cloneLoading || !cloneUrl.trim()}
+                className="h-9 px-3"
+              >
+                {cloneLoading ? (
+                  <Sparkles className="w-4 h-4 animate-pulse" />
+                ) : (
+                  <ArrowRight className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
+            {cloneError && (
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-red-600 dark:text-red-400">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                {cloneError}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

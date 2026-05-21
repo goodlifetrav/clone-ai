@@ -47,9 +47,9 @@ export default function PlansTokensPage() {
           :
         </p>
         <ul>
-          <li><strong>Small — $5</strong> — 500,000 tokens (~7 full rebuilds)</li>
-          <li><strong>Medium — $10</strong> — 1,500,000 tokens (~21 full rebuilds)</li>
-          <li><strong>Large — $25</strong> — 4,000,000 tokens (~57 full rebuilds)</li>
+          <li><strong>Small — $5</strong> — 30,000 tokens</li>
+          <li><strong>Medium — $10</strong> — 70,000 tokens</li>
+          <li><strong>Large — $25</strong> — 200,000 tokens</li>
         </ul>
         <p>
           Token packs are additive — they extend your current period's allowance and don't roll

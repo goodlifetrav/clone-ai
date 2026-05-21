@@ -82,7 +82,7 @@ export interface PricingPlan {
 }
 
 export const PLAN_LIMITS: Record<Plan, { clones: number; tokens: number }> = {
-  free: { clones: 1, tokens: 10000 },
-  pro: { clones: 20, tokens: 100000 },
-  agency: { clones: 60, tokens: 300000 },
+  free: { clones: 1, tokens: 75000 },
+  pro: { clones: 20, tokens: 2000000 },
+  agency: { clones: 60, tokens: 6000000 },
 }

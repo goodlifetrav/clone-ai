@@ -8,13 +8,10 @@ import { useAuth } from '@/hooks/use-auth'
 import type { Plan } from '@/types'
 import { cn } from '@/lib/utils'
 
-type BillingPeriod = 'monthly' | 'annual'
-
 interface PricingPlan {
   id: Plan
   name: string
   monthlyPrice: number
-  annualPrice: number
   description: string
   features: string[]
   highlighted?: boolean
@@ -25,7 +22,6 @@ const PLANS: PricingPlan[] = [
     id: 'free',
     name: 'Free',
     monthlyPrice: 0,
-    annualPrice: 0,
     description: 'Get started for free',
     features: [
       '1 page clone',
@@ -39,7 +35,6 @@ const PLANS: PricingPlan[] = [
     id: 'pro',
     name: 'Pro',
     monthlyPrice: 19,
-    annualPrice: 15,
     description: 'For professionals',
     highlighted: true,
     features: [
@@ -57,7 +52,6 @@ const PLANS: PricingPlan[] = [
     id: 'agency',
     name: 'Agency',
     monthlyPrice: 49,
-    annualPrice: 39,
     description: 'For teams and agencies',
     features: [
       'Everything in Pro',
@@ -70,7 +64,6 @@ const PLANS: PricingPlan[] = [
 ]
 
 export function PricingCards({ currentPlan }: { currentPlan?: Plan }) {
-  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>('monthly')
   const [loading, setLoading] = useState<Plan | null>(null)
   const { isSignedIn, signIn } = useAuth()
 
@@ -84,10 +77,10 @@ export function PricingCards({ currentPlan }: { currentPlan?: Plan }) {
 
     setLoading(plan)
     try {
-      const res = await fetch('/api/stripe/checkout', {
+      const res = await fetch('/api/whop/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan, billingPeriod }),
+        body: JSON.stringify({ plan }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -106,45 +99,12 @@ export function PricingCards({ currentPlan }: { currentPlan?: Plan }) {
 
   return (
     <div className="flex flex-col items-center gap-10">
-      {/* Billing toggle */}
-      <div className="flex items-center gap-3 p-1 rounded-full bg-neutral-100 dark:bg-neutral-800">
-        <button
-          onClick={() => setBillingPeriod('monthly')}
-          className={cn(
-            'px-5 py-1.5 rounded-full text-sm font-medium transition-colors',
-            billingPeriod === 'monthly'
-              ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-sm'
-              : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'
-          )}
-        >
-          Monthly
-        </button>
-        <button
-          onClick={() => setBillingPeriod('annual')}
-          className={cn(
-            'px-5 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-2',
-            billingPeriod === 'annual'
-              ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-sm'
-              : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'
-          )}
-        >
-          Annual
-          <span className="text-xs font-semibold text-green-600 dark:text-green-400">20% off</span>
-        </button>
-      </div>
-
-      {billingPeriod === 'annual' && (
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 -mt-6">
-          Billed annually
-        </p>
-      )}
-
       {/* Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl">
         {PLANS.map((plan) => {
           const isCurrent = currentPlan === plan.id
           const isHighlighted = plan.highlighted
-          const price = billingPeriod === 'annual' ? plan.annualPrice : plan.monthlyPrice
+          const price = plan.monthlyPrice
 
           return (
             <div

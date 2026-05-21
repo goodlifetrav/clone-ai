@@ -35,7 +35,6 @@ export default function SettingsPage() {
   const router = useRouter()
   const [dbUser, setDbUser] = useState<DbUser | null>(null)
   const [loading, setLoading] = useState(true)
-  const [portalLoading, setPortalLoading] = useState(false)
   const [tokenPackLoading, setTokenPackLoading] = useState<string | null>(null)
   const [domains, setDomains] = useState<CustomDomain[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -200,23 +199,6 @@ export default function SettingsPage() {
     }
   }
 
-  const handleManageBilling = async () => {
-    setPortalLoading(true)
-    try {
-      const res = await fetch('/api/stripe/portal', { method: 'POST' })
-      const data = await res.json()
-      if (data.url) {
-        window.location.href = data.url
-      } else {
-        alert(data.error || 'Failed to open billing portal')
-      }
-    } catch {
-      alert('Failed to open billing portal')
-    } finally {
-      setPortalLoading(false)
-    }
-  }
-
   if (!isLoaded || !isSignedIn) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -317,12 +299,10 @@ export default function SettingsPage() {
                     </Link>
                   </Button>
                 ) : (
-                  <Button size="sm" variant="outline" onClick={handleManageBilling} disabled={portalLoading}>
-                    {portalLoading ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      'Manage Subscription'
-                    )}
+                  <Button size="sm" variant="outline" asChild>
+                    <a href="https://whop.com/@me/" target="_blank" rel="noopener noreferrer">
+                      Manage on Whop
+                    </a>
                   </Button>
                 )}
               </div>
@@ -594,13 +574,11 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               ) : (
-                <Button variant="outline" size="sm" onClick={handleManageBilling} disabled={portalLoading}>
-                  {portalLoading ? (
-                    <Loader2 className="w-3 h-3 animate-spin mr-2" />
-                  ) : (
+                <Button variant="outline" size="sm" asChild>
+                  <a href="https://whop.com/@me/" target="_blank" rel="noopener noreferrer">
                     <CreditCard className="w-3 h-3 mr-2" />
-                  )}
-                  View Billing History
+                    View Billing on Whop
+                  </a>
                 </Button>
               )}
             </CardContent>
