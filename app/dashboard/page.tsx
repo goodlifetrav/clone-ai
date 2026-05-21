@@ -25,17 +25,8 @@ import {
   Pencil,
   Trash2,
   FolderPlus,
-  ShoppingBag,
-  ExternalLink,
-  CheckCircle2,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import type { Project, Folder as FolderType } from '@/types'
 import { cn } from '@/lib/utils'
 import { DeleteConfirmDialog } from '@/components/ui/delete-confirm-dialog'
@@ -59,25 +50,6 @@ export default function DashboardPage() {
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null)
   const dragProjectId = useRef<string | null>(null)
 
-  // Folder → Shopify push modal
-  const [shopifyFolder, setShopifyFolder] = useState<FolderType | null>(null)
-  const [shopifyShop, setShopifyShop] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('shopify_shop') ?? '' : '')
-  const [shopifyToken, setShopifyToken] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('shopify_token') ?? '' : '')
-  const [shopifyLoading, setShopifyLoading] = useState(false)
-  const [shopifyError, setShopifyError] = useState('')
-  const [shopifyResult, setShopifyResult] = useState<{ themeEditorUrl: string; themePreviewUrl: string; pagesDeployed: string[] } | null>(null)
-
-  // Track which folders have been pushed before (persisted in localStorage)
-  const getPushedFolders = (): Set<string> => {
-    if (typeof window === 'undefined') return new Set()
-    try { return new Set(JSON.parse(localStorage.getItem('shopify_pushed_folders') ?? '[]')) } catch { return new Set() }
-  }
-  const markFolderPushed = (folderId: string) => {
-    if (typeof window === 'undefined') return
-    const s = getPushedFolders(); s.add(folderId)
-    localStorage.setItem('shopify_pushed_folders', JSON.stringify([...s]))
-  }
-  const isFolderAlreadyPushed = (folderId: string) => getPushedFolders().has(folderId)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -216,31 +188,6 @@ export default function DashboardPage() {
   const handleDragEnd = () => {
     dragProjectId.current = null
     setDragOverFolder(null)
-  }
-
-  const handleFolderShopifyPush = async () => {
-    if (!shopifyFolder || !shopifyShop.trim() || !shopifyToken.trim()) return
-    setShopifyLoading(true)
-    setShopifyError('')
-    try {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('shopify_shop', shopifyShop)
-        localStorage.setItem('shopify_token', shopifyToken)
-      }
-      const res = await fetch('/api/integrations/shopify/push-folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folderId: shopifyFolder.id, shop: shopifyShop.trim(), accessToken: shopifyToken.trim() }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Push failed')
-      markFolderPushed(shopifyFolder.id)
-      setShopifyResult({ themeEditorUrl: data.themeEditorUrl, themePreviewUrl: data.themePreviewUrl, pagesDeployed: data.pagesDeployed ?? [] })
-    } catch (err) {
-      setShopifyError(err instanceof Error ? err.message : 'Push failed')
-    } finally {
-      setShopifyLoading(false)
-    }
   }
 
   // ── Filtering ────────────────────────────────────────────────────────────
@@ -448,17 +395,6 @@ export default function DashboardPage() {
                               Rename
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setShopifyFolder(folder)
-                                setShopifyError('')
-                                setShopifyResult(null)
-                              }}
-                            >
-                              <ShoppingBag className="w-4 h-4 mr-2" />
-                              Push to Shopify
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
                               className="text-red-600 dark:text-red-400"
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -552,87 +488,6 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Folder → Shopify push modal */}
-      <Dialog open={!!shopifyFolder} onOpenChange={(open) => { if (!open) { setShopifyFolder(null); setShopifyResult(null); setShopifyError('') } }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShoppingBag className="w-5 h-5" />
-              Push &ldquo;{shopifyFolder?.name}&rdquo; to Shopify
-            </DialogTitle>
-          </DialogHeader>
-
-          {shopifyResult ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                <CheckCircle2 className="w-5 h-5" />
-                <span className="font-medium">Theme pushed successfully!</span>
-              </div>
-              {shopifyResult.pagesDeployed.length > 0 && (
-                <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3">
-                  <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">Pages deployed:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {shopifyResult.pagesDeployed.map((p) => (
-                      <span key={p} className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
-                        {p}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="space-y-2">
-                <a href={shopifyResult.themeEditorUrl} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 underline">
-                  <ExternalLink className="w-3 h-3" /> Open Theme Editor
-                </a>
-                <a href={shopifyResult.themePreviewUrl} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 underline">
-                  <ExternalLink className="w-3 h-3" /> Preview Theme
-                </a>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  The theme is unpublished — preview it first, then publish from Shopify when ready.
-                </p>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Need to make changes? Edit pages in IgualAI and push again — each push creates a fresh theme version.
-                </p>
-              </div>
-              <Button className="w-full" onClick={() => { setShopifyFolder(null); setShopifyResult(null) }}>Done</Button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                All completed pages in this folder will be pushed as one Shopify theme — homepage, product pages, collection pages, and more.
-              </p>
-              {shopifyFolder && isFolderAlreadyPushed(shopifyFolder.id) && (
-                <div className="flex gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
-                  <span className="text-amber-500 mt-0.5 shrink-0">⚠️</span>
-                  <div className="text-xs text-amber-800 dark:text-amber-300 space-y-1">
-                    <p className="font-semibold">You&apos;ve pushed this folder before.</p>
-                    <p>Re-pushing creates a new Shopify theme. Any changes you made in Shopify&apos;s Theme Editor will <strong>not</strong> carry over to the new theme.</p>
-                    <p className="text-amber-600 dark:text-amber-400">Your products, collections, and store data are unaffected — only Theme Editor customizations are at risk.</p>
-                  </div>
-                </div>
-              )}
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1 block">Store URL</label>
-                  <Input value={shopifyShop} onChange={(e) => setShopifyShop(e.target.value)} placeholder="mystore.myshopify.com" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1 block">Admin API Access Token</label>
-                  <Input type="password" value={shopifyToken} onChange={(e) => setShopifyToken(e.target.value)} placeholder="shpat_xxxxxxxxxxxx" />
-                </div>
-              </div>
-              {shopifyError && <p className="text-xs text-red-500 dark:text-red-400">{shopifyError}</p>}
-              <Button className="w-full gap-2" onClick={handleFolderShopifyPush}
-                disabled={shopifyLoading || !shopifyShop.trim() || !shopifyToken.trim()}>
-                {shopifyLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingBag className="w-4 h-4" />}
-                {shopifyLoading ? 'Pushing all pages…' : 'Push All Pages to Shopify'}
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
