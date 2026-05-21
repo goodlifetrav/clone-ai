@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { X, GitBranch, Rocket, ExternalLink, Loader2, CheckCircle2 } from 'lucide-react'
+import Link from 'next/link'
 
 type Service = 'github' | 'vercel'
 
