@@ -3,7 +3,7 @@ import Link from 'next/link'
 
 export const metadata: Metadata = {
   title: 'Getting Started — IgualAI Docs',
-  description: 'Clone any website, Shopify store, funnel, or sales page and rebuild it as your brand in minutes.',
+  description: 'Clone any website, funnel, or sales page and rebuild it as your brand in minutes.',
 }
 
 export default function GettingStartedPage() {
@@ -20,7 +20,7 @@ export default function GettingStartedPage() {
           <Link href="/" className="text-neutral-900 dark:text-white font-medium underline underline-offset-2">
             igualai.com
           </Link>{' '}
-          and paste any public URL — a website, Shopify store homepage, product page, funnel, or sales page. Press{' '}
+          and paste any public URL — a website, funnel, landing page, or sales page. Press{' '}
           <Kbd>Enter</Kbd> or click <strong>Clone</strong>.
         </p>
         <p>
@@ -28,7 +28,7 @@ export default function GettingStartedPage() {
           self-contained HTML file. This typically completes in 5–15 seconds.
         </p>
         <Callout>
-          <strong>The clone is a layout blueprint, not a pixel-perfect copy.</strong> IgualAI captures the page structure, sections, and design — not live data. Dynamic content that requires authentication or JavaScript API calls (Shopify product carousels, live inventory, recommendation feeds) may appear empty in the clone preview. This is expected — the Brand Rebuild step replaces all content with your brand anyway, using the cloned layout purely as a structural guide.
+          <strong>The clone is a layout blueprint, not a pixel-perfect copy.</strong> IgualAI captures the page structure, sections, and design — not live data. Dynamic content that requires authentication or JavaScript API calls (live inventory, recommendation feeds) may appear empty in the clone preview. This is expected — the Brand Rebuild step replaces all content with your brand anyway, using the cloned layout purely as a structural guide.
         </Callout>
       </Section>
 
@@ -44,7 +44,7 @@ export default function GettingStartedPage() {
         </ul>
         <Callout>
           <strong>Tip:</strong> Name your folder after the site you cloned — e.g. <em>"Death Wish Coffee"</em> or{' '}
-          <em>"Wild Craft"</em>. When you push to Shopify, all pages in the folder go into one theme automatically.
+          <em>"Wild Craft"</em>. All brand settings sync automatically across every page in the folder.
         </Callout>
       </Section>
 
@@ -108,28 +108,22 @@ export default function GettingStartedPage() {
           <li><strong>Download</strong> — get a self-contained <code>.html</code> file you can host anywhere.</li>
           <li><strong>Connect a custom domain</strong> — serve the page directly from IgualAI on your own domain.</li>
           <li><strong>Push to GitHub</strong> — export to a GitHub repository (Pro/Agency plans).</li>
-          <li>
-            <strong>Push to Shopify</strong> — export as a fully structured Shopify theme. Push a single page or
-            push an entire folder as one theme in one click.{' '}
-            <Link href="/docs/shopify-integration" className="text-neutral-900 dark:text-white underline underline-offset-2">
-              See the Shopify guide →
-            </Link>
-          </li>
+          <li><strong>Deploy to Vercel</strong> — one-click deploy to Vercel (Pro/Agency plans).</li>
         </ul>
       </Section>
 
       <div className="mt-10 flex gap-4 flex-wrap">
         <Link
-          href="/docs/shopify-integration"
+          href="/docs/ai-editor"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-900 dark:text-white border border-neutral-200 dark:border-neutral-700 rounded-lg px-4 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors no-underline"
         >
-          Next: Shopify Integration →
+          Next: AI Editor →
         </Link>
         <Link
-          href="/docs/ai-editor"
+          href="/docs/custom-domains"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700 rounded-lg px-4 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors no-underline"
         >
-          AI Editor →
+          Custom Domains →
         </Link>
       </div>
     </article>

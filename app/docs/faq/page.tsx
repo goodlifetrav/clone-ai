@@ -3,21 +3,17 @@ import Link from 'next/link'
 
 export const metadata: Metadata = {
   title: 'FAQ — IgualAI Docs',
-  description: 'Frequently asked questions about IgualAI — cloning, Shopify, brand rebuild, folders, and more.',
+  description: 'Frequently asked questions about IgualAI — cloning, brand rebuild, folders, and more.',
 }
 
 const FAQS = [
   {
     q: 'What can IgualAI clone?',
-    a: 'Any publicly accessible website, Shopify store, sales funnel, landing page, or sales page. Paste the URL and IgualAI captures and rebuilds it as clean, editable HTML in seconds. Sites behind a login or paywall may not clone fully.',
-  },
-  {
-    q: 'Can I clone a Shopify store?',
-    a: "Yes — including the homepage, product pages, and collection pages. IgualAI automatically detects the page type from the URL and configures the right Shopify template. Product pages use Shopify Liquid variables ({{ product.title }}, {{ product.price | money }}, add-to-cart form) so the actual product data comes from your catalog live.",
+    a: 'Any publicly accessible website, sales funnel, landing page, or sales page. Paste the URL and IgualAI captures and rebuilds it as clean, editable HTML in seconds. Sites behind a login or paywall may not clone fully.',
   },
   {
     q: 'What is a folder?',
-    a: "A folder groups all the pages of one website together. Set up your brand once on any page in a folder — the brand name, colors, description, and logo are saved to the folder and auto-fill on every other page in it. When you push to Shopify, all pages in the folder go into one theme automatically.",
+    a: "A folder groups all the pages of one website together. Set up your brand once on any page in a folder — the brand name, colors, description, and logo are saved to the folder and auto-fill on every other page in it. Build a full funnel or multi-page site and keep everything in sync.",
   },
   {
     q: 'How do I share brand settings across multiple pages?',
@@ -26,18 +22,6 @@ const FAQS = [
   {
     q: 'What is the Brand Wizard?',
     a: "The Brand Wizard is a guided 3-step setup that opens from the editor toolbar. It collects your brand identity (name, tagline, logo, description), brand colors (primary, secondary, accent), and page-specific copy. For homepages that's a hero headline, subheadline, and CTA. For product pages that's an optional product name and description. The AI then rebuilds the entire page with your brand's identity while keeping the original page's layout as the structural blueprint.",
-  },
-  {
-    q: 'How does the Shopify push work?',
-    a: "IgualAI converts your rebuilt HTML into a proper Shopify Online Store 2.0 theme. Each section becomes a Liquid section file with a {% schema %} block — making every heading, color, image, and button editable inside the Shopify theme editor, just like a natively built theme. You can push a single page or push an entire folder (all pages as one theme) from the folder's … menu on the dashboard.",
-  },
-  {
-    q: 'What Shopify page types are supported?',
-    a: "Homepage (index.json), Product pages (product.json with {{ product.title }}, {{ product.price | money }}, variant selector, add-to-cart form), and Collection pages (collection.json). 404 and password pages are also included automatically.",
-  },
-  {
-    q: 'Can I edit sections after pushing to Shopify?',
-    a: "Yes. Every section IgualAI pushes is fully editable in the Shopify theme editor — background color, text color, all text content, and the header logo. Product sections pull live data from your Shopify catalog automatically.",
   },
   {
     q: 'Will the clone look exactly like the original?',
@@ -54,10 +38,6 @@ const FAQS = [
   {
     q: 'Why did my clone fail or look broken?',
     a: "Some sites block automated access, use heavy client-side rendering (JavaScript-rendered carousels, product sliders), or serve different content to non-human visitors. Try re-cloning. If it still fails or looks incomplete, the site's rendering approach may be incompatible with our current capture pipeline.",
-  },
-  {
-    q: 'Why are some sections empty in my Shopify clone?',
-    a: "The clone is a layout blueprint, not a live copy. Shopify product carousels (New Arrivals, Recommendations, Others Also Bought) load product data via authenticated API calls that can't be replicated in a static clone — so those sections will appear empty. This is expected behavior. The Brand Rebuild step replaces all section content with your brand anyway, using the cloned layout purely as a structural guide. The final rebuilt page is 100% original.",
   },
   {
     q: 'What is the Visual Editor?',
@@ -116,12 +96,6 @@ export default function FaqPage() {
       </div>
 
       <div className="mt-10 flex gap-4">
-        <Link
-          href="/docs/shopify-integration"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700 rounded-lg px-4 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors no-underline"
-        >
-          ← Shopify Integration
-        </Link>
         <Link
           href="/docs/plans-tokens"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700 rounded-lg px-4 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors no-underline"

@@ -3,16 +3,13 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { X, GitBranch, Rocket, ShoppingBag, ExternalLink, Loader2, CheckCircle2, Zap } from 'lucide-react'
-import Link from 'next/link'
+import { X, GitBranch, Rocket, ExternalLink, Loader2, CheckCircle2 } from 'lucide-react'
 
-type Service = 'github' | 'vercel' | 'shopify'
+type Service = 'github' | 'vercel'
 
 interface ConnectIntegrationModalProps {
   service: Service
   projectId: string
-  folderId?: string | null
-  userPlan?: string
   onClose: () => void
 }
 
@@ -27,18 +24,11 @@ const META: Record<Service, { label: string; icon: React.ReactNode; color: strin
     icon: <Rocket className="w-6 h-6" />,
     color: 'bg-black text-white',
   },
-  shopify: {
-    label: 'Shopify',
-    icon: <ShoppingBag className="w-6 h-6" />,
-    color: 'bg-green-600 text-white',
-  },
 }
 
 export function ConnectIntegrationModal({
   service,
   projectId,
-  folderId,
-  userPlan,
   onClose,
 }: ConnectIntegrationModalProps) {
   const meta = META[service]
@@ -75,9 +65,6 @@ export function ConnectIntegrationModal({
         )}
         {service === 'vercel' && (
           <VercelPanel projectId={projectId} onClose={onClose} />
-        )}
-        {service === 'shopify' && (
-          <ShopifyPanel projectId={projectId} folderId={folderId} userPlan={userPlan} onClose={onClose} />
         )}
       </div>
     </div>
@@ -321,196 +308,3 @@ function VercelPanel({ projectId, onClose }: { projectId: string; onClose: () =>
   )
 }
 
-function ShopifyPanel({
-  projectId,
-  folderId,
-  userPlan,
-  onClose,
-}: {
-  projectId: string
-  folderId?: string | null
-  userPlan?: string
-  onClose: () => void
-}) {
-  const [shop, setShop] = useState(() =>
-    typeof window !== 'undefined' ? localStorage.getItem('shopify_shop') ?? '' : ''
-  )
-  const [accessToken, setAccessToken] = useState(() =>
-    typeof window !== 'undefined' ? localStorage.getItem('shopify_token') ?? '' : ''
-  )
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [result, setResult] = useState<{ themeEditorUrl: string; themePreviewUrl: string; pagesDeployed?: string[] } | null>(null)
-
-  // Gate behind Pro plan
-  const allowedPlans = ['pro', 'growth', 'max']
-  const isPro = !userPlan || userPlan === 'admin' || allowedPlans.includes(userPlan)
-
-  if (!isPro) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-950/50 mx-auto mb-2">
-          <Zap className="w-6 h-6 text-amber-600 dark:text-amber-400" />
-        </div>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 text-center">
-          Shopify integration is available on the <strong>Pro plan</strong> and above.
-        </p>
-        <Link href="/pricing" className="block">
-          <Button className="w-full gap-2 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 border-0">
-            <Zap className="w-4 h-4" />
-            Upgrade to Pro
-          </Button>
-        </Link>
-        <Button variant="ghost" className="w-full" onClick={onClose}>
-          Cancel
-        </Button>
-      </div>
-    )
-  }
-
-  if (result) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-          <CheckCircle2 className="w-5 h-5" />
-          <span className="font-medium">Theme pushed to Shopify!</span>
-        </div>
-        {result.pagesDeployed && result.pagesDeployed.length > 0 && (
-          <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3">
-            <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">Pages deployed:</p>
-            <div className="flex flex-wrap gap-1">
-              {result.pagesDeployed.map((p) => (
-                <span key={p} className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
-                  {p}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-        <div className="space-y-2">
-          <a
-            href={result.themeEditorUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 underline"
-          >
-            <ExternalLink className="w-3 h-3" />
-            Open Theme Editor
-          </a>
-          <a
-            href={result.themePreviewUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 underline"
-          >
-            <ExternalLink className="w-3 h-3" />
-            Preview Theme
-          </a>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
-            The theme is saved as unpublished. Publish it from the Shopify Theme Editor when ready.
-          </p>
-        </div>
-        <Button className="w-full" onClick={onClose}>Done</Button>
-      </div>
-    )
-  }
-
-  const handlePush = async () => {
-    if (!shop.trim() || !accessToken.trim()) return
-    setLoading(true)
-    setError('')
-    try {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('shopify_token', accessToken)
-        localStorage.setItem('shopify_shop', shop)
-      }
-
-      const endpoint = folderId
-        ? '/api/integrations/shopify/push-folder'
-        : '/api/integrations/shopify/push'
-      const body = folderId
-        ? { folderId, shop: shop.trim(), accessToken: accessToken.trim() }
-        : { projectId, shop: shop.trim(), accessToken: accessToken.trim() }
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        if (data.upgradeRequired) {
-          setError('Shopify integration requires Pro plan or above.')
-          return
-        }
-        throw new Error(data.error || 'Push failed')
-      }
-      setResult({ themeEditorUrl: data.themeEditorUrl, themePreviewUrl: data.themePreviewUrl, pagesDeployed: data.pagesDeployed })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Push failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="text-sm text-neutral-600 dark:text-neutral-400 space-y-1">
-        {folderId && (
-          <p className="text-xs bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 rounded-lg px-3 py-2">
-            All pages in this folder will be pushed as a single Shopify theme (homepage, product, collection, etc.)
-          </p>
-        )}
-        <p>
-          You need a{' '}
-          <a
-            href="/docs/shopify-integration"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 dark:text-blue-400 underline"
-          >
-            Custom App Admin API token
-          </a>{' '}
-          with <strong>write_themes</strong> scope.
-        </p>
-      </div>
-
-      <div className="space-y-3">
-        <div>
-          <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1 block">
-            Store URL
-          </label>
-          <Input
-            value={shop}
-            onChange={(e) => setShop(e.target.value)}
-            placeholder="mystore.myshopify.com"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1 block">
-            Admin API Access Token
-          </label>
-          <Input
-            type="password"
-            value={accessToken}
-            onChange={(e) => setAccessToken(e.target.value)}
-            placeholder="shpat_xxxxxxxxxxxx"
-          />
-        </div>
-      </div>
-
-      {error && (
-        <p className="text-xs text-red-500 dark:text-red-400">{error}</p>
-      )}
-
-      <Button
-        className="w-full gap-2"
-        onClick={handlePush}
-        disabled={loading || !shop.trim() || !accessToken.trim()}
-      >
-        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingBag className="w-4 h-4" />}
-        {folderId ? 'Push All Pages to Shopify' : 'Push to Shopify'}
-      </Button>
-    </div>
-  )
-}

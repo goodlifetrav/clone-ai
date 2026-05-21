@@ -19,7 +19,6 @@ import {
   GitFork,
   Rocket,
   GitBranch,
-  ShoppingBag,
   ChevronDown,
   Plus,
   LayoutGrid,
@@ -73,7 +72,7 @@ export function SplitView({
   const [desktopChatVisible, setDesktopChatVisible] = useState(true)
   const [isFreeUser, setIsFreeUser] = useState(false)
   const [userPlan, setUserPlan] = useState<string>('free')
-  const [integrationModal, setIntegrationModal] = useState<'github' | 'vercel' | 'shopify' | null>(null)
+  const [integrationModal, setIntegrationModal] = useState<'github' | 'vercel' | null>(null)
   // True while the clone SSE stream is active OR the AI chat is streaming
   // isStreamingProp comes from use-project's real-time stream subscription;
   // isGenerating covers the chat streaming case managed locally.
@@ -305,10 +304,6 @@ export function SplitView({
               <GitBranch className="w-4 h-4 mr-2" />
               Push to GitHub
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setIntegrationModal('shopify')}>
-              <ShoppingBag className="w-4 h-4 mr-2" />
-              Deploy to Shopify
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -486,8 +481,6 @@ export function SplitView({
         <ConnectIntegrationModal
           service={integrationModal}
           projectId={project.id}
-          folderId={activeFolderId}
-          userPlan={userPlan}
           onClose={() => setIntegrationModal(null)}
         />
       )}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 
-const WORDS = ['Website', 'Shopify Store', 'Funnel', 'Sales Page', 'Landing Page']
+const WORDS = ['Website', 'Funnel', 'Sales Page', 'Landing Page']
 const TYPE_SPEED = 45
 const DELETE_SPEED = 25
 const WAIT_AFTER = 1800

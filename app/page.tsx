@@ -13,7 +13,7 @@ const jsonLd = {
       name: 'IgualAI',
       url: 'https://igualai.com',
       description:
-        'Clone any website, Shopify store, funnel, or sales page. AI rebuilds it as your brand in seconds.',
+        'Clone any website, funnel, or sales page. AI rebuilds it as your brand in seconds.',
       potentialAction: {
         '@type': 'SearchAction',
         target: 'https://igualai.com/?url={search_term_string}',
@@ -38,15 +38,7 @@ const jsonLd = {
           name: 'What can IgualAI clone?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'Any publicly accessible website, Shopify store, sales funnel, landing page, or sales page. Paste the URL and IgualAI captures and rebuilds it as clean, editable HTML in seconds.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'Can I clone a Shopify store?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Yes — including the homepage, product pages, and collection pages. IgualAI automatically detects the page type and configures the right Shopify template. Product pages use Shopify Liquid so actual product data (title, price, variants, add-to-cart) comes from your catalog live.',
+            text: 'Any publicly accessible website, sales funnel, landing page, or sales page. Paste the URL and IgualAI captures and rebuilds it as clean, editable HTML in seconds.',
           },
         },
         {
@@ -78,7 +70,7 @@ const jsonLd = {
           name: 'Can I download or deploy my clone?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'Yes. Download as a self-contained HTML file, connect a custom domain, push to GitHub, or export directly to Shopify as a fully structured theme.',
+            text: 'Yes. Download as a self-contained HTML file, connect a custom domain, push to GitHub, or deploy to Vercel.',
           },
         },
       ],
@@ -89,15 +81,11 @@ const jsonLd = {
 const FAQS = [
   {
     q: 'What can IgualAI clone?',
-    a: 'Any publicly accessible website, Shopify store, sales funnel, landing page, or sales page. Paste the URL and IgualAI captures and rebuilds it as clean, editable HTML in seconds. Sites behind a login or paywall may not clone fully.',
-  },
-  {
-    q: 'Can I clone a Shopify store?',
-    a: 'Yes — including the homepage, product pages, and collection pages. IgualAI automatically detects the page type and configures the right Shopify template. Product pages use Shopify Liquid variables so actual product data (title, price, variants, add-to-cart) comes from your catalog live.',
+    a: 'Any publicly accessible website, sales funnel, landing page, or sales page. Paste the URL and IgualAI captures and rebuilds it as clean, editable HTML in seconds. Sites behind a login or paywall may not clone fully.',
   },
   {
     q: 'What is a folder?',
-    a: "A folder groups all the pages of one website together. Set up your brand once on any page in a folder and every other page in that folder automatically loads your brand info — no re-entering required. When you push to Shopify, all pages in the folder go into one theme in one click.",
+    a: "A folder groups all the pages of one website together. Set up your brand once on any page in a folder and every other page in that folder automatically loads your brand info — no re-entering required. Build a full funnel or multi-page site and keep everything in sync.",
   },
   {
     q: 'How does the AI Brand Rebuild work?',
@@ -112,20 +100,16 @@ const FAQS = [
     a: "Tokens are the AI's unit of work. A full Brand Wizard rebuild uses roughly 50,000–70,000 tokens. A targeted follow-up edit uses 5,000–15,000. Visual Editor changes (click-to-edit text and images) use zero tokens. The Free plan includes 75,000 tokens/month. Pro includes 2,000,000. You can buy token packs from Settings if you run out mid-month.",
   },
   {
-    q: 'How does the Shopify push work?',
-    a: "IgualAI converts your rebuilt pages into a proper Shopify Online Store 2.0 theme — every section becomes a Liquid section file with a schema block, making all text, colors, and images editable inside the Shopify theme editor. Push a single page from the editor, or push an entire folder as one complete theme from the dashboard.",
-  },
-  {
     q: 'Is cloning websites legal?',
     a: "IgualAI is designed for brand transformation — you clone a layout and structure, then rebuild it as something entirely new for your business. The output is an original page inspired by a layout, not a copy of anyone's content. You are responsible for your use of the tool. See our Acceptable Use Policy for details.",
   },
   {
     q: 'Is IgualAI free?',
-    a: 'Yes. The Free plan includes 1 clone and 75,000 AI tokens per month at no cost. Pro is $19/month (20 clones, 2M tokens, custom domains, Shopify integration). Agency is $49/month (60 clones, 6M tokens). Visual Editor changes are always free.',
+    a: 'Yes. The Free plan includes 1 clone and 75,000 AI tokens per month at no cost. Pro is $19/month (20 clones, 2M tokens, custom domains). Agency is $49/month (60 clones, 6M tokens). Visual Editor changes are always free.',
   },
   {
     q: 'Can I download or deploy my clone?',
-    a: 'Yes. Download as a self-contained HTML file you can host anywhere, connect a custom domain to serve it directly from IgualAI, push to GitHub (Pro/Agency), or export to Shopify as a fully structured theme.',
+    a: 'Yes. Download as a self-contained HTML file you can host anywhere, connect a custom domain to serve it directly from IgualAI, push to GitHub (Pro/Agency), or deploy to Vercel.',
   },
 ]
 
@@ -149,7 +133,7 @@ export default function Home() {
           {/* Subtitle */}
           <p className="text-lg md:text-xl text-neutral-500 dark:text-neutral-400 text-center max-w-xl mb-12 leading-relaxed">
             Paste a URL and get an editable, AI-powered clone in seconds.
-            Rebuild it as your brand. Deploy to Shopify or anywhere.
+            Rebuild it as your brand. Deploy anywhere.
           </p>
 
           {/* URL Input */}
@@ -167,7 +151,7 @@ export default function Home() {
                 icon: <Globe className="w-5 h-5" />,
                 title: 'Clone Anything',
                 description:
-                  'Websites, Shopify stores, funnels, sales pages, landing pages — paste a URL and get a clean editable copy in seconds.',
+                  'Websites, funnels, sales pages, landing pages — paste a URL and get a clean editable copy in seconds.',
               },
               {
                 icon: <Sparkles className="w-5 h-5" />,
@@ -179,13 +163,13 @@ export default function Home() {
                 icon: <Upload className="w-5 h-5" />,
                 title: 'Deploy Anywhere',
                 description:
-                  'Push to Shopify as a fully structured theme, export to GitHub, deploy to Vercel, or download as a self-contained HTML file.',
+                  'Export to GitHub, deploy to Vercel, connect a custom domain, or download as a self-contained HTML file.',
               },
               {
                 icon: <FolderOpen className="w-5 h-5" />,
                 title: 'Multi-Page Projects',
                 description:
-                  'Group a homepage, product pages, and collection pages in one folder. Push them all as a single Shopify theme in one click.',
+                  'Group all pages of a funnel or site in one folder. Set your brand once and every page syncs automatically.',
               },
             ].map((feature) => (
               <div

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Header } from '@/components/header'
 import { cn } from '@/lib/utils'
-import { BookOpen, Zap, Globe, CreditCard, HelpCircle, ChevronRight, ShoppingBag } from 'lucide-react'
+import { BookOpen, Zap, Globe, CreditCard, HelpCircle, ChevronRight } from 'lucide-react'
 
 const NAV = [
   {
@@ -21,11 +21,6 @@ const NAV = [
     label: 'Custom Domains',
     href: '/docs/custom-domains',
     icon: Globe,
-  },
-  {
-    label: 'Shopify Integration',
-    href: '/docs/shopify-integration',
-    icon: ShoppingBag,
   },
   {
     label: 'Plans & Tokens',
