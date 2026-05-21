@@ -817,7 +817,12 @@ For every image in the original, replace it with one of these — pick based on 
 
 ALWAYS include a Font Awesome icon inside gradient placeholders so they are never blank.
 EXCEPTION: The HERO background div (full-bleed section behind the headline) must be a plain dark gradient — NO icon inside it. The hero IS the headline text. A large icon in the hero background looks like a mistake.
-For dark (non-gradient) image placeholders always use bg-gray-900 — NOT bg-neutral-900, bg-zinc-900, or bg-slate-900. This ensures consistent dark shading across all pages.
+DARK COLOR CONSISTENCY — use these exact classes everywhere, never mix variants:
+- Dark backgrounds: bg-gray-900 (cards, placeholders, sections) — NOT bg-neutral-900, bg-zinc-900, or bg-slate-900
+- Darker backgrounds: bg-gray-950 or bg-[#0f0f0f] — NOT bg-neutral-950 or bg-zinc-950
+- Subtle borders/dividers: border-gray-800 or border-gray-700 — NOT border-neutral-*
+- Muted text: text-gray-400 — NOT text-neutral-400 or text-zinc-400
+This ensures pixel-perfect color consistency across all pages in the same folder.
 Never use picsum.photos or random external images.
 UI mockup style for THIS site:
 ${uiMockupExample}
@@ -1145,7 +1150,12 @@ For every image in the original, replace it with one of these — pick based on 
 
 ALWAYS include a Font Awesome icon inside gradient placeholders so they are never blank.
 EXCEPTION: The HERO background div (full-bleed section behind the headline) must be a plain dark gradient — NO icon inside it. The hero IS the headline text. A large icon in the hero background looks like a mistake.
-For dark (non-gradient) image placeholders always use bg-gray-900 — NOT bg-neutral-900, bg-zinc-900, or bg-slate-900. This ensures consistent dark shading across all pages.
+DARK COLOR CONSISTENCY — use these exact classes everywhere, never mix variants:
+- Dark backgrounds: bg-gray-900 (cards, placeholders, sections) — NOT bg-neutral-900, bg-zinc-900, or bg-slate-900
+- Darker backgrounds: bg-gray-950 or bg-[#0f0f0f] — NOT bg-neutral-950 or bg-zinc-950
+- Subtle borders/dividers: border-gray-800 or border-gray-700 — NOT border-neutral-*
+- Muted text: text-gray-400 — NOT text-neutral-400 or text-zinc-400
+This ensures pixel-perfect color consistency across all pages in the same folder.
 Never use picsum.photos or random external images.
 UI mockup style for THIS site:
 ${uiMockupExample}

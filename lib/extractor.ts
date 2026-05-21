@@ -139,10 +139,8 @@ export async function extractSite(url: string): Promise<string> {
       slideSelectors.forEach((sel) => {
         document.querySelectorAll(sel).forEach((el) => {
           const htmlEl = el as HTMLElement
-          // Remove aria-hidden so screen-reader-hidden slides become part of DOM
           htmlEl.removeAttribute('aria-hidden')
           htmlEl.removeAttribute('hidden')
-          // Remove transform/opacity/visibility that hide inactive slides
           htmlEl.style.removeProperty('display')
           htmlEl.style.removeProperty('visibility')
           htmlEl.style.removeProperty('opacity')
@@ -150,7 +148,9 @@ export async function extractSite(url: string): Promise<string> {
           htmlEl.style.removeProperty('position')
           htmlEl.style.removeProperty('left')
           htmlEl.style.removeProperty('right')
+          htmlEl.style.removeProperty('top')
           htmlEl.style.removeProperty('pointer-events')
+          htmlEl.style.removeProperty('width')
         })
       })
 
@@ -200,15 +200,31 @@ export async function extractSite(url: string): Promise<string> {
         }
         *[style*="visibility: hidden"] { visibility: visible !important; }
         /* Force all carousel slides visible — Splide, Swiper, Slick */
-        .splide__slide, .swiper-slide, .slick-slide {
+        .splide__slide, .swiper-slide, .slick-slide,
+        [class*="slide-item"], [class*="slider__slide"], [class*="slideshow__slide"] {
           opacity: 1 !important;
           visibility: visible !important;
           pointer-events: auto !important;
+          position: relative !important;
+          transform: none !important;
+          left: auto !important;
+          top: auto !important;
+          right: auto !important;
+          display: block !important;
         }
-        /* Unwrap Splide overflow clip so all slides render */
-        .splide__track { overflow: visible !important; }
-        .swiper-container, .swiper { overflow: visible !important; }
-        .slick-list { overflow: visible !important; }
+        /* Unwrap carousel overflow clips so all slides render side-by-side */
+        .splide__track, .slick-list, .swiper-container, .swiper,
+        [class*="slides-track"], [class*="carousel__track"] {
+          overflow: visible !important;
+        }
+        /* Make carousel lists wrap instead of clipping off-screen slides */
+        .splide__list, .swiper-wrapper, .slick-track,
+        [class*="slides-wrapper"], [class*="carousel__list"] {
+          display: flex !important;
+          flex-wrap: wrap !important;
+          transform: none !important;
+          width: auto !important;
+        }
         ${isProductPage ? `
         /* ── Shopify deferred-media: show product images without JS interaction ──
            Shopify Dawn/Refresh use <deferred-media> custom element + CSS rule
