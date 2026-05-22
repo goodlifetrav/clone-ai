@@ -1308,6 +1308,7 @@ ${isIntentionalRename ? '' : `- NEVER change the brand name, company name, logo 
 - NEVER invent a new brand name or rewrite content — every word in the HTML is sacred`}
 - Do NOT change fonts, layout, or anything not mentioned by the user
 - Do NOT "improve", "clean up", or "modernize" anything
+- BRAND COLORS ARE SACRED: Do NOT change any colors — background colors, text colors, border colors, gradient colors, hex values, Tailwind color classes — unless the user explicitly asks to change colors. A layout or spacing fix must leave every color exactly as-is.
 - Preserve every class, style, attribute, and element exactly as-is except the one thing being changed
 - If the user says "change X to Y", change ONLY X
 ${isColorChange ? `
@@ -1326,7 +1327,7 @@ ${currentHtml}
 
 USER REQUEST: ${userMessage}
 
-REMINDER: The brand name is "${brandName}". Do not change it or any other text. Apply ONLY the requested change and return the complete modified page.`
+REMINDER: The brand name is "${brandName}". Do not change it, any other text, or any colors. Apply ONLY the requested change and return the complete modified page.`
 
     const { text: fullHtml, tokensUsed, inputTokens, outputTokens } = await generateText(prompt, { systemPrompt, maxTokens: 65536 })
     const cost = geminiCost(inputTokens ?? 0, outputTokens ?? 0)
