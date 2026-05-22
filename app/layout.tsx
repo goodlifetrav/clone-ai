@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { ThemeProvider } from 'next-themes'
 import { AuthModal } from '@/components/auth-modal'
+import { AnalyticsTracker } from '@/components/analytics-tracker'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -39,6 +40,7 @@ export default function RootLayout({
         >
           {children}
           <AuthModal />
+          <AnalyticsTracker />
         </ThemeProvider>
       </body>
     </html>
