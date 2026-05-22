@@ -7,7 +7,6 @@ export interface ChatJob {
   html?: string
   message?: string
   error?: string
-  messagesUsed?: number
   tokensUsed?: number
   estimatedCost?: number
   createdAt: number
@@ -39,12 +38,11 @@ export function completeJob(
   id: string,
   html: string,
   message: string,
-  messagesUsed: number,
   tokensUsed?: number,
   estimatedCost?: number
 ) {
   const job = jobs.get(id)
-  if (job) jobs.set(id, { ...job, status: 'done', html, message, messagesUsed, tokensUsed, estimatedCost })
+  if (job) jobs.set(id, { ...job, status: 'done', html, message, tokensUsed, estimatedCost })
 }
 
 export function failJob(id: string, error: string) {

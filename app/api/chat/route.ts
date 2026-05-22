@@ -7,8 +7,6 @@ import { reportError } from '@/lib/error-report'
 import { createJob, completeJob, failJob } from '@/lib/chat-jobs'
 import { extractHeaderFooter, replaceHeaderFooter, mergeFontLinks } from '@/lib/header-footer'
 
-const FREE_CHAT_LIMIT = 2
-
 export async function GET(request: NextRequest) {
   try {
     const { userId } = await getAuth()
@@ -22,18 +20,18 @@ export async function GET(request: NextRequest) {
 
     const { data: user } = await supabase
       .from('users')
-      .select('plan, is_admin, email, free_chats_used')
+      .select('plan, is_admin, email, tokens_used')
       .eq('clerk_id', userId)
       .single()
 
-    const isLimited =
-      user?.plan === 'free' && !user?.is_admin && !isAdminEmail(user?.email)
+    const TOKEN_LIMITS: Record<string, number> = {
+      free: 75000, starter: 500000, pro: 2000000, growth: 5000000, max: 10000000, agency: 6000000,
+    }
+    const tokenLimit = TOKEN_LIMITS[user?.plan ?? 'free'] ?? 75000
+    const tokensUsed = user?.tokens_used ?? 0
+    const isLimited = !user?.is_admin && !isAdminEmail(user?.email ?? '') && tokensUsed >= tokenLimit
 
-    return NextResponse.json({
-      messagesUsed: isLimited ? (user?.free_chats_used ?? 0) : 0,
-      isLimited,
-      limit: isLimited ? FREE_CHAT_LIMIT : null,
-    })
+    return NextResponse.json({ isLimited, tokensUsed, tokenLimit })
   } catch (err) {
     console.error('Chat GET error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -56,7 +54,7 @@ export async function POST(request: NextRequest) {
 
   const { data: user } = await supabase
     .from('users')
-    .select('id, plan, is_admin, tokens_used, email, free_chats_used')
+    .select('id, plan, is_admin, tokens_used, email')
     .eq('clerk_id', userId)
     .single()
 
@@ -64,20 +62,7 @@ export async function POST(request: NextRequest) {
 
   const adminOverride = user.is_admin || isAdminEmail(user.email)
 
-  // ── Usage limit checks ───────────────────────────────────────────────────
-  if (user.plan === 'free' && !adminOverride) {
-    if ((user.free_chats_used ?? 0) >= FREE_CHAT_LIMIT) {
-      return NextResponse.json(
-        {
-          error: "You've used your 5 free edits. Upgrade to Pro for unlimited AI modifications.",
-          upgradeRequired: true,
-          chatLimitReached: true,
-        },
-        { status: 403 }
-      )
-    }
-  }
-
+  // ── Usage limit check ────────────────────────────────────────────────────
   if (!adminOverride) {
     const TOKEN_LIMITS: Record<string, number> = {
       free: 75000, starter: 500000, pro: 2000000, growth: 5000000, max: 10000000, agency: 6000000,
@@ -130,7 +115,7 @@ async function runChatJob(
   currentHtml: string,
   chatMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
   uploadedImageUrls: string[] | undefined,
-  user: { id: string; plan: string; tokens_used: number; free_chats_used: number | null },
+  user: { id: string; plan: string; tokens_used: number },
   adminOverride: boolean,
   originalMessage: string,
   folderId: string | null,
@@ -175,21 +160,13 @@ async function runChatJob(
     }
 
     // Update token usage
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const userUpdate: Record<string, any> = { tokens_used: user.tokens_used + tokensUsed }
-    let newFreeChatsUsed = user.free_chats_used ?? 0
-    if (user.plan === 'free' && !adminOverride) {
-      newFreeChatsUsed += 1
-      userUpdate.free_chats_used = newFreeChatsUsed
-    }
-    await supabase.from('users').update(userUpdate).eq('id', user.id)
+    await supabase.from('users').update({ tokens_used: user.tokens_used + tokensUsed }).eq('id', user.id)
 
     console.log(`[chat] job complete — tokens: ${tokensUsed}, cost: $${(estimatedCost ?? 0).toFixed(4)}, project: ${projectId}`)
     completeJob(
       jobId,
       isValidHtml ? finalHtml : currentHtml,
       isValidHtml ? finalMessage : 'Could not generate a complete page. Please try again.',
-      newFreeChatsUsed,
       tokensUsed,
       estimatedCost
     )

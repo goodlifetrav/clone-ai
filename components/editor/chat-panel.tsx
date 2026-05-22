@@ -60,8 +60,6 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [messagesUsed, setMessagesUsed] = useState<number | null>(null)
-  const [chatLimit, setChatLimit] = useState<number | null>(null)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
@@ -141,20 +139,15 @@ export function ChatPanel({
     }
   }
 
-  // Fetch initial message count and limit on mount
+  // Show upgrade modal immediately if user is already at token limit
   useEffect(() => {
     async function fetchChatStatus() {
       try {
         const res = await fetch(`/api/chat?projectId=${projectId}`)
         if (!res.ok) return
         const data = await res.json()
-        if (data.isLimited) {
-          setMessagesUsed(data.messagesUsed)
-          setChatLimit(data.limit)
-        }
-      } catch {
-        // silently fail — count display is non-critical
-      }
+        if (data.isLimited) setShowUpgradeModal(true)
+      } catch { /* non-critical */ }
     }
     fetchChatStatus()
   }, [projectId])
@@ -163,17 +156,9 @@ export function ChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const isAtLimit = chatLimit !== null && messagesUsed !== null && messagesUsed >= chatLimit
-
   const handleSend = async () => {
     if (!input.trim()) return
     if (loading) return
-
-    // Block at limit before hitting the API
-    if (isAtLimit) {
-      setShowUpgradeModal(true)
-      return
-    }
 
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -207,7 +192,7 @@ export function ChatPanel({
       if (!res.ok) {
         let data: Record<string, unknown> = {}
         try { data = await res.json() } catch { /* ignore */ }
-        if (data.chatLimitReached) {
+        if (data.chatLimitReached || data.upgradeRequired) {
           setShowUpgradeModal(true)
           onMessagesChange(messages)
           return
@@ -220,7 +205,7 @@ export function ChatPanel({
       // Poll /api/chat/status every 2 seconds until done or error.
       // Transient 5xx errors (502/503/504) are retried — only give up after
       // 3 consecutive failures or a hard 4xx error.
-      const aiMessage = await new Promise<{ text: string; messagesUsed: number; tokensUsed: number; estimatedCost: number }>((resolve, reject) => {
+      const aiMessage = await new Promise<{ text: string; tokensUsed: number; estimatedCost: number }>((resolve, reject) => {
         let consecutiveErrors = 0
         const MAX_ERRORS = 5
         const MAX_POLLS = 180 // 6 minutes max
@@ -259,7 +244,6 @@ export function ChatPanel({
               status: string
               html?: string
               message?: string
-              messagesUsed?: number
               tokensUsed?: number
               estimatedCost?: number
               error?: string
@@ -281,7 +265,6 @@ export function ChatPanel({
             }
             resolve({
               text: data.message || 'Done.',
-              messagesUsed: data.messagesUsed ?? 0,
               tokensUsed: data.tokensUsed ?? 0,
               estimatedCost: data.estimatedCost ?? 0,
             })
@@ -306,9 +289,6 @@ export function ChatPanel({
       }
       onMessagesChange([...newMessages, assistantMessage])
 
-      if (chatLimit !== null) {
-        setMessagesUsed(aiMessage.messagesUsed)
-      }
     } catch (err) {
       const errorMessage: ChatMessage = {
         id: crypto.randomUUID(),
@@ -357,11 +337,6 @@ export function ChatPanel({
             <>
               <Bot className="w-4 h-4 text-neutral-500" />
               <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">AI Chat</span>
-              {chatLimit !== null && messagesUsed !== null ? (
-                <span className={cn('text-xs', isAtLimit ? 'text-red-500 dark:text-red-400 font-medium' : messagesUsed >= chatLimit - 1 ? 'text-amber-500 dark:text-amber-400' : 'text-neutral-400')}>
-                  {messagesUsed}/{chatLimit}
-                </span>
-              ) : null}
               <button
                 onClick={() => { setShowHistory(true); onRefetchVersions?.() }}
                 className="ml-auto flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 px-2 py-1 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
