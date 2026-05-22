@@ -564,8 +564,8 @@ export function ChatPanel({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={isAtLimit ? 'Upgrade to continue chatting...' : 'Ask AI to modify the website...'}
-                disabled={loading || isAtLimit}
+                placeholder={'Ask AI to modify the website...'}
+                disabled={loading}
                 rows={1}
                 className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none disabled:opacity-50 leading-relaxed"
                 style={{ minHeight: '44px', maxHeight: isExpanded ? '320px' : '160px' }}
@@ -578,7 +578,6 @@ export function ChatPanel({
                     size="icon"
                     className="h-7 w-7 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isAtLimit}
                     title="Upload image"
                   >
                     <ImagePlus className="w-4 h-4" />
@@ -598,7 +597,7 @@ export function ChatPanel({
                     size="icon"
                     className="h-7 w-7 bg-neutral-900 hover:bg-neutral-700 dark:bg-white dark:hover:bg-neutral-200 dark:text-neutral-900 rounded-lg"
                     onClick={handleSend}
-                    disabled={loading || isAtLimit || !input.trim()}
+                    disabled={loading || !input.trim()}
                   >
                     {loading ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
