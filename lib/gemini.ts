@@ -1,10 +1,9 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
 // Primary model, with a fallback for when primary is overloaded.
-// gemini-2.5-pro requires thinking budget > 0 which breaks our disableThinking calls.
-// gemini-2.0-flash is stable, fast, and accepts the same config with no special requirements.
+// gemini-2.0-flash was deprecated for new users — using gemini-1.5-flash as fallback.
 const PRIMARY_MODEL = 'gemini-2.5-flash'
-const FALLBACK_MODEL = 'gemini-2.0-flash'
+const FALLBACK_MODEL = 'gemini-1.5-flash'
 
 let _client: GoogleGenerativeAI | null = null
 
@@ -19,7 +18,15 @@ function getClient(): GoogleGenerativeAI {
 
 function isRetryable(err: unknown): boolean {
   const msg = (err as Error)?.message ?? ''
-  return msg.includes('503') || msg.includes('529') || msg.includes('overloaded') || msg.includes('high demand')
+  return (
+    msg.includes('503') ||
+    msg.includes('529') ||
+    msg.includes('overloaded') ||
+    msg.includes('high demand') ||
+    msg.includes('404') ||
+    msg.includes('not found') ||
+    msg.includes('no longer available')
+  )
 }
 
 async function withRetry<T>(fn: (model: string) => Promise<T>): Promise<T> {
@@ -50,7 +57,7 @@ export interface GeneratedImage {
 export async function generateImage(prompt: string): Promise<GeneratedImage> {
   const client = getClient()
   const model = client.getGenerativeModel({
-    model: 'gemini-2.0-flash-exp-image-generation',
+    model: 'gemini-2.0-flash-preview-image-generation',
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
