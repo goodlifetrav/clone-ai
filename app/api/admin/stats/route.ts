@@ -51,13 +51,26 @@ export async function GET(request: NextRequest) {
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
   const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30).toISOString()
 
-  // Helper to add period filters to a query
-  function applyPeriod(q: ReturnType<typeof supabase.from>) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let r = (q as any).gte('created_at', pStart)
-    if (pEnd) r = r.lt('created_at', pEnd)
-    return r
-  }
+  // Build period-filtered queries inline (avoids TypeScript generic issues)
+  const signupsQ = pEnd
+    ? supabase.from('users').select('id', { count: 'exact', head: true }).gte('created_at', pStart).lt('created_at', pEnd)
+    : supabase.from('users').select('id', { count: 'exact', head: true }).gte('created_at', pStart)
+
+  const clonesQ = pEnd
+    ? supabase.from('projects').select('id', { count: 'exact', head: true }).gte('created_at', pStart).lt('created_at', pEnd)
+    : supabase.from('projects').select('id', { count: 'exact', head: true }).gte('created_at', pStart)
+
+  const analyticsQ = pEnd
+    ? supabase.from('analytics_events').select('id', { count: 'exact', head: true }).eq('event_type', 'page_view').gte('created_at', pStart).lt('created_at', pEnd)
+    : supabase.from('analytics_events').select('id', { count: 'exact', head: true }).eq('event_type', 'page_view').gte('created_at', pStart)
+
+  const sourcesQ = pEnd
+    ? supabase.from('analytics_events').select('utm_source').eq('event_type', 'page_view').not('utm_source', 'is', null).gte('created_at', pStart).lt('created_at', pEnd)
+    : supabase.from('analytics_events').select('utm_source').eq('event_type', 'page_view').not('utm_source', 'is', null).gte('created_at', pStart)
+
+  const recentQ = pEnd
+    ? supabase.from('users').select('email, plan, created_at').gte('created_at', pStart).lt('created_at', pEnd).order('created_at', { ascending: false }).limit(20)
+    : supabase.from('users').select('email, plan, created_at').gte('created_at', pStart).order('created_at', { ascending: false }).limit(20)
 
   const [
     { count: totalUsers },
@@ -74,19 +87,19 @@ export async function GET(request: NextRequest) {
     { data: recentUsers },
   ] = await Promise.all([
     supabase.from('users').select('id', { count: 'exact', head: true }),
-    applyPeriod(supabase.from('users').select('id', { count: 'exact', head: true })),
+    signupsQ,
     supabase.from('users').select('plan, tokens_used'),
     supabase.from('projects').select('id', { count: 'exact', head: true }),
-    applyPeriod(supabase.from('projects').select('id', { count: 'exact', head: true })),
-    // Always last 30 days for the chart (regardless of selected period)
+    clonesQ,
+    // Always last 30 days for the chart
     supabase.from('users').select('created_at').gte('created_at', thirtyDaysAgo).order('created_at', { ascending: true }),
     supabase.from('users').select('email, plan, tokens_used, clones_count').order('tokens_used', { ascending: false }).limit(10),
     supabase.from('users').select('email, plan, created_at, tokens_used').not('plan', 'eq', 'free').order('created_at', { ascending: false }),
     // Analytics — gracefully returns null if table doesn't exist yet
     supabase.from('analytics_events').select('id', { count: 'exact', head: true }).eq('event_type', 'page_view').gte('created_at', todayStart),
-    applyPeriod(supabase.from('analytics_events').select('id', { count: 'exact', head: true }).eq('event_type', 'page_view')),
-    applyPeriod(supabase.from('analytics_events').select('utm_source').eq('event_type', 'page_view').not('utm_source', 'is', null)),
-    applyPeriod(supabase.from('users').select('email, plan, created_at').order('created_at', { ascending: false }).limit(20)),
+    analyticsQ,
+    sourcesQ,
+    recentQ,
   ])
 
   // Plan breakdown + MRR
