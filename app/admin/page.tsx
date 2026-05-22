@@ -31,7 +31,7 @@ interface Stats {
   chartData: { date: string; count: number }[]
   topUsers: { email: string; plan: string; tokens_used: number; clones_count: number }[]
   allPaidUsers: { email: string; plan: string; created_at: string; tokens_used: number }[]
-  recentUsers: { email: string; plan: string; created_at: string }[]
+  recentUsers: { email: string; plan: string; created_at: string; tokens_used: number; clones_count: number }[]
 }
 
 const PLAN_COLOR: Record<string, string> = {
@@ -358,14 +358,18 @@ export default function AdminPage() {
               {stats.recentUsers.length === 0 ? (
                 <p className="text-sm text-neutral-400 text-center py-4">No signups this period</p>
               ) : stats.recentUsers.map((u) => (
-                <div key={u.email + u.created_at} className="flex items-center justify-between py-1">
-                  <div className="min-w-0">
+                <div key={u.email + u.created_at} className="py-1.5 border-b border-neutral-50 dark:border-neutral-800/50 last:border-0">
+                  <div className="flex items-center justify-between mb-0.5">
                     <p className="text-sm text-neutral-800 dark:text-neutral-200 truncate">{u.email}</p>
-                    <p className="text-xs text-neutral-400">{timeAgo(u.created_at)}</p>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ml-2 flex-shrink-0 ${PLAN_COLOR[u.plan] ?? 'bg-neutral-100 text-neutral-600'}`}>
+                      {u.plan}
+                    </span>
                   </div>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ml-2 flex-shrink-0 ${PLAN_COLOR[u.plan] ?? 'bg-neutral-100 text-neutral-600'}`}>
-                    {u.plan}
-                  </span>
+                  <div className="flex items-center gap-3 text-xs text-neutral-400">
+                    <span>{timeAgo(u.created_at)}</span>
+                    <span>{u.clones_count ?? 0} clone{(u.clones_count ?? 0) !== 1 ? 's' : ''}</span>
+                    <span className={(u.tokens_used ?? 0) > 0 ? 'text-blue-500 font-medium' : ''}>{(u.tokens_used ?? 0).toLocaleString()} tokens</span>
+                  </div>
                 </div>
               ))}
             </div>

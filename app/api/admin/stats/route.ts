@@ -71,8 +71,8 @@ export async function GET(request: NextRequest) {
     : supabase.from('analytics_events').select('utm_source').eq('event_type', 'page_view').not('utm_source', 'is', null).gte('created_at', pStart)
 
   const recentQ = pEnd
-    ? supabase.from('users').select('email, plan, created_at').gte('created_at', pStart).lt('created_at', pEnd).order('created_at', { ascending: false }).limit(20)
-    : supabase.from('users').select('email, plan, created_at').gte('created_at', pStart).order('created_at', { ascending: false }).limit(20)
+    ? supabase.from('users').select('email, plan, created_at, tokens_used, clones_count').gte('created_at', pStart).lt('created_at', pEnd).order('created_at', { ascending: false }).limit(20)
+    : supabase.from('users').select('email, plan, created_at, tokens_used, clones_count').gte('created_at', pStart).order('created_at', { ascending: false }).limit(20)
 
   const [
     { count: totalUsers },
@@ -95,8 +95,10 @@ export async function GET(request: NextRequest) {
     clonesQ,
     // Always last 30 days for the chart
     supabase.from('users').select('created_at').gte('created_at', thirtyDaysAgo).order('created_at', { ascending: true }),
-    supabase.from('users').select('email, plan, tokens_used, clones_count').gte('created_at', LAUNCH_DATE).order('tokens_used', { ascending: false }).limit(10),
-    supabase.from('users').select('email, plan, created_at, tokens_used').not('plan', 'eq', 'free').gte('created_at', LAUNCH_DATE).order('created_at', { ascending: false }),
+    // Top users by token usage — all-time, not filtered by launch date
+    supabase.from('users').select('email, plan, tokens_used, clones_count').order('tokens_used', { ascending: false }).limit(20),
+    // Paid users — all-time
+    supabase.from('users').select('email, plan, created_at, tokens_used').not('plan', 'eq', 'free').order('created_at', { ascending: false }),
     // Analytics — gracefully returns null if table doesn't exist yet
     supabase.from('analytics_events').select('id', { count: 'exact', head: true }).eq('event_type', 'page_view').gte('created_at', todayStart),
     analyticsQ,
