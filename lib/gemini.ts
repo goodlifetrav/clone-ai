@@ -958,6 +958,45 @@ function stripCssForRebuild(html: string): string {
 }
 
 /**
+ * Inject a mobile safety CSS block into any page that has igualai hero sections.
+ * Fixes absolutely-positioned UI elements (calendars, app mockups, etc.) that
+ * overlap hero text on mobile. Runs code-side so it doesn't depend on the AI
+ * getting it right. Idempotent — replaces existing injection if present.
+ */
+function injectMobileHeroFix(html: string): string {
+  if (!html.includes('data-igualai-section="hero"')) return html
+
+  const css = `<style id="igualai-mobile-fix">
+@media (max-width: 768px) {
+  /* Absolutely-positioned UI elements (calendars, app mockups) overlap hero text on mobile.
+     Make them flow in the normal document flow instead. */
+  [data-igualai-section="hero"] > .absolute,
+  [data-igualai-section="hero"] > * > .absolute,
+  [data-igualai-section="hero"] > div > .absolute,
+  [data-igualai-section="hero"] [style*="position: absolute"],
+  [data-igualai-section="hero"] [style*="position:absolute"] {
+    position: relative !important;
+    inset: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-top: 2rem !important;
+  }
+  /* Prevent hero section from clipping content that wraps */
+  [data-igualai-section="hero"] {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+  }
+}
+</style>`
+
+  // Remove previous injection to prevent duplicates, then insert before </head>
+  const deduped = html.replace(/<style id="igualai-mobile-fix">[\s\S]*?<\/style>/i, '')
+  return deduped.replace(/<\/head>/i, `${css}\n</head>`)
+}
+
+/**
  * Non-streaming brand rebuild — used by the background job pattern.
  * Waits for the full Gemini response before returning, so there are no
  * streaming timeouts or partial-HTML issues.
@@ -1276,7 +1315,7 @@ Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
       return { html: currentHtml, message: 'Could not generate a complete page. Please try again.', tokensUsed, estimatedCost: cost }
     }
 
-    return { html: cleaned, message: 'Done.', tokensUsed, estimatedCost: cost }
+    return { html: injectMobileHeroFix(cleaned), message: 'Done.', tokensUsed, estimatedCost: cost }
 
   } else {
     // ── SURGICAL EDIT ─────────────────────────────────────────────────────────
@@ -1356,6 +1395,8 @@ REMINDER: The brand name is "${brandName}". Do not change it, any other text, or
     if (!cleaned || !/<html/i.test(cleaned) || !/<\/html>/i.test(cleaned)) {
       return { html: currentHtml, message: 'Could not apply the change. Please try again.', tokensUsed, estimatedCost: cost }
     }
+
+    cleaned = injectMobileHeroFix(cleaned)
 
     // Guard: if Gemini renamed the brand, restore every occurrence.
     // Skip this guard if the user explicitly asked to change the brand/company name.
