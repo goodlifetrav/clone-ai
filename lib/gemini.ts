@@ -1295,6 +1295,9 @@ Output a complete, self-contained page from <!DOCTYPE html> to </html>.`
     // Detect if the user explicitly wants to rename the brand (skip name-protection rules if so)
     const isIntentionalRename = /(?:change|rename|update|set|make)[\s\S]{0,30}(?:brand|company|site|logo|nav)\s*name|brand\s*name[\s\S]{0,20}(?:to|=)\s*["']?\w/i.test(userMessage)
 
+    // Detect mobile layout / overlap fix requests
+    const isMobileFix = /mobile|overlap|overlappin|letter.*overlap|text.*overlap|overlap.*text|responsive|wrap|truncat|clip|small screen/i.test(userMessage)
+
     const systemPrompt = `You are a precise HTML editor. The user wants to make a specific, targeted change to an existing webpage.
 
 ${isIntentionalRename
@@ -1319,6 +1322,15 @@ COLOR CHANGE INSTRUCTIONS — for color changes you MUST do a COMPLETE global re
 - Replace color names in the tailwind.config colors section
 - Scan the ENTIRE document top to bottom — do not stop after the first few matches
 - A partial color change is a failure — every single instance must be updated` : ''}
+${isMobileFix ? `
+MOBILE FIX INSTRUCTIONS — you MUST actually fix the issue, not just say you did:
+- Add a <style> block (or append to existing) with targeted @media (max-width: 768px) overrides
+- For overlapping/clipping text: reduce font-size (e.g. font-size: 2.5rem), add overflow: hidden, word-break: break-word, or line-height adjustments
+- For elements overlapping hero text: check position: absolute elements — on mobile give them position: relative or display: none or move them below the text with margin-top
+- For z-index issues: ensure the text container has a higher z-index than decorative overlays
+- For large hero headings: scale down with responsive classes — replace text-8xl with text-4xl sm:text-6xl md:text-8xl
+- ALWAYS verify the fix addresses the specific element the user describes (hero section, nav, etc.)
+- Do NOT just add overflow-hidden to hide the problem — actually fix the layout` : ''}
 
 Output ONLY the complete raw HTML from <!DOCTYPE html> to </html>. No markdown. No explanation.`
 

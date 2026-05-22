@@ -464,20 +464,6 @@ export function ChatPanel({
         </ScrollArea>}
 
 
-        {/* Limit reached banner */}
-        {isAtLimit && (
-          <div className="px-4 py-2 border-t border-neutral-200 dark:border-neutral-800 bg-amber-50 dark:bg-amber-950/30 flex items-center justify-between gap-3">
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              Free chat limit reached.
-            </p>
-            <Link href="/pricing">
-              <Button size="sm" className="h-6 text-xs px-2 gap-1">
-                <Zap className="w-3 h-3" />
-                Upgrade
-              </Button>
-            </Link>
-          </div>
-        )}
 
         {/* Pending image thumbnails */}
         {pendingImages.length > 0 && (
