@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
       if (user.plan === 'free') {
         // Free uses cumulative count (never resets)
-        if (user.clones_count >= limit) {
+        if ((user.clones_count ?? 0) >= limit) {
           return NextResponse.json(
             { error: 'Free tier limit reached. Upgrade to clone more websites.', upgradeRequired: true },
             { status: 403 }

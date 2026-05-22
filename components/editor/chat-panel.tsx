@@ -643,10 +643,10 @@ export function ChatPanel({
               <Zap className="w-6 h-6 text-amber-600 dark:text-amber-400" />
             </div>
             <h2 className="text-lg font-bold text-neutral-900 dark:text-white text-center mb-2">
-              Free Edits Used
+              Token Limit Reached
             </h2>
             <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center mb-6">
-              You&apos;ve used your 5 free edits. Upgrade to Pro for unlimited AI modifications.
+              You&apos;ve used all your AI tokens. Upgrade to Pro for more tokens and unlimited AI modifications.
             </p>
             <div className="flex flex-col gap-2">
               <Link href="/pricing" className="w-full">
