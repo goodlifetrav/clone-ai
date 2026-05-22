@@ -1,21 +1,34 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, TrendingUp, Globe, Zap, Copy, ArrowUpRight, RefreshCw } from 'lucide-react'
+import { Users, TrendingUp, Globe, Zap, Copy, ArrowUpRight, RefreshCw, DollarSign, Activity } from 'lucide-react'
+
+type Period = 'today' | 'yesterday' | '7d' | '30d'
 
 interface Stats {
-  users: { total: number; today: number; thisWeek: number; plans: Record<string, number>; paid: number }
-  clones: { total: number; thisWeek: number }
-  traffic: { pageViewsToday: number; pageViewsThisWeek: number; sources: { source: string; count: number; pct: number }[] }
-  conversions: { visitToSignup: number; signupToPaid: number }
+  period: string
+  users: {
+    total: number
+    thisPeriod: number
+    plans: Record<string, number>
+    paid: number
+    mrr: number
+    totalTokens: number
+  }
+  clones: { total: number; thisPeriod: number }
+  traffic: { visitorsToday: number; visitorsPeriod: number; sources: { source: string; count: number; pct: number }[] }
+  conversions: { signupToPaid: number; visitToSignup: number }
+  chartData: { date: string; count: number }[]
+  topUsers: { email: string; plan: string; tokens_used: number; clones_count: number }[]
+  allPaidUsers: { email: string; plan: string; created_at: string; tokens_used: number }[]
   recentUsers: { email: string; plan: string; created_at: string }[]
-  recentUpgrades: { email: string; plan: string; created_at: string }[]
 }
 
 const PLAN_COLOR: Record<string, string> = {
   free: 'bg-neutral-200 text-neutral-700',
   pro: 'bg-blue-100 text-blue-700',
   agency: 'bg-purple-100 text-purple-700',
+  max: 'bg-amber-100 text-amber-700',
 }
 
 const SOURCE_COLOR: Record<string, string> = {
@@ -23,7 +36,15 @@ const SOURCE_COLOR: Record<string, string> = {
   instagram: 'bg-orange-500',
   youtube: 'bg-red-500',
   twitter: 'bg-sky-500',
+  x: 'bg-sky-500',
   direct: 'bg-neutral-400',
+}
+
+const PERIOD_LABELS: Record<Period, string> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+  '7d': 'Last 7 Days',
+  '30d': 'Last 30 Days',
 }
 
 function timeAgo(iso: string) {
@@ -66,8 +87,28 @@ function ConversionBar({ label, pct, color }: { label: string; pct: number; colo
   )
 }
 
+function SignupsChart({ data }: { data: { date: string; count: number }[] }) {
+  const max = Math.max(...data.map((d) => d.count), 1)
+  return (
+    <div className="flex items-end gap-px h-24 w-full">
+      {data.map((d) => (
+        <div key={d.date} className="flex-1 relative group flex flex-col justify-end h-full">
+          <div
+            className="w-full bg-blue-500 dark:bg-blue-400 rounded-sm hover:bg-blue-600 dark:hover:bg-blue-300 transition-colors"
+            style={{ height: `${Math.max((d.count / max) * 100, d.count > 0 ? 4 : 0)}%` }}
+          />
+          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block bg-neutral-900 text-white text-xs px-1.5 py-0.5 rounded whitespace-nowrap z-10 pointer-events-none">
+            {d.date.slice(5)}: {d.count}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const router = useRouter()
+  const [period, setPeriod] = useState<Period>('7d')
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -75,21 +116,26 @@ export default function AdminPage() {
   const [searchResult, setSearchResult] = useState<{ email: string; plan: string; clones_count: number; tokens_used: number } | null>(null)
   const [changingPlan, setChangingPlan] = useState(false)
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async (p: Period) => {
     setLoading(true)
+    setError('')
     try {
-      const res = await fetch('/api/admin/stats')
+      const res = await fetch(`/api/admin/stats?period=${p}`)
       if (res.status === 401 || res.status === 403) { router.push('/dashboard'); return }
       if (!res.ok) throw new Error('Failed to load stats')
       setStats(await res.json())
-    } catch (e) {
+    } catch {
       setError('Failed to load stats')
     } finally {
       setLoading(false)
     }
-  }
+  }, [router])
 
-  useEffect(() => { fetchStats() }, [])
+  useEffect(() => { fetchStats(period) }, [period, fetchStats])
+
+  const handlePeriodChange = (p: Period) => {
+    setPeriod(p)
+  }
 
   const handleSearch = async () => {
     if (!searchEmail.trim()) return
@@ -127,32 +173,99 @@ export default function AdminPage() {
   const freeCount = stats.users.plans.free ?? 0
   const proCount = stats.users.plans.pro ?? 0
   const agencyCount = stats.users.plans.agency ?? 0
+  const maxCount = stats.users.plans.max ?? 0
+  const periodLabel = PERIOD_LABELS[period]
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 p-6">
-      <div className="max-w-6xl mx-auto space-y-8">
+      <div className="max-w-6xl mx-auto space-y-6">
 
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">Admin Dashboard</h1>
             <p className="text-sm text-neutral-500 mt-0.5">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
           </div>
-          <button
-            onClick={fetchStats}
-            className="flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-white px-3 py-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Period selector */}
+            <div className="flex bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-1 gap-1">
+              {(['today', 'yesterday', '7d', '30d'] as Period[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => handlePeriodChange(p)}
+                  className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
+                    period === p
+                      ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900'
+                      : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                  }`}
+                >
+                  {p === 'today' ? 'Today' : p === 'yesterday' ? 'Yesterday' : p === '7d' ? '7 Days' : '30 Days'}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => fetchStats(period)}
+              className="flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-white px-3 py-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Overview Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={Users} label="Total Users" value={stats.users.total} sub={`+${stats.users.today} today`} color="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" />
-          <StatCard icon={TrendingUp} label="Paid Users" value={stats.users.paid} sub={`${proCount} pro · ${agencyCount} agency`} color="bg-green-50 text-green-600 dark:bg-green-950/50 dark:text-green-400" />
-          <StatCard icon={Globe} label="Visits Today" value={stats.traffic.pageViewsToday} sub={`${stats.traffic.pageViewsThisWeek} this week`} color="bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400" />
-          <StatCard icon={Copy} label="Clones Total" value={stats.clones.total} sub={`${stats.clones.thisWeek} this week`} color="bg-orange-50 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400" />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <StatCard
+            icon={Users}
+            label="Total Users"
+            value={stats.users.total.toLocaleString()}
+            sub={`+${stats.users.thisPeriod} ${periodLabel.toLowerCase()}`}
+            color="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400"
+          />
+          <StatCard
+            icon={DollarSign}
+            label="Est. MRR"
+            value={`$${stats.users.mrr.toLocaleString()}`}
+            sub={`${stats.users.paid} paid users`}
+            color="bg-green-50 text-green-600 dark:bg-green-950/50 dark:text-green-400"
+          />
+          <StatCard
+            icon={TrendingUp}
+            label="New Signups"
+            value={stats.users.thisPeriod}
+            sub={periodLabel}
+            color="bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400"
+          />
+          <StatCard
+            icon={Copy}
+            label="Clones"
+            value={stats.clones.thisPeriod}
+            sub={`${stats.clones.total.toLocaleString()} all-time`}
+            color="bg-orange-50 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400"
+          />
+          <StatCard
+            icon={Globe}
+            label="Visitors"
+            value={stats.traffic.visitorsPeriod}
+            sub={`${stats.traffic.visitorsToday} today`}
+            color="bg-sky-50 text-sky-600 dark:bg-sky-950/50 dark:text-sky-400"
+          />
+        </div>
+
+        {/* Signups Chart */}
+        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-blue-500" />
+              <h2 className="font-semibold text-neutral-900 dark:text-white">New Signups — Last 30 Days</h2>
+            </div>
+            <span className="text-sm text-neutral-400">{stats.users.total.toLocaleString()} total</span>
+          </div>
+          <SignupsChart data={stats.chartData} />
+          <div className="flex justify-between mt-2 text-xs text-neutral-400">
+            <span>{stats.chartData[0]?.date.slice(5)}</span>
+            <span>{stats.chartData[stats.chartData.length - 1]?.date.slice(5)}</span>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -163,9 +276,9 @@ export default function AdminPage() {
               <Zap className="w-4 h-4 text-amber-500" />
               <h2 className="font-semibold text-neutral-900 dark:text-white">Conversion Funnel</h2>
             </div>
-            <ConversionBar label="Visit → Signup (7d)" pct={stats.conversions.visitToSignup} color="bg-blue-500" />
+            <ConversionBar label={`Visit → Signup (${periodLabel})`} pct={stats.conversions.visitToSignup} color="bg-blue-500" />
             <ConversionBar label="Signup → Paid (all-time)" pct={stats.conversions.signupToPaid} color="bg-green-500" />
-            <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 grid grid-cols-3 gap-3 text-center">
+            <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 grid grid-cols-4 gap-2 text-center">
               <div>
                 <p className="text-xs text-neutral-400">Free</p>
                 <p className="text-lg font-bold text-neutral-900 dark:text-white">{freeCount}</p>
@@ -178,6 +291,10 @@ export default function AdminPage() {
                 <p className="text-xs text-neutral-400">Agency</p>
                 <p className="text-lg font-bold text-purple-600">{agencyCount}</p>
               </div>
+              <div>
+                <p className="text-xs text-neutral-400">Max</p>
+                <p className="text-lg font-bold text-amber-600">{maxCount}</p>
+              </div>
             </div>
           </div>
 
@@ -186,7 +303,7 @@ export default function AdminPage() {
             <div className="flex items-center gap-2">
               <Globe className="w-4 h-4 text-purple-500" />
               <h2 className="font-semibold text-neutral-900 dark:text-white">Traffic Sources</h2>
-              <span className="text-xs text-neutral-400 ml-auto">7 days</span>
+              <span className="text-xs text-neutral-400 ml-auto">{periodLabel}</span>
             </div>
             {stats.traffic.sources.length === 0 ? (
               <p className="text-sm text-neutral-400 text-center py-6">No UTM traffic yet.<br />Add ?utm_source=tiktok to your links.</p>
@@ -210,15 +327,18 @@ export default function AdminPage() {
             )}
           </div>
 
-          {/* Signups This Week */}
+          {/* Recent Signups */}
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 space-y-3">
             <div className="flex items-center gap-2">
               <ArrowUpRight className="w-4 h-4 text-green-500" />
               <h2 className="font-semibold text-neutral-900 dark:text-white">Recent Signups</h2>
+              <span className="text-xs text-neutral-400 ml-auto">{periodLabel}</span>
             </div>
-            <div className="space-y-2">
-              {stats.recentUsers.map((u) => (
-                <div key={u.email} className="flex items-center justify-between py-1">
+            <div className="space-y-2 overflow-y-auto max-h-64">
+              {stats.recentUsers.length === 0 ? (
+                <p className="text-sm text-neutral-400 text-center py-4">No signups this period</p>
+              ) : stats.recentUsers.map((u) => (
+                <div key={u.email + u.created_at} className="flex items-center justify-between py-1">
                   <div className="min-w-0">
                     <p className="text-sm text-neutral-800 dark:text-neutral-200 truncate">{u.email}</p>
                     <p className="text-xs text-neutral-400">{timeAgo(u.created_at)}</p>
@@ -232,11 +352,11 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Recent Upgrades */}
+        {/* Top Users by Usage */}
         <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
-            <Zap className="w-4 h-4 text-green-500" />
-            <h2 className="font-semibold text-neutral-900 dark:text-white">Paid Users</h2>
+            <Activity className="w-4 h-4 text-blue-500" />
+            <h2 className="font-semibold text-neutral-900 dark:text-white">Top Users by Token Usage</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -244,19 +364,56 @@ export default function AdminPage() {
                 <tr className="border-b border-neutral-100 dark:border-neutral-800">
                   <th className="text-left py-2 text-neutral-400 font-medium">Email</th>
                   <th className="text-left py-2 text-neutral-400 font-medium">Plan</th>
-                  <th className="text-left py-2 text-neutral-400 font-medium">Joined</th>
+                  <th className="text-right py-2 text-neutral-400 font-medium">Tokens Used</th>
+                  <th className="text-right py-2 text-neutral-400 font-medium">Clones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-50 dark:divide-neutral-800/50">
-                {stats.recentUpgrades.map((u) => (
+                {stats.topUsers.map((u) => (
                   <tr key={u.email}>
+                    <td className="py-2 text-neutral-800 dark:text-neutral-200 truncate max-w-xs">{u.email}</td>
+                    <td className="py-2">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${PLAN_COLOR[u.plan] ?? 'bg-neutral-100'}`}>
+                        {u.plan}
+                      </span>
+                    </td>
+                    <td className="py-2 text-right text-neutral-600 dark:text-neutral-400 font-mono">{(u.tokens_used ?? 0).toLocaleString()}</td>
+                    <td className="py-2 text-right text-neutral-600 dark:text-neutral-400">{u.clones_count ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Paid Users */}
+        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Zap className="w-4 h-4 text-green-500" />
+            <h2 className="font-semibold text-neutral-900 dark:text-white">Paid Users</h2>
+            <span className="text-xs text-neutral-400 ml-auto">Est. MRR: ${stats.users.mrr}/mo</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neutral-100 dark:border-neutral-800">
+                  <th className="text-left py-2 text-neutral-400 font-medium">Email</th>
+                  <th className="text-left py-2 text-neutral-400 font-medium">Plan</th>
+                  <th className="text-right py-2 text-neutral-400 font-medium">Tokens Used</th>
+                  <th className="text-right py-2 text-neutral-400 font-medium">Joined</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-50 dark:divide-neutral-800/50">
+                {stats.allPaidUsers.map((u) => (
+                  <tr key={u.email + u.created_at}>
                     <td className="py-2 text-neutral-800 dark:text-neutral-200">{u.email}</td>
                     <td className="py-2">
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${PLAN_COLOR[u.plan] ?? 'bg-neutral-100'}`}>
                         {u.plan}
                       </span>
                     </td>
-                    <td className="py-2 text-neutral-400">{timeAgo(u.created_at)}</td>
+                    <td className="py-2 text-right text-neutral-500 font-mono">{(u.tokens_used ?? 0).toLocaleString()}</td>
+                    <td className="py-2 text-right text-neutral-400">{timeAgo(u.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -292,7 +449,7 @@ export default function AdminPage() {
                 <div>
                   <p className="font-medium text-neutral-900 dark:text-white">{searchResult.email}</p>
                   <p className="text-xs text-neutral-400 mt-0.5">
-                    {searchResult.clones_count} clones · {searchResult.tokens_used.toLocaleString()} tokens used
+                    {searchResult.clones_count} clones · {(searchResult.tokens_used ?? 0).toLocaleString()} tokens used
                   </p>
                 </div>
                 <span className={`text-sm font-medium px-3 py-1 rounded-full ${PLAN_COLOR[searchResult.plan] ?? 'bg-neutral-100'}`}>
@@ -300,7 +457,7 @@ export default function AdminPage() {
                 </span>
               </div>
               <div className="flex gap-2">
-                {['free', 'pro', 'agency'].map((p) => (
+                {['free', 'pro', 'agency', 'max'].map((p) => (
                   <button
                     key={p}
                     disabled={changingPlan || searchResult.plan === p}

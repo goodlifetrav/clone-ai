@@ -1,9 +1,35 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { isAdminEmail } from '@/lib/admin'
 import { createServiceClient } from '@/lib/supabase'
 
-export async function GET() {
+const PLAN_PRICE: Record<string, number> = { pro: 19, agency: 49, max: 99 }
+
+function getPeriodDates(period: string): { start: string; end: string | null } {
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+  if (period === 'today') return { start: todayStart.toISOString(), end: null }
+
+  if (period === 'yesterday') {
+    const s = new Date(todayStart)
+    s.setDate(s.getDate() - 1)
+    return { start: s.toISOString(), end: todayStart.toISOString() }
+  }
+
+  if (period === '30d') {
+    const s = new Date(todayStart)
+    s.setDate(s.getDate() - 30)
+    return { start: s.toISOString(), end: null }
+  }
+
+  // default: 7d
+  const s = new Date(todayStart)
+  s.setDate(s.getDate() - 7)
+  return { start: s.toISOString(), end: null }
+}
+
+export async function GET(request: NextRequest) {
   const session = await getSession()
   if (!session.whopUserId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -18,48 +44,78 @@ export async function GET() {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  const period = request.nextUrl.searchParams.get('period') ?? '7d'
+  const { start: pStart, end: pEnd } = getPeriodDates(period)
+
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
-  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).toISOString()
+  const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30).toISOString()
+
+  // Helper to add period filters to a query
+  function applyPeriod(q: ReturnType<typeof supabase.from>) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let r = (q as any).gte('created_at', pStart)
+    if (pEnd) r = r.lt('created_at', pEnd)
+    return r
+  }
 
   const [
     { count: totalUsers },
-    { count: signupsToday },
-    { count: signupsThisWeek },
-    { data: planBreakdown },
+    { count: signupsPeriod },
+    { data: allUserPlans },
     { count: clonesTotal },
-    { count: clonesThisWeek },
-    { count: pageViewsToday },
-    { count: pageViewsThisWeek },
+    { count: clonesPeriod },
+    { data: dailySignupsRaw },
+    { data: topUsers },
+    { data: allPaidUsers },
+    { count: visitorsToday },
+    { count: visitorsPeriod },
     { data: trafficSources },
     { data: recentUsers },
-    { data: recentUpgrades },
   ] = await Promise.all([
     supabase.from('users').select('id', { count: 'exact', head: true }),
-    supabase.from('users').select('id', { count: 'exact', head: true }).gte('created_at', todayStart),
-    supabase.from('users').select('id', { count: 'exact', head: true }).gte('created_at', weekStart),
-    supabase.from('users').select('plan').then(({ data }) => {
-      const counts: Record<string, number> = {}
-      data?.forEach((u) => { counts[u.plan] = (counts[u.plan] ?? 0) + 1 })
-      return { data: counts }
-    }),
+    applyPeriod(supabase.from('users').select('id', { count: 'exact', head: true })),
+    supabase.from('users').select('plan, tokens_used'),
     supabase.from('projects').select('id', { count: 'exact', head: true }),
-    supabase.from('projects').select('id', { count: 'exact', head: true }).gte('created_at', weekStart),
-    supabase.from('analytics_events').select('id', { count: 'exact', head: true })
-      .eq('event_type', 'page_view').gte('created_at', todayStart),
-    supabase.from('analytics_events').select('id', { count: 'exact', head: true })
-      .eq('event_type', 'page_view').gte('created_at', weekStart),
-    supabase.from('analytics_events').select('utm_source, created_at')
-      .eq('event_type', 'page_view').gte('created_at', weekStart).not('utm_source', 'is', null),
-    supabase.from('users').select('email, plan, created_at').order('created_at', { ascending: false }).limit(10),
-    supabase.from('users').select('email, plan, created_at').not('plan', 'eq', 'free')
-      .order('created_at', { ascending: false }).limit(10),
+    applyPeriod(supabase.from('projects').select('id', { count: 'exact', head: true })),
+    // Always last 30 days for the chart (regardless of selected period)
+    supabase.from('users').select('created_at').gte('created_at', thirtyDaysAgo).order('created_at', { ascending: true }),
+    supabase.from('users').select('email, plan, tokens_used, clones_count').order('tokens_used', { ascending: false }).limit(10),
+    supabase.from('users').select('email, plan, created_at, tokens_used').not('plan', 'eq', 'free').order('created_at', { ascending: false }),
+    // Analytics — gracefully returns null if table doesn't exist yet
+    supabase.from('analytics_events').select('id', { count: 'exact', head: true }).eq('event_type', 'page_view').gte('created_at', todayStart),
+    applyPeriod(supabase.from('analytics_events').select('id', { count: 'exact', head: true }).eq('event_type', 'page_view')),
+    applyPeriod(supabase.from('analytics_events').select('utm_source').eq('event_type', 'page_view').not('utm_source', 'is', null)),
+    applyPeriod(supabase.from('users').select('email, plan, created_at').order('created_at', { ascending: false }).limit(20)),
   ])
 
-  // Aggregate traffic sources
+  // Plan breakdown + MRR
+  const plans: Record<string, number> = {}
+  let totalTokens = 0
+  allUserPlans?.forEach((u) => {
+    plans[u.plan] = (plans[u.plan] ?? 0) + 1
+    totalTokens += u.tokens_used ?? 0
+  })
+  const mrr = Object.entries(plans).reduce((sum, [plan, count]) => sum + (PLAN_PRICE[plan] ?? 0) * count, 0)
+  const paidCount = Object.entries(plans).filter(([p]) => p !== 'free').reduce((sum, [, c]) => sum + c, 0)
+
+  // 30-day signups chart data
+  const dayMap: Record<string, number> = {}
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now)
+    d.setDate(d.getDate() - i)
+    dayMap[d.toISOString().slice(0, 10)] = 0
+  }
+  dailySignupsRaw?.forEach((u) => {
+    const key = (u.created_at as string).slice(0, 10)
+    if (key in dayMap) dayMap[key]++
+  })
+  const chartData = Object.entries(dayMap).map(([date, count]) => ({ date, count }))
+
+  // Traffic sources aggregation
   const sourceMap: Record<string, number> = {}
   trafficSources?.forEach((e) => {
-    const src = e.utm_source ?? 'direct'
+    const src = (e as { utm_source: string }).utm_source
     sourceMap[src] = (sourceMap[src] ?? 0) + 1
   })
   const totalSourced = Object.values(sourceMap).reduce((a, b) => a + b, 0)
@@ -71,36 +127,33 @@ export async function GET() {
       pct: totalSourced > 0 ? Math.round((count / totalSourced) * 100) : 0,
     }))
 
-  const paidUsers = (planBreakdown?.pro ?? 0) + (planBreakdown?.agency ?? 0)
-  const signupToPayConversion = signupsThisWeek && signupsThisWeek > 0
-    ? Math.round((paidUsers / (totalUsers ?? 1)) * 100)
-    : 0
-  const visitToSignupConversion = pageViewsThisWeek && pageViewsThisWeek > 0
-    ? Math.round(((signupsThisWeek ?? 0) / pageViewsThisWeek) * 100)
-    : 0
+  // Conversion rates
+  const signupToPaid = totalUsers ? Math.round((paidCount / (totalUsers as number)) * 100) : 0
+  const visitToSignup =
+    (visitorsPeriod ?? 0) > 0
+      ? Math.round(((signupsPeriod ?? 0) / (visitorsPeriod as number)) * 100)
+      : 0
 
   return NextResponse.json({
+    period,
     users: {
       total: totalUsers ?? 0,
-      today: signupsToday ?? 0,
-      thisWeek: signupsThisWeek ?? 0,
-      plans: planBreakdown ?? {},
-      paid: paidUsers,
+      thisPeriod: signupsPeriod ?? 0,
+      plans,
+      paid: paidCount,
+      mrr,
+      totalTokens,
     },
-    clones: {
-      total: clonesTotal ?? 0,
-      thisWeek: clonesThisWeek ?? 0,
-    },
+    clones: { total: clonesTotal ?? 0, thisPeriod: clonesPeriod ?? 0 },
     traffic: {
-      pageViewsToday: pageViewsToday ?? 0,
-      pageViewsThisWeek: pageViewsThisWeek ?? 0,
+      visitorsToday: visitorsToday ?? 0,
+      visitorsPeriod: visitorsPeriod ?? 0,
       sources,
     },
-    conversions: {
-      visitToSignup: visitToSignupConversion,
-      signupToPaid: signupToPayConversion,
-    },
+    conversions: { signupToPaid, visitToSignup },
+    chartData,
+    topUsers: topUsers ?? [],
+    allPaidUsers: allPaidUsers ?? [],
     recentUsers: recentUsers ?? [],
-    recentUpgrades: recentUpgrades ?? [],
   })
 }
