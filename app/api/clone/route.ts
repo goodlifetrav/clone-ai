@@ -59,8 +59,13 @@ export async function POST(request: NextRequest) {
       const limit = PLAN_MONTHLY_LIMITS[user.plan] ?? 2
 
       if (user.plan === 'free') {
-        // Free uses cumulative count (never resets)
-        if ((user.clones_count ?? 0) >= limit) {
+        // Count actual projects in DB — never trust a stored counter for free limit
+        const { count: actualCount } = await supabase
+          .from('projects')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+
+        if ((actualCount ?? 0) >= limit) {
           return NextResponse.json(
             { error: 'Free tier limit reached. Upgrade to clone more websites.', upgradeRequired: true },
             { status: 403 }
