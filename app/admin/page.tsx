@@ -1,9 +1,19 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, TrendingUp, Globe, Zap, Copy, ArrowUpRight, RefreshCw, DollarSign, Activity } from 'lucide-react'
+import { Users, TrendingUp, Globe, Zap, Copy, ArrowUpRight, RefreshCw, DollarSign, Activity, CheckCircle, XCircle, Clock } from 'lucide-react'
 
 type Period = 'today' | 'yesterday' | '7d' | '30d'
+
+interface CloneActivity {
+  id: string
+  url: string
+  name: string
+  status: 'complete' | 'error' | 'pending'
+  created_at: string
+  email: string
+  plan: string
+}
 
 interface Stats {
   period: string
@@ -112,6 +122,8 @@ export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [clones, setClones] = useState<CloneActivity[]>([])
+  const [cloneFilter, setCloneFilter] = useState<'all' | 'complete' | 'error'>('all')
   const [searchEmail, setSearchEmail] = useState('')
   const [searchResult, setSearchResult] = useState<{ email: string; plan: string; clones_count: number; tokens_used: number } | null>(null)
   const [changingPlan, setChangingPlan] = useState(false)
@@ -132,6 +144,14 @@ export default function AdminPage() {
   }, [router])
 
   useEffect(() => { fetchStats(period) }, [period, fetchStats])
+
+  useEffect(() => {
+    const status = cloneFilter === 'all' ? '' : `&status=${cloneFilter}`
+    fetch(`/api/admin/clones?limit=100${status}`)
+      .then((r) => r.json())
+      .then((d) => Array.isArray(d) && setClones(d))
+      .catch(() => {})
+  }, [cloneFilter])
 
   const handlePeriodChange = (p: Period) => {
     setPeriod(p)
@@ -416,6 +436,69 @@ export default function AdminPage() {
                     <td className="py-2 text-right text-neutral-400">{timeAgo(u.created_at)}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Clone Activity */}
+        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <Copy className="w-4 h-4 text-orange-500" />
+              <h2 className="font-semibold text-neutral-900 dark:text-white">Clone Activity</h2>
+              <span className="text-xs text-neutral-400">
+                {clones.filter(c => c.status === 'complete').length} ok · {clones.filter(c => c.status === 'error').length} failed
+              </span>
+            </div>
+            <div className="flex bg-neutral-100 dark:bg-neutral-800 rounded-lg p-1 gap-1">
+              {(['all', 'complete', 'error'] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setCloneFilter(f)}
+                  className={`px-3 py-1 text-xs rounded-md font-medium transition-colors capitalize ${
+                    cloneFilter === f
+                      ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm'
+                      : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neutral-100 dark:border-neutral-800">
+                  <th className="text-left py-2 text-neutral-400 font-medium">Status</th>
+                  <th className="text-left py-2 text-neutral-400 font-medium">URL Cloned</th>
+                  <th className="text-left py-2 text-neutral-400 font-medium">User</th>
+                  <th className="text-right py-2 text-neutral-400 font-medium">When</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-50 dark:divide-neutral-800/50">
+                {clones.map((c) => (
+                  <tr key={c.id}>
+                    <td className="py-2">
+                      {c.status === 'complete' && <CheckCircle className="w-4 h-4 text-green-500" />}
+                      {c.status === 'error' && <XCircle className="w-4 h-4 text-red-500" />}
+                      {c.status === 'pending' && <Clock className="w-4 h-4 text-yellow-500" />}
+                    </td>
+                    <td className="py-2 max-w-xs">
+                      <p className="text-neutral-800 dark:text-neutral-200 truncate font-medium">{c.name}</p>
+                      <p className="text-xs text-neutral-400 truncate">{c.url}</p>
+                    </td>
+                    <td className="py-2">
+                      <p className="text-neutral-700 dark:text-neutral-300 truncate max-w-[200px]">{c.email}</p>
+                      <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${PLAN_COLOR[c.plan] ?? 'bg-neutral-100 text-neutral-600'}`}>{c.plan}</span>
+                    </td>
+                    <td className="py-2 text-right text-neutral-400 whitespace-nowrap">{timeAgo(c.created_at)}</td>
+                  </tr>
+                ))}
+                {clones.length === 0 && (
+                  <tr><td colSpan={4} className="py-8 text-center text-neutral-400 text-sm">No clones yet</td></tr>
+                )}
               </tbody>
             </table>
           </div>
