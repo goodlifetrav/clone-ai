@@ -201,6 +201,48 @@ export function cleanHtml(html: string, url = ''): string {
   // NOT generic "overlay" which Framer and other frameworks use for real layout containers.
   $('[id="modal-backdrop"], [id="overlay-backdrop"], [class="modal-backdrop"], [id="modal-bg"], [class*="modal-bg"]').remove()
 
+  // Remove promotional/marketing popups (exit intent, discount offers, newsletter signups).
+  // Target role="dialog" and common promo popup patterns — but only when they look like
+  // overlays (fixed/absolute position or explicit modal/popup class), not inline content blocks.
+  $('[role="dialog"][aria-modal="true"]').each((_, el) => {
+    // Only remove if it looks like an overlay (has backdrop, or fixed/absolute positioning)
+    const style = $(el).attr('style') ?? ''
+    const cls = ($(el).attr('class') ?? '').toLowerCase()
+    const id = ($(el).attr('id') ?? '').toLowerCase()
+    const isOverlay = style.includes('fixed') || style.includes('absolute') ||
+      cls.includes('modal') || cls.includes('popup') || cls.includes('dialog') ||
+      cls.includes('overlay') || cls.includes('lightbox') ||
+      id.includes('modal') || id.includes('popup') || id.includes('dialog')
+    if (isOverlay) $(el).remove()
+  })
+
+  // Remove elements that are explicitly promotional popups by class/id pattern
+  $([
+    '[id*="promo-modal"]', '[class*="promo-modal"]',
+    '[id*="popup-modal"]', '[class*="popup-modal"]',
+    '[id*="email-modal"]', '[class*="email-modal"]',
+    '[id*="newsletter-modal"]', '[class*="newsletter-modal"]',
+    '[id*="exit-modal"]', '[class*="exit-modal"]',
+    '[id*="offer-modal"]', '[class*="offer-modal"]',
+    '[id*="discount-modal"]', '[class*="discount-modal"]',
+    '[id*="sale-modal"]', '[class*="sale-modal"]',
+    '[id*="lightbox-modal"]', '[class*="lightbox-modal"]',
+  ].join(', ')).remove()
+
+  // Remove fixed/absolute full-screen dark overlays (modal backdrops without explicit class names).
+  // Only remove when they have near-full viewport size and dark/semi-transparent background —
+  // a strong signal it's a modal backdrop, not a hero section.
+  $('body > div, body > section').each((_, el) => {
+    const style = ($(el).attr('style') ?? '').toLowerCase()
+    const cls = ($(el).attr('class') ?? '').toLowerCase()
+    const hasFixed = style.includes('position:fixed') || style.includes('position: fixed')
+    const hasInset = style.includes('inset:0') || style.includes('inset: 0') ||
+      (style.includes('top:0') && style.includes('left:0'))
+    const looksLikeBackdrop = cls.includes('backdrop') || cls.includes('overlay-bg') || cls.includes('modal-wrap')
+    if (hasFixed && hasInset) $(el).remove()
+    else if (looksLikeBackdrop) $(el).remove()
+  })
+
   // Remove Shopify-specific hidden/utility sections that are in the DOM but not visible page content:
   // cart drawers, cart notifications, predictive search, age verification, quick-view modals, etc.
   // These sections are always present in Shopify themes but hidden until triggered by JS.

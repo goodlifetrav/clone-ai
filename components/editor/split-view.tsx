@@ -30,6 +30,7 @@ import {
   ArrowRight,
   AlertCircle,
   X,
+  Flag,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { isValidUrl } from '@/lib/utils'
@@ -95,6 +96,10 @@ export function SplitView({
   const [showMoreSheet, setShowMoreSheet] = useState(false)
   const [moreContent, setMoreContent] = useState<'visual' | 'history' | null>(null)
   const [activeFolderId, setActiveFolderId] = useState<string | undefined>(project.folder_id ?? undefined)
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [reportText, setReportText] = useState('')
+  const [reportSent, setReportSent] = useState(false)
+  const [reportSending, setReportSending] = useState(false)
   const rebuildHtmlRef = useRef('')
   const [imageGenStatus, setImageGenStatus] = useState<{ current: number; total: number } | null>(null)
   const isGenerating = isStreamingProp || chatGenerating
@@ -214,6 +219,27 @@ export function SplitView({
     setIntegrationModal('vercel')
   }
 
+  const handleReport = async () => {
+    if (!reportText.trim()) return
+    setReportSending(true)
+    try {
+      await fetch('/api/report-problem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          projectName: project.name,
+          url: project.url,
+          message: reportText.trim(),
+        }),
+      })
+      setReportSent(true)
+      setReportText('')
+      setTimeout(() => { setShowReportModal(false); setReportSent(false) }, 2000)
+    } finally {
+      setReportSending(false)
+    }
+  }
 
   const rightTabs: { id: RightTab; label: string; icon: React.ReactNode }[] = [
     { id: 'preview', label: 'Preview', icon: <Eye className="w-3.5 h-3.5" /> },
@@ -329,6 +355,17 @@ export function SplitView({
             <span className="hidden sm:inline">Settings</span>
           </Button>
         </Link>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs gap-1 flex-shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+          title="Report a Problem"
+          onClick={() => { setShowReportModal(true); setReportSent(false) }}
+        >
+          <Flag className="w-3 h-3" />
+          <span className="hidden sm:inline">Report</span>
+        </Button>
 
         <a href="https://whop.com/joined/igualai/" target="_blank" rel="noopener noreferrer">
           <Button
@@ -591,5 +628,52 @@ export function SplitView({
         </div>
       )}
     </div>
+
+      {/* Report a Problem modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowReportModal(false)} />
+          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-xl p-6 max-w-sm w-full border border-neutral-200 dark:border-neutral-800">
+            <button
+              className="absolute top-3 right-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+              onClick={() => setShowReportModal(false)}
+            >
+              <X className="w-4 h-4" />
+            </button>
+            {reportSent ? (
+              <div className="text-center py-4">
+                <p className="text-green-600 font-semibold text-lg">Thanks!</p>
+                <p className="text-sm text-neutral-500 mt-1">We got your report and will look into it.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 mb-1">
+                  <Flag className="w-4 h-4 text-red-500" />
+                  <h3 className="font-semibold text-neutral-900 dark:text-white">Report a Problem</h3>
+                </div>
+                <p className="text-xs text-neutral-500 mb-4">
+                  Something look off with <span className="font-medium">{project.name}</span>? Let us know and we&apos;ll fix it.
+                </p>
+                <textarea
+                  className="w-full text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 bg-transparent focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+                  rows={4}
+                  placeholder="e.g. Popup is showing up, colors look wrong, layout is broken..."
+                  value={reportText}
+                  onChange={(e) => setReportText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && e.metaKey && handleReport()}
+                />
+                <Button
+                  className="w-full mt-3 bg-red-500 hover:bg-red-600 text-white"
+                  size="sm"
+                  disabled={!reportText.trim() || reportSending}
+                  onClick={handleReport}
+                >
+                  {reportSending ? 'Sending...' : 'Send Report'}
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
   )
 }
