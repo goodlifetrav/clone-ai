@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyWhopWebhook, productIdToPlan, getMembershipsByUserId } from '@/lib/whop'
 import { createServiceClient } from '@/lib/supabase'
+import { sendTelegram } from '@/lib/telegram'
 
 interface WhopWebhookEvent {
   event: string
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
       .update({ plan, billing_period_start: new Date().toISOString() })
       .eq('clerk_id', whopUserId)
     console.log(`[Whop webhook] user ${whopUserId} → plan: ${plan}, billing_period_start reset`)
+    sendTelegram(`💰 <b>New purchase!</b>\n<b>Plan:</b> ${plan.toUpperCase()}\n<b>User:</b> ${whopUserId}`).catch(() => {})
   }
 
   if (event.event === 'membership.went_invalid') {
