@@ -1,9 +1,9 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-// Primary model, with a fallback for when primary is overloaded.
-// gemini-2.0-flash was deprecated for new users — using gemini-1.5-flash as fallback.
-const PRIMARY_MODEL = 'gemini-2.5-flash'
-const FALLBACK_MODEL = 'gemini-1.5-flash'
+// gemini-2.5-flash is deprecated June 2026 — upgraded to 3.5-flash.
+// Fallback to gemini-2.5-flash while 3.5 stabilizes.
+const PRIMARY_MODEL = 'gemini-3.5-flash'
+const FALLBACK_MODEL = 'gemini-2.5-flash'
 
 let _client: GoogleGenerativeAI | null = null
 
