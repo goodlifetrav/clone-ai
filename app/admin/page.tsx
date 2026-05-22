@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, TrendingUp, Globe, Zap, Clone, ArrowUpRight, RefreshCw } from 'lucide-react'
+import { Users, TrendingUp, Globe, Zap, Copy, ArrowUpRight, RefreshCw } from 'lucide-react'
 
 interface Stats {
   users: { total: number; today: number; thisWeek: number; plans: Record<string, number>; paid: number }
@@ -152,7 +152,7 @@ export default function AdminPage() {
           <StatCard icon={Users} label="Total Users" value={stats.users.total} sub={`+${stats.users.today} today`} color="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" />
           <StatCard icon={TrendingUp} label="Paid Users" value={stats.users.paid} sub={`${proCount} pro · ${agencyCount} agency`} color="bg-green-50 text-green-600 dark:bg-green-950/50 dark:text-green-400" />
           <StatCard icon={Globe} label="Visits Today" value={stats.traffic.pageViewsToday} sub={`${stats.traffic.pageViewsThisWeek} this week`} color="bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400" />
-          <StatCard icon={Clone} label="Clones Total" value={stats.clones.total} sub={`${stats.clones.thisWeek} this week`} color="bg-orange-50 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400" />
+          <StatCard icon={Copy} label="Clones Total" value={stats.clones.total} sub={`${stats.clones.thisWeek} this week`} color="bg-orange-50 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400" />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
