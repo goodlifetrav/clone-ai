@@ -54,12 +54,14 @@ export async function GET(request: NextRequest) {
     const db = createServiceClient()
     const displayName = (profile.name as string | undefined) ?? profile.email.split('@')[0]
 
-    // Check if user already exists by email
-    const { data: existingUser } = await db
+    // Check if user already exists by email (use limit(1) to handle duplicate rows gracefully)
+    const { data: existingUsers } = await db
       .from('users')
-      .select('id, clerk_id')
+      .select('id, clerk_id, plan')
       .eq('email', profile.email)
-      .single()
+      .order('created_at', { ascending: true })
+      .limit(1)
+    const existingUser = existingUsers?.[0] ?? null
 
     let userId: string
 
