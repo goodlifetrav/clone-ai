@@ -60,12 +60,15 @@ export async function POST(request: NextRequest) {
 
       if (user.plan === 'free') {
         // Count actual projects in DB — never trust a stored counter for free limit
-        const { count: actualCount } = await supabase
+        const { count: actualCount, error: countError } = await supabase
           .from('projects')
           .select('id', { count: 'exact', head: true })
           .eq('user_id', user.id)
 
-        if ((actualCount ?? 0) >= limit) {
+        console.log(`[clone-limit] user.id=${user.id} email=${user.email} plan=${user.plan} count=${actualCount} error=${countError?.message ?? 'none'} limit=${limit}`)
+
+        // Fail closed: if count query errors, deny rather than allow
+        if (countError || actualCount === null || actualCount >= limit) {
           return NextResponse.json(
             { error: 'Free tier limit reached. Upgrade to clone more websites.', upgradeRequired: true },
             { status: 403 }
