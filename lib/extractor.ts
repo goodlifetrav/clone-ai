@@ -24,6 +24,9 @@ export async function extractSite(
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-web-security', // allows reading cross-origin cssRules from CSSOM
+      '--disable-blink-features=AutomationControlled', // hide headless automation flag
+      '--disable-features=VizDisplayCompositor',
+      '--window-size=1920,1080',
     ],
   })
 
@@ -36,10 +39,53 @@ export async function extractSite(
       locale: 'en-US',
       extraHTTPHeaders: {
         'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Upgrade-Insecure-Requests': '1',
       },
     })
 
     const page = await context.newPage()
+
+    // ── Anti-bot stealth: hide navigator.webdriver and other automation signals ──
+    // Cloudflare, PerimeterX, Datadome detect headless Chrome via:
+    //   1. navigator.webdriver = true (Chrome sets this in headless mode)
+    //   2. Missing window.chrome object
+    //   3. Inconsistent navigator.plugins / navigator.languages
+    // addInitScript runs in every frame before any page JS, so it patches
+    // these before bot-detection scripts can read them.
+    await context.addInitScript(() => {
+      // Hide webdriver flag
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+      // Spoof plugins (headless has 0)
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] })
+      // Spoof languages
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] })
+      // Add window.chrome (missing in headless)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(window as any).chrome = { runtime: {}, loadTimes: () => {}, csi: () => {}, app: {} }
+      // Spoof screen dimensions (headless defaults differ)
+      Object.defineProperty(screen, 'width', { get: () => 1920 })
+      Object.defineProperty(screen, 'height', { get: () => 1080 })
+      Object.defineProperty(screen, 'availWidth', { get: () => 1920 })
+      Object.defineProperty(screen, 'availHeight', { get: () => 1040 })
+      Object.defineProperty(screen, 'colorDepth', { get: () => 24 })
+      // Permissions API: headless returns 'denied' for notifications; real Chrome prompts
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const origQuery = (window.navigator.permissions as any)?.query?.bind(window.navigator.permissions)
+      if (origQuery) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(window.navigator.permissions as any).query = (params: any) =>
+          params.name === 'notifications'
+            ? Promise.resolve({ state: 'prompt' })
+            : origQuery(params)
+      }
+    })
 
     // ── Request interception: capture all images/fonts to R2 in real-time ────────
     // This is fundamentally better than post-hoc URL scraping because it captures
