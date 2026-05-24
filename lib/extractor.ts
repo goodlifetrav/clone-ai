@@ -3,9 +3,18 @@
  *
  * Navigates to a URL, scrolls the full page to trigger lazy-loaded content,
  * forces carousel slides and lazy images to be visible, and returns the
- * fully-rendered outerHTML.
+ * fully-rendered outerHTML plus a URL map of original URLs → R2 CDN URLs
+ * (populated when projectId is provided and R2 is configured).
  */
-export async function extractSite(url: string): Promise<string> {
+export async function extractSite(
+  url: string,
+  projectId?: string
+): Promise<{
+  html: string
+  urlMap: Map<string, string>
+  screenshotBase64: string
+  contentDensity: { imgs: number; textLen: number; headings: number }
+}> {
   const { chromium } = await import('playwright')
 
   const browser = await chromium.launch({
@@ -24,9 +33,94 @@ export async function extractSite(url: string): Promise<string> {
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
         '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       viewport: { width: 1920, height: 1080 },
+      locale: 'en-US',
+      extraHTTPHeaders: {
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
     })
 
     const page = await context.newPage()
+
+    // ── Request interception: capture all images/fonts to R2 in real-time ────────
+    // This is fundamentally better than post-hoc URL scraping because it captures
+    // resources loaded by JavaScript (hero backgrounds, carousel images) that
+    // are never visible in the initial HTML source.
+    const urlMap = new Map<string, string>()
+    const uploadPromises: Promise<void>[] = []
+    const MAX_INTERCEPT = 300
+
+    if (projectId) {
+      const [{ uploadToR2, isR2Configured }, { createHash }] = await Promise.all([
+        import('./r2'),
+        import('crypto'),
+      ])
+
+      if (isR2Configured()) {
+        await page.route('**/*', async (route) => {
+          const request = route.request()
+          const resourceType = request.resourceType()
+          const resourceUrl = request.url()
+
+          const shouldCapture =
+            (resourceType === 'image' || resourceType === 'font') &&
+            !resourceUrl.startsWith('data:') &&
+            !resourceUrl.includes('r2.dev') &&
+            uploadPromises.length < MAX_INTERCEPT
+
+          if (shouldCapture) {
+            try {
+              const response = await route.fetch({ timeout: 10000 })
+              if (response.ok()) {
+                const body = await response.body()
+                const contentType = (response.headers()['content-type'] ?? '').split(';')[0].trim()
+
+                const uploadPromise = (async () => {
+                  try {
+                    const EXT_MAP: Record<string, string> = {
+                      'image/jpeg': 'jpg', 'image/jpg': 'jpg',
+                      'image/png': 'png', 'image/webp': 'webp',
+                      'image/gif': 'gif', 'image/avif': 'avif',
+                      'image/svg+xml': 'svg', 'image/x-icon': 'ico',
+                      'font/woff2': 'woff2', 'font/woff': 'woff', 'font/ttf': 'ttf',
+                      'application/font-woff2': 'woff2', 'application/x-font-woff': 'woff',
+                    }
+                    const ext =
+                      EXT_MAP[contentType] ??
+                      (resourceUrl.split('?')[0].split('.').pop()?.toLowerCase()?.slice(0, 5) ?? 'bin')
+                    const folder = contentType.startsWith('font/') || contentType.includes('font') ? 'fonts' : 'images'
+                    const hash = createHash('md5').update(resourceUrl).digest('hex')
+                    const key = `projects/${projectId}/${folder}/${hash}.${ext}`
+                    const r2Url = await uploadToR2(body, key, contentType || 'application/octet-stream')
+                    urlMap.set(resourceUrl, r2Url)
+                    // Also map protocol-relative form
+                    if (resourceUrl.startsWith('https://')) urlMap.set('//' + resourceUrl.slice(8), r2Url)
+                    else if (resourceUrl.startsWith('http://')) urlMap.set('//' + resourceUrl.slice(7), r2Url)
+                  } catch {
+                    // Upload failure is non-fatal — original URL stays in HTML
+                  }
+                })()
+                uploadPromises.push(uploadPromise)
+                await route.fulfill({ response })
+                return
+              }
+            } catch {
+              // Fetch failure — fall through to route.continue()
+            }
+          }
+
+          await route.continue()
+        })
+
+        console.log(`[extractor] Request interception enabled for project ${projectId}`)
+      }
+    }
+
+    // Handle mid-navigation: some sites redirect (www., https://, geo-redirects).
+    // Wait for the final URL to settle before proceeding.
+    let finalUrl = url
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) finalUrl = frame.url()
+    })
 
     // Try networkidle first (best quality).
     // If it times out (HubSpot, Apple — too many long-running 3rd-party requests),
@@ -36,6 +130,107 @@ export async function extractSite(url: string): Promise<string> {
       await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 })
     } catch {
       await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {})
+    }
+
+    // If the page redirected to a different URL, wait for it to fully settle
+    if (finalUrl !== url) {
+      console.log(`[extractor] Redirected: ${url} → ${finalUrl}`)
+      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() =>
+        page.waitForLoadState('load', { timeout: 10000 }).catch(() => {})
+      )
+    }
+
+    // ── Pillar 1: Dismiss modals/popups BEFORE content capture ──────────────
+    // Geo-redirect overlays, cookie consent banners, country selectors, age gates,
+    // and newsletter popups block the entire page viewport. Dismiss them early
+    // so scroll passes capture real content, not modal backdrops.
+    try {
+      // Step 1: Click close/accept buttons on any visible overlay
+      await page.evaluate(() => {
+        const closeSelectors = [
+          // OneTrust / Cookiebot / TrustArc / GDPR
+          '#onetrust-accept-btn-handler', '.onetrust-accept-btn-handler',
+          '#accept-recommended-btn-handler', '.js-accept-all-cookies',
+          '[id*="cookieConsent"] button', '[id*="CookieConsent"] button',
+          '[class*="cookie-accept"]', '[class*="cookieAccept"]',
+          '[id*="accept-cookies"]', '[class*="accept-cookies"]',
+          // Generic ARIA close/dismiss/accept
+          '[aria-label*="close" i]', '[aria-label*="dismiss" i]',
+          '[aria-label*="accept cookie" i]', '[aria-label*="accept all" i]',
+          // Modal/dialog close buttons
+          '[data-dismiss="modal"]', '[data-close]', '[data-modal-close]',
+          'button[class*="close-modal"]', 'button[class*="modal-close"]',
+          'button[class*="popup-close"]', 'button[class*="close-popup"]',
+          'button[class*="closePopup"]', 'button[class*="popupClose"]',
+          // Country / region / locale selectors
+          '[class*="country-selector"] button:first-of-type',
+          '[id*="country-selector"] button:first-of-type',
+          '[class*="region-selector"] button:first-of-type',
+          '[class*="locale-selector"] button:first-of-type',
+          // Age verification
+          '[class*="age-gate"] button[class*="yes"]',
+          '[class*="age-gate"] button[class*="enter"]',
+          '[id*="age-gate"] button',
+          // Newsletter / email capture dismiss
+          '[class*="newsletter"] [class*="close"]',
+          '[class*="email-popup"] [class*="close"]',
+          '[class*="subscribe-popup"] [class*="close"]',
+        ]
+        for (const sel of closeSelectors) {
+          const el = document.querySelector(sel) as HTMLElement | null
+          if (el && el.getBoundingClientRect().width > 0) { el.click(); break }
+        }
+      })
+
+      // Step 2: Escape key closes most native dialog/modal patterns
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(400)
+
+      // Step 3: Remove remaining high-z-index fixed overlays from DOM entirely
+      await page.evaluate(() => {
+        const overlaySelectors = [
+          '[id*="modal"]', '[id*="popup"]', '[id*="overlay"]', '[id*="cookie"]',
+          '[id*="consent"]', '[id*="gdpr"]', '[id*="age-gate"]', '[id*="country-selector"]',
+          '[class*="modal"]', '[class*="popup"]', '[class*="overlay"]',
+          '[class*="cookie"]', '[class*="consent"]', '[class*="gdpr"]',
+          '[class*="country-selector"]', '[class*="locale-selector"]',
+          '[class*="age-gate"]', '[class*="age-verify"]',
+          '[class*="newsletter-popup"]', '[class*="email-capture"]',
+        ]
+        overlaySelectors.forEach(sel => {
+          document.querySelectorAll(sel).forEach(el => {
+            const h = el as HTMLElement
+            if (!h.style) return
+            const cs = window.getComputedStyle(h)
+            const zIdx = parseInt(cs.zIndex, 10)
+            const pos = cs.position
+            if ((pos === 'fixed' || pos === 'absolute') && zIdx >= 100) {
+              const rect = h.getBoundingClientRect()
+              // Only remove if it covers a significant area of the viewport
+              if (rect.width > window.innerWidth * 0.3 || rect.height > window.innerHeight * 0.25) {
+                h.remove()
+              }
+            }
+          })
+        })
+        // Restore body/html scroll that overlays typically lock
+        document.body.style.removeProperty('overflow')
+        document.documentElement.style.removeProperty('overflow')
+      })
+    } catch { /* modal dismissal is best-effort — never fail the extraction */ }
+
+    // Helper: run a page.evaluate, but if the context was destroyed by a
+    // mid-evaluation navigation, wait for the page to settle and retry once.
+    async function safeEvaluate<T>(fn: () => T): Promise<T | undefined> {
+      try {
+        return await page.evaluate(fn)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (msg.includes('Execution context was destroyed') || msg.includes('navigation')) {
+          await page.waitForLoadState('load', { timeout: 10000 }).catch(() => {})
+          try { return await page.evaluate(fn) } catch { /* give up */ }
+        }
+      }
     }
 
     // ── Pre-pass: Remove app-based content gates BEFORE any scrolling ────────────
@@ -101,7 +296,11 @@ export async function extractSite(url: string): Promise<string> {
         const bg = el.getAttribute('data-bg')
           || el.getAttribute('data-background')
           || el.getAttribute('data-background-image')
-        if (bg) (el as HTMLElement).style.backgroundImage = `url("${bg}")`
+        if (bg) {
+          const h = el as HTMLElement
+          h.style.setProperty('--clone-bg', `url(${bg})`)
+          h.style.setProperty('background-image', 'var(--clone-bg)', 'important')
+        }
       })
 
       // Shopify-specific: srcset in data-srcset on picture source elements
@@ -193,9 +392,11 @@ export async function extractSite(url: string): Promise<string> {
           visibility: visible !important;
           display: block !important;
         }
-        /* Reveal inline-style hidden elements (opacity:0, visibility:hidden) */
-        *[style*="opacity: 0"]:not(script):not(style),
-        *[style*="opacity:0"]:not(script):not(style) {
+        /* Reveal inline-style hidden elements (opacity:0, visibility:hidden).
+           Exclude decimal values (opacity: 0.5 etc.) — the substring "opacity: 0"
+           would otherwise match "opacity: 0.5" and force overlays fully opaque. */
+        *[style*="opacity: 0"]:not([style*="opacity: 0."]):not(script):not(style),
+        *[style*="opacity:0"]:not([style*="opacity:0."]):not(script):not(style) {
           opacity: 1 !important;
         }
         *[style*="visibility: hidden"] { visibility: visible !important; }
@@ -333,36 +534,6 @@ export async function extractSite(url: string): Promise<string> {
           })
         })
 
-        // Walk ALL elements and force-show any that are computed opacity:0 or
-        // visibility:hidden. Do NOT flip display:none broadly — that breaks
-        // tab panels, light/dark theme variants, skeleton loaders, and
-        // Shopify theme toggle divs (causes white bg on dark-theme stores).
-        // display:none is only flipped for the specific product selectors above.
-        const skipRe = /cart[-_]?(?:drawer|notification|items|footer|form)|modal|popup|overlay|sidebar|predictive[-_]?search|search[-_]?modal|quick[-_]?(?:add|view|order)|age[-_]?(?:ver|gate)|cookie|consent|gdpr|intercom|drift|crisp|hubspot/i
-        document.querySelectorAll('body *').forEach((el) => {
-          const id = el.id ?? ''
-          const cls = typeof el.className === 'string' ? el.className : ''
-          if (skipRe.test(id + ' ' + cls)) return
-          const closestSkip = el.closest('[id*="cart-drawer"],[id*="cart-notification"],[class*="cart-drawer"],[id*="modal"],[id*="popup"],[id*="predictive-search"]')
-          if (closestSkip) return
-
-          const h = el as HTMLElement
-          const cs = window.getComputedStyle(h)
-          if (parseFloat(cs.opacity) < 0.1) h.style.opacity = '1'
-          if (cs.visibility === 'hidden') h.style.visibility = 'visible'
-          // Resolve CSS variable background colors — Shopify stores set
-          // --var-pdp-main-color and similar custom props via JS from metafields.
-          // After JS runs, getComputedStyle gives the actual resolved color.
-          // Inline it so the static clone doesn't lose it when JS is stripped.
-          const inlineBg = h.style.backgroundColor
-          if (inlineBg && inlineBg.startsWith('var(')) {
-            h.style.backgroundColor = cs.backgroundColor
-          }
-          const inlineColor = h.style.color
-          if (inlineColor && inlineColor.startsWith('var(')) {
-            h.style.color = cs.color
-          }
-        })
       })
 
       // Force lazy images to load eagerly so Playwright captures them
@@ -393,6 +564,61 @@ export async function extractSite(url: string): Promise<string> {
 
       await page.waitForTimeout(1000)
     }
+
+    // ── Pass 4c: Force computed opacity:0 / visibility:hidden elements visible ──
+    // Runs on ALL pages. CSS class-based opacity/visibility (used by Apple hero
+    // carousels, animated landing pages, etc.) won't be caught by the inline-style
+    // overrides in the <style> tag above — only a computed-style walk wins here.
+    await page.evaluate(() => {
+      const skipRe = /cart[-_]?(?:drawer|notification|items|footer|form)|modal|popup|overlay|sidebar|predictive[-_]?search|search[-_]?modal|quick[-_]?(?:add|view|order)|age[-_]?(?:ver|gate)|cookie|consent|gdpr|intercom|drift|crisp|hubspot/i
+      document.querySelectorAll('body *').forEach((el) => {
+        const id = el.id ?? ''
+        const cls = typeof el.className === 'string' ? el.className : ''
+        if (skipRe.test(id + ' ' + cls)) return
+        const closestSkip = el.closest('[id*="cart-drawer"],[id*="cart-notification"],[class*="cart-drawer"],[id*="modal"],[id*="popup"],[id*="predictive-search"]')
+        if (closestSkip) return
+
+        const h = el as HTMLElement
+        const cs = window.getComputedStyle(h)
+        if (parseFloat(cs.opacity) < 0.1) h.style.setProperty('opacity', '1', 'important')
+        if (cs.visibility === 'hidden') h.style.setProperty('visibility', 'visible', 'important')
+        // Clear blur filters — Apple/animated sites start elements blurred as part
+        // of entrance animations; without JS running the transition they stay blurry.
+        // Use setProperty with 'important' to beat CSS !important class rules.
+        const filter = cs.filter || (cs as CSSStyleDeclaration & {webkitFilter?: string}).webkitFilter || ''
+        if (filter && filter !== 'none' && filter.includes('blur')) {
+          h.style.setProperty('filter', 'none', 'important')
+          h.style.setProperty('-webkit-filter', 'none', 'important')
+        }
+        // Extract computed background-image and inline it so JS-set backgrounds
+        // (hero sections, card thumbnails set via JS/CSS vars) survive without JS.
+        // Use CSS custom property instead of setting backgroundImage directly:
+        // Chrome re-adds quotes to url() in CSSOM → url(&quot;...&quot;) in outerHTML
+        // which corrupts downstream URL replacement. Custom property values are
+        // stored verbatim — no quote normalization — so --clone-bg: url(https://...)
+        // serializes cleanly and the URL replacement finds the exact original URL.
+        const computedBg = cs.backgroundImage
+        if (
+          computedBg &&
+          computedBg !== 'none' &&
+          computedBg.includes('url(') &&
+          !computedBg.includes('gradient') &&
+          !h.style.backgroundImage
+        ) {
+          const bgMatch = computedBg.match(/url\(\s*["']?([^"')]+)["']?\s*\)/)
+          if (bgMatch) {
+            const rawUrl = bgMatch[1].trim()
+            h.style.setProperty('--clone-bg', `url(${rawUrl})`)
+            h.style.setProperty('background-image', 'var(--clone-bg)', 'important')
+          }
+        }
+        // Resolve CSS variable colors so static clone doesn't lose them when JS is stripped
+        const inlineBg = h.style.backgroundColor
+        if (inlineBg && inlineBg.startsWith('var(')) h.style.backgroundColor = cs.backgroundColor
+        const inlineColor = h.style.color
+        if (inlineColor && inlineColor.startsWith('var(')) h.style.color = cs.color
+      })
+    })
 
     // ── Pass 5: Second scroll pass — pick up anything that loaded late ─────────
     await page.evaluate(async () => {
@@ -456,6 +682,9 @@ export async function extractSite(url: string): Promise<string> {
       document.body.style.removeProperty('display')
       document.body.style.removeProperty('visibility')
       document.documentElement.style.removeProperty('overflow')
+      document.body.style.removeProperty('overflow')
+      document.documentElement.style.setProperty('overflow-y', 'auto', 'important')
+      document.body.style.setProperty('overflow-y', 'auto', 'important')
 
       // ── Remove app-based content gates ────────────────────────────────────────
       // EasyLockdown (and similar Shopify apps) wrap ALL page content in a
@@ -505,6 +734,34 @@ export async function extractSite(url: string): Promise<string> {
     })
     console.log(`[extractor] Writing-mode fixed on ${writingModeFixed.count} elements:`, writingModeFixed.sample)
 
+    // ── Wait for all images to finish loading ────────────────────────────────────
+    await page.waitForFunction(
+      () => [...document.images].every(img => img.complete),
+      { timeout: 8000 }
+    ).catch(() => {})
+
+    // ── Replace <video> elements with poster <img> for static clone ─────────────
+    // Video elements render as black boxes without JS. Swap each one out for
+    // its poster image so the clone shows a meaningful still frame (Apple hero
+    // sections, product demos, etc.).
+    await page.evaluate(() => {
+      document.querySelectorAll('video').forEach(video => {
+        const poster = video.getAttribute('poster')
+        if (!poster) return
+        const img = document.createElement('img')
+        img.src = poster
+        img.className = video.className
+        const inlineStyle = video.getAttribute('style') ?? ''
+        img.setAttribute('style', inlineStyle)
+        // Ensure the image fills the space the video occupied
+        img.style.width = img.style.width || '100%'
+        img.style.maxWidth = '100%'
+        img.style.objectFit = img.style.objectFit || 'cover'
+        img.style.display = img.style.display || 'block'
+        video.replaceWith(img)
+      })
+    })
+
     // ── Extract and inline CSS from CSSOM ─────────────────────────────────────
     // Also strips writing-mode:vertical-* from rule text so the saved stylesheet
     // can't re-introduce vertical text when the browser re-evaluates it.
@@ -535,7 +792,83 @@ export async function extractSite(url: string): Promise<string> {
       }
     })
 
-    return await page.evaluate(() => document.documentElement.outerHTML)
+    // ── Pass 6: Force Salient/Nectar .row-bg background elements visible ────────────
+    // Salient's CSS starts every .row-bg at opacity:0 and relies on its JavaScript to
+    // add the 'top-level' class to the section, which unlocks the opacity:1 CSS rule:
+    //   .parallax_section.top-level .row-bg:not([data-parallax-speed="fixed"]) { opacity: 1 }
+    // The 'top-level' class is added asynchronously (IntersectionObserver callbacks) and
+    // is often NOT present in the serialized outerHTML even after networkidle.
+    // Without it the hero background stays at opacity:0 — invisible despite having
+    // a correct background-image URL.
+    // Fix: after CSSOM extraction, explicitly force opacity:1 on any .row-bg that is
+    // still not fully visible, so the inline !important overrides the stylesheet rule.
+    await page.evaluate(() => {
+      document.querySelectorAll('.row-bg').forEach(el => {
+        const h = el as HTMLElement
+        const cs = window.getComputedStyle(h)
+        if (parseFloat(cs.opacity) < 0.99) {
+          h.style.setProperty('opacity', '1', 'important')
+        }
+      })
+    })
+
+    // ── Pillar 2: Screenshot + content density measurement ───────────────────
+    // Take a full-page screenshot AFTER all DOM manipulation. This is the visual
+    // ground truth. If content density is sparse (SPA with JS-only content that
+    // didn't load), the clone route uses Claude Vision to reconstruct from this.
+    let screenshotBase64 = ''
+    let contentDensity = { imgs: 0, textLen: 0, headings: 0 }
+    try {
+      ;[screenshotBase64, contentDensity] = await Promise.all([
+        page.screenshot({ fullPage: true, type: 'jpeg', quality: 75 })
+          .then(buf => buf.toString('base64')),
+        page.evaluate(() => ({
+          imgs: document.querySelectorAll('img[src]:not([src=""])').length,
+          textLen: (document.body.innerText ?? '').replace(/\s+/g, ' ').trim().length,
+          headings: document.querySelectorAll('h1,h2,h3').length,
+        })),
+      ])
+      console.log(`[extractor] Pillar 2: imgs=${contentDensity.imgs} textLen=${contentDensity.textLen} headings=${contentDensity.headings}`)
+    } catch (err) {
+      console.log('[extractor] Pillar 2 screenshot failed (non-fatal):', err)
+    }
+
+    // ── Pre-serialization: convert inline background-image to CSS custom property ──
+    // Chrome ALWAYS re-adds double quotes to url() when you assign to style.backgroundImage
+    // (even if you assign url(https://...) without quotes, Chrome normalises it back to
+    // url("https://...") internally). This means outerHTML always contains
+    // url(&quot;https://...&quot;) which corrupts downstream URL replacement.
+    // CSS custom properties bypass CSSOM quote normalisation entirely: the browser stores
+    // the value literally and serialises it verbatim — so --clone-bg: url(https://...)
+    // appears in outerHTML exactly as written, without &quot; encoding.
+    // The browser resolves var(--clone-bg) on the same element correctly when rendering.
+    await page.evaluate(() => {
+      document.querySelectorAll('[style]').forEach(el => {
+        const h = el as HTMLElement
+        const bg = h.style.backgroundImage
+        if (!bg || bg === 'none' || bg.startsWith('var(')) return
+        const match = bg.match(/url\(\s*["']?([^"')]+)["']?\s*\)/)
+        if (!match) return
+        const rawUrl = match[1].trim()
+        if (!rawUrl || rawUrl.startsWith('data:')) return
+        h.style.setProperty('--clone-bg', `url(${rawUrl})`)
+        h.style.setProperty('background-image', 'var(--clone-bg)', 'important')
+      })
+    })
+
+    const html = await page.evaluate(() => document.documentElement.outerHTML)
+
+    // Wait for all in-flight R2 uploads to complete (max 30s)
+    if (uploadPromises.length > 0) {
+      console.log(`[extractor] Waiting for ${uploadPromises.length} R2 uploads...`)
+      await Promise.race([
+        Promise.allSettled(uploadPromises),
+        new Promise<void>(resolve => setTimeout(resolve, 30000)),
+      ])
+      console.log(`[extractor] Intercepted and uploaded ${urlMap.size} resources to R2`)
+    }
+
+    return { html, urlMap, screenshotBase64, contentDensity }
   } finally {
     await browser.close()
   }

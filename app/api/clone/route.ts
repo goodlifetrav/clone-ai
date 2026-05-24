@@ -154,7 +154,7 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     const [
       { extractSite },
       { inlineCss },
-      { makeUrlsAbsolute, rehostImages },
+      { makeUrlsAbsolute, rehostImages, rehostFonts },
       { cleanHtml },
     ] = await Promise.all([
       import('@/lib/extractor'),
@@ -165,26 +165,97 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
 
     console.log(`[DOM] Starting pipeline for project ${projectId} — ${url}`)
 
-    // 1. Extract rendered HTML via headless Chromium
-    let html = await extractSite(url)
-    console.log(`[DOM] Extracted ${html.length} chars`)
+    // 1. Extract rendered HTML via headless Chromium.
+    //    Passing projectId enables real-time request interception — every image and
+    //    font the browser loads is uploaded to R2 and a urlMap is returned.
+    const { html: rawHtml, urlMap, screenshotBase64, contentDensity } = await extractSite(url, projectId)
+    let html = rawHtml
+    console.log(`[DOM] Extracted ${html.length} chars, intercepted ${urlMap.size} resources`)
 
     // 2. Inline external CSS (replaces <link rel="stylesheet"> with <style>)
     html = await inlineCss(html, url)
     console.log(`[DOM] CSS inlined — ${html.length} chars`)
 
-    // 3. Rewrite relative asset URLs to absolute
+    // 3a. Pre-decode &quot; inside CSS url() in style attributes.
+    //     Chromium serialises url("https://...") in style= attrs as url(&quot;...&quot;).
+    //     makeUrlsAbsolute() doesn't handle HTML entities inside url() and would
+    //     corrupt the URL by resolving &quot;https://... as a path relative to the site.
+    html = html.replace(/url\(&quot;([^&]+)&quot;\)/gi, 'url($1)')
+    html = html.replace(/url\(&apos;([^&]+)&apos;\)/gi, 'url($1)')
+
+    // 3b. Rewrite relative asset URLs to absolute
     html = makeUrlsAbsolute(html, url)
     console.log(`[DOM] URLs absolutified — ${html.length} chars`)
 
-    // 4. Re-host images to R2
-    console.log('[DOM] Rehosting images...')
+    // 4a. Apply URL map from real-time request interception (highest quality —
+    //     covers resources loaded by JavaScript, carousels, dynamic backgrounds).
+    if (urlMap.size > 0) {
+      const sorted = [...urlMap.entries()].sort((a, b) => b[0].length - a[0].length)
+      for (const [orig, r2] of sorted) {
+        html = html.split(orig).join(r2)
+        const encoded = orig.replace(/&/g, '&amp;')
+        if (encoded !== orig) html = html.split(encoded).join(r2)
+      }
+      console.log(`[DOM] Applied ${urlMap.size} interception URL rewrites`)
+    }
+
+    // 4b. Re-host remaining images to R2 (fallback for any URLs missed by interception,
+    //     e.g. images injected into inline style attributes by JavaScript after load).
+    console.log('[DOM] Rehosting residual images...')
     html = await rehostImages(html, projectId)
     console.log('[DOM] Images rehosted')
+
+    // 4b2. Re-host font files to R2 (fallback for web fonts not captured by Playwright
+    //      interception — e.g. @font-face fonts inlined from CSS after the browser session).
+    //      rehostImages() explicitly skips font extensions, so this is required separately.
+    console.log('[DOM] Rehosting fonts...')
+    html = await rehostFonts(html, projectId)
+    console.log('[DOM] Fonts rehosted')
+
+    // 4c. Resolve var(--clone-bg) → direct url() in style attributes.
+    //     The extractor stores background-image URLs in a --clone-bg custom property
+    //     to avoid Chrome's &quot; quote-encoding bug. After urlMap replacement the
+    //     custom property holds the final R2 URL. We now resolve it directly so the
+    //     saved HTML uses a plain background-image: url(R2URL) without any var() —
+    //     guaranteeing the browser renders it without CSS custom property resolution.
+    html = resolveCloneBg(html)
+    console.log('[DOM] var(--clone-bg) resolved')
 
     // 5. Strip scripts/tracking, add <base target="_blank">, inject AJAX placeholders
     html = cleanHtml(html, url)
     console.log(`[DOM] HTML cleaned — ${html.length} chars`)
+
+    // ── Pillar 2: SPA reconstruction via Claude Vision ────────────────────────
+    // Detect sparse DOM (JS SPA where API-fetched content didn't serialize).
+    // Threshold: very few images AND very little text = page rendered blank/incomplete.
+    // Use the Playwright screenshot (visual ground truth) + Claude Vision to reconstruct.
+    const isSparse = contentDensity.imgs < 4 && contentDensity.textLen < 800
+    if (isSparse && screenshotBase64) {
+      console.log(`[DOM] Pillar 2: sparse content detected (imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}) — Claude Vision reconstruction`)
+      try {
+        const { generateClone } = await import('@/lib/anthropic')
+        const result = await generateClone(html, screenshotBase64, url)
+        html = result.html
+        console.log(`[DOM] Pillar 2: vision reconstruction complete — ${html.length} chars, ${result.tokensUsed} tokens`)
+      } catch (err) {
+        console.log('[DOM] Pillar 2: vision reconstruction failed (using DOM result):', err)
+      }
+    }
+
+    // ── Pillar 3: Final image completeness pass ───────────────────────────────
+    // After all processing, scan for any <img src> or url() still pointing to the
+    // original domain (not yet uploaded to R2). This catches images injected by
+    // cleanHtml, header/footer sync, or Pillar 2's reconstruction that reference
+    // URLs missed by the earlier rehostImages call.
+    try {
+      const origHost = new URL(url).hostname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const residualRe = new RegExp(`["'(]https?://(?:[^"'()]*\\.)?${origHost}/[^"'()]*\\.(?:jpe?g|png|webp|gif|avif|svg)(?:\\?[^"'()]*)?(?=["'()]|\\))`, 'i')
+      if (residualRe.test(html)) {
+        console.log('[DOM] Pillar 3: residual original-domain images detected — final rehostImages pass')
+        html = await rehostImages(html, projectId)
+        console.log('[DOM] Pillar 3: residual rehost complete')
+      }
+    } catch { /* non-fatal */ }
 
     // 6. Sync header/footer from the most recently completed clone of the same domain,
     //    scoped to this user's folder (falls back to same user + same domain if no folder).
@@ -250,4 +321,35 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
         (e: unknown) => console.error('[DOM] Failed to update clone_method:', e)
       )
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveCloneBg — collapse var(--clone-bg) → direct url() in style= attributes.
+//
+// The extractor uses a CSS custom property (--clone-bg) to dodge Chrome's CSSOM
+// quote-normalisation bug that turns url("X") into url(&quot;X&quot;) in outerHTML.
+// After all URL replacements the custom property holds the final CDN URL.
+// Resolving it here means the saved HTML always contains a plain
+//   background-image: url(https://cdn...)
+// so the browser never needs to evaluate var() — working in every context.
+// ─────────────────────────────────────────────────────────────────────────────
+function resolveCloneBg(html: string): string {
+  // Match a double-quoted style attribute that contains var(--clone-bg)
+  return html.replace(
+    /(<[a-zA-Z][^>]*\sstyle=")([^"]*var\(--clone-bg\)[^"]*)"/g,
+    (_match, tagPrefix, styleContent) => {
+      // Extract the URL stored in --clone-bg: url(...)
+      const bgMatch = styleContent.match(/--clone-bg:\s*url\(([^)]+)\)/)
+      if (!bgMatch) return _match
+      const bgUrl = bgMatch[1].trim()
+      // Replace every var(--clone-bg) reference with the actual url()
+      let resolved = styleContent.replace(/\bvar\(--clone-bg\)/g, `url(${bgUrl})`)
+      // Strip the now-redundant --clone-bg custom property declaration
+      resolved = resolved
+        .replace(/;?\s*--clone-bg:[^;]+(;|$)/g, ';')
+        .replace(/;{2,}/g, ';')
+        .replace(/;\s*$/, '')
+      return `${tagPrefix}${resolved}"`
+    }
+  )
 }

@@ -3,6 +3,100 @@ import { uploadToR2, isR2Configured } from './r2'
 
 const NON_IMAGE_EXTS = new Set(['css', 'js', 'woff', 'woff2', 'ttf', 'eot', 'svg'])
 
+const FONT_EXTS = new Set(['woff', 'woff2', 'ttf', 'eot', 'otf'])
+
+const FONT_CONTENT_TYPE_TO_EXT: Record<string, string> = {
+  'font/woff2': 'woff2',
+  'font/woff': 'woff',
+  'font/ttf': 'ttf',
+  'font/otf': 'otf',
+  'application/vnd.ms-fontobject': 'eot',
+  'application/x-font-woff': 'woff',
+  'application/font-woff2': 'woff2',
+  'application/font-sfnt': 'ttf',
+  'application/octet-stream': '', // use URL extension as fallback
+}
+
+/**
+ * rehostFonts — find every font URL (@font-face src url()) in the HTML,
+ * upload each to R2, and rewrite all matching URLs in the markup.
+ * This is a fallback for fonts missed by Playwright's real-time interception
+ * (e.g. fonts inlined from CSS after the Playwright session closes).
+ */
+export async function rehostFonts(html: string, projectId: string): Promise<string> {
+  if (!isR2Configured()) return html
+
+  try {
+    const seen = new Set<string>()
+    let m: RegExpExecArray | null
+
+    // Collect URLs with font extensions from url() references in <style> blocks and inline styles
+    const cssUrlRe = /url\(\s*["']?((?!data:)[^"')]+)["']?\s*\)/gi
+    while ((m = cssUrlRe.exec(html)) !== null) {
+      const url = m[1].trim()
+      if (!url || url.startsWith('data:')) continue
+      const ext = url.split('?')[0].split('.').pop()?.toLowerCase() ?? ''
+      if (FONT_EXTS.has(ext)) seen.add(url)
+    }
+
+    const urls = [...seen]
+    if (urls.length === 0) return html
+    console.log(`[rehostFonts] Found ${urls.length} font URLs to process`)
+
+    const urlMap = new Map<string, string>()
+
+    await Promise.allSettled(
+      urls.map(async (rawUrl) => {
+        try {
+          if (rawUrl.includes('r2.dev')) return
+          const url = rawUrl.startsWith('//') ? 'https:' + rawUrl : rawUrl
+          if (!url.startsWith('http://') && !url.startsWith('https://')) return
+
+          const res = await fetch(url, {
+            signal: AbortSignal.timeout(8000),
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept': '*/*',
+            },
+          })
+          if (!res.ok) return
+
+          const contentType = res.headers.get('content-type')?.split(';')[0].trim() ?? ''
+          const urlExt = url.split('?')[0].split('.').pop()?.toLowerCase() ?? ''
+          const ext = FONT_CONTENT_TYPE_TO_EXT[contentType] ?? (FONT_EXTS.has(urlExt) ? urlExt : null)
+          if (!ext) {
+            console.log(`[rehostFonts] Skipped (unrecognized type): ${url} - ${contentType}`)
+            return
+          }
+
+          const buffer = Buffer.from(await res.arrayBuffer())
+          const hash = createHash('md5').update(url).digest('hex')
+          const key = `projects/${projectId}/fonts/${hash}.${ext}`
+          const finalContentType = contentType || `font/${ext}`
+          const r2Url = await uploadToR2(buffer, key, finalContentType)
+          urlMap.set(rawUrl, r2Url)
+          console.log(`[rehostFonts] Uploaded: ${url} -> ${r2Url}`)
+        } catch (err) {
+          console.log(`[rehostFonts] Skipped (error): ${rawUrl} - ${err}`)
+        }
+      })
+    )
+
+    if (urlMap.size === 0) return html
+
+    let result = html
+    const sorted = [...urlMap.entries()].sort((a, b) => b[0].length - a[0].length)
+    for (const [orig, r2] of sorted) {
+      result = result.split(orig).join(r2)
+      const encoded = orig.replace(/&/g, '&amp;')
+      if (encoded !== orig) result = result.split(encoded).join(r2)
+    }
+    return result
+  } catch {
+    return html
+  }
+}
+
 const CONTENT_TYPE_TO_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -19,17 +113,35 @@ export async function rehostImages(html: string, projectId: string): Promise<str
   if (!isR2Configured()) return html
 
   try {
-    // Collect unique img src URLs
+    // Collect unique image URLs from all sources
     const seen = new Set<string>()
-    const imgSrcRe = /<img\b[^>]*\bsrc=(["'])([^"']+)\1/gi
     let m: RegExpExecArray | null
+
+    // 1. <img src="...">
+    const imgSrcRe = /<img\b[^>]*\bsrc=(["'])([^"']+)\1/gi
     while ((m = imgSrcRe.exec(html)) !== null) {
       const url = m[2].trim()
-      if (url) seen.add(url)
+      if (url && !url.startsWith('data:')) seen.add(url)
     }
 
-    // Deduplicate, cap at 50
-    const urls = [...seen].slice(0, 50)
+    // 2. srcset="url [desc], url2 [desc]" — both <img srcset> and <source srcset>
+    const srcsetRe = /\bsrcset=(["'])([^"']+)\1/gi
+    while ((m = srcsetRe.exec(html)) !== null) {
+      m[2].split(',').forEach(part => {
+        const url = part.trim().split(/\s+/)[0]
+        if (url && !url.startsWith('data:')) seen.add(url)
+      })
+    }
+
+    // 3. CSS background-image: url(...) in style attributes and <style> blocks
+    const cssUrlRe = /url\(\s*["']?((?!data:)[^"')]+)["']?\s*\)/gi
+    while ((m = cssUrlRe.exec(html)) !== null) {
+      const url = m[1].trim()
+      if (url && !url.startsWith('data:')) seen.add(url)
+    }
+
+    // Deduplicate, cap at 150
+    const urls = [...seen].slice(0, 150)
     console.log(`[rehostImages] Found ${urls.length} image URLs to process`)
 
     const urlMap = new Map<string, string>()
@@ -49,7 +161,14 @@ export async function rehostImages(html: string, projectId: string): Promise<str
           if (NON_IMAGE_EXTS.has(urlExt)) return
 
           console.log(`[rehostImages] Processing: ${url}`)
-          const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+          const res = await fetch(url, {
+            signal: AbortSignal.timeout(8000),
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Referer': url,
+              'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            },
+          })
           if (!res.ok) return
 
           // Verify Content-Type is an image
@@ -112,7 +231,16 @@ export function makeUrlsAbsolute(html: string, baseUrl: string): string {
 
   function resolveUrl(raw: string): string | null {
     if (!raw) return null
-    const decoded = decodeEntities(raw.trim())
+    let decoded = decodeEntities(raw.trim())
+    // Strip surrounding quotes that arise from Chromium serializing
+    // url("...") in inline styles as url(&quot;...&quot;) in HTML attributes.
+    // Without this, &quot;https://example.com/img.jpg&quot; decodes to
+    // "https://..." which looks like a relative path and gets incorrectly
+    // resolved against the base URL, corrupting the URL entirely.
+    if (decoded.length >= 2 && decoded[0] === decoded[decoded.length - 1] &&
+        (decoded[0] === '"' || decoded[0] === "'")) {
+      decoded = decoded.slice(1, -1)
+    }
     // Special schemes — leave as-is
     if (
       decoded.startsWith('data:') ||
