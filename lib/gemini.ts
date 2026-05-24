@@ -1456,3 +1456,83 @@ export function geminiCost(inputTokens: number, outputTokens: number): number {
 export function isGeminiConfigured(): boolean {
   return !!process.env.GEMINI_API_KEY
 }
+
+/**
+ * generateCloneWithGemini — reconstruct a page from a screenshot using Gemini Vision.
+ * Used by Pillar 2 (SPA detection fallback) and is ~50x cheaper than Claude Vision.
+ * Uses gemini-2.5-flash which supports multimodal input (image + text → HTML).
+ */
+export async function generateCloneWithGemini(
+  htmlContent: string,
+  screenshotBase64: string,
+  url: string
+): Promise<{ html: string; tokensUsed: number }> {
+  const client = getClient()
+
+  // Extract page sections and image map to give Gemini structural context
+  const { buildImageMap, preprocessHtmlForClone } = await import('./anthropic')
+  const { tokenToUrl, promptBlock } = buildImageMap(htmlContent)
+
+  // Extract h1-h3 headings as page section list
+  const pageSections = (() => {
+    const texts: string[] = []
+    const re = /<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi
+    let m: RegExpExecArray | null
+    while ((m = re.exec(htmlContent)) !== null) {
+      const text = m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+      if (text.length > 1 && text.length < 120 && !texts.includes(text)) texts.push(text)
+      if (texts.length >= 20) break
+    }
+    return texts.length > 0 ? texts.map(t => `• ${t}`).join('\n') : ''
+  })()
+
+  const structuredHtml = preprocessHtmlForClone(htmlContent, 8000)
+
+  const systemPrompt = `You are a web developer. Recreate this page EXACTLY as shown in the screenshot.
+- Output ONLY raw HTML — no markdown, no code fences, no explanation
+- Start with <!DOCTYPE html> and end with </html>
+- Inline all CSS in a <style> tag in <head>
+- Match every section, color, font size, and layout from the screenshot exactly
+- Make it responsive with flexbox/grid
+- No JavaScript unless essential
+${tokenToUrl.size > 0 ? `IMAGES: Use these EXACT token names as <img src="TOKEN"> values:\n${promptBlock}` : 'IMAGES: No real images available — use styled placeholder divs instead of <img> tags.'}`
+
+  const userText = `Recreate this website (${url}) as a complete self-contained HTML file.
+${pageSections ? `Page sections to include:\n${pageSections}\n` : ''}
+${structuredHtml ? `HTML structure reference:\n\`\`\`html\n${structuredHtml}\n\`\`\`` : ''}
+Reconstruct the COMPLETE page exactly as shown. Every section, every color, every font must match.`
+
+  const model = client.getGenerativeModel({ model: FALLBACK_MODEL, systemInstruction: systemPrompt })
+
+  const result = await model.generateContent({
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType: 'image/jpeg', data: screenshotBase64 } },
+        { text: userText },
+      ],
+    }],
+    generationConfig: { maxOutputTokens: 8192 },
+  })
+
+  const raw = result.response.text().trim()
+    .replace(/^```(?:html|HTML)?\n?/, '')
+    .replace(/\n?```\s*$/, '')
+
+  const htmlMatch = raw.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i) ?? raw.match(/<html[\s\S]*<\/html>/i)
+  const claudeHtml = htmlMatch ? htmlMatch[0] : raw
+  if (!claudeHtml) throw new Error('Gemini returned empty HTML')
+
+  // Replace image tokens with real URLs
+  let finalHtml = claudeHtml
+  if (tokenToUrl.size > 0) {
+    const escaped = [...tokenToUrl.keys()].map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    const pattern = new RegExp(`\\b(${escaped.join('|')})\\b`, 'g')
+    finalHtml = finalHtml.replace(pattern, (match) => tokenToUrl.get(match) ?? match)
+  }
+
+  const inputTokens = result.response.usageMetadata?.promptTokenCount ?? 0
+  const outputTokens = result.response.usageMetadata?.candidatesTokenCount ?? 0
+
+  return { html: finalHtml, tokensUsed: inputTokens + outputTokens }
+}

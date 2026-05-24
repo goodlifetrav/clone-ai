@@ -15,9 +15,24 @@ export async function extractSite(
   screenshotBase64: string
   contentDensity: { imgs: number; textLen: number; headings: number }
 }> {
-  const { chromium } = await import('playwright')
+  // Use playwright-extra with stealth plugin to bypass Cloudflare and other
+  // bot-detection systems. Falls back to plain playwright if not installed.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let launchFn: (opts: any) => Promise<import('playwright').Browser>
+  try {
+    const playwrightExtra = await import('playwright-extra')
+    const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default
+    playwrightExtra.chromium.use(StealthPlugin())
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    launchFn = (playwrightExtra.chromium as any).launch.bind(playwrightExtra.chromium)
+    console.log('[extractor] Using playwright-extra with stealth plugin')
+  } catch {
+    const pw = await import('playwright')
+    launchFn = pw.chromium.launch.bind(pw.chromium)
+    console.log('[extractor] playwright-extra not available, using plain playwright')
+  }
 
-  const browser = await chromium.launch({
+  const browser = await launchFn({
     headless: true,
     args: [
       '--no-sandbox',

@@ -225,20 +225,28 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     html = cleanHtml(html, url)
     console.log(`[DOM] HTML cleaned — ${html.length} chars`)
 
-    // ── Pillar 2: SPA reconstruction via Claude Vision ────────────────────────
-    // Detect sparse DOM (JS SPA where API-fetched content didn't serialize).
-    // Threshold: very few images AND very little text = page rendered blank/incomplete.
-    // Use the Playwright screenshot (visual ground truth) + Claude Vision to reconstruct.
+    // ── Pillar 2: SPA reconstruction via Gemini Vision ───────────────────────
+    // Triggers when content is sparse (blank/incomplete DOM) OR when the page is
+    // a JavaScript SPA (Next.js, React, Nuxt, Vue, Angular) whose layout depends
+    // on client-side hydration that a static clone can't run.
+    // Uses Gemini 2.5 Flash Vision (~$0.01/clone) instead of Claude (~$0.50/clone).
     const isSparse = contentDensity.imgs < 4 && contentDensity.textLen < 800
-    if (isSparse && screenshotBase64) {
-      console.log(`[DOM] Pillar 2: sparse content detected (imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}) — Claude Vision reconstruction`)
+    const isSpa = /<script[^>]*id="__NEXT_DATA__"/i.test(html) ||
+      /window\.__NEXT_DATA__/i.test(html) ||
+      /<div[^>]*id="__nuxt__"/i.test(html) ||
+      /window\.__NUXT__/i.test(html) ||
+      /ng-version=/i.test(html) ||
+      (/<div[^>]*id="root"\s*><\/div>/i.test(html)) // empty React root
+
+    if ((isSparse || isSpa) && screenshotBase64) {
+      console.log(`[DOM] Pillar 2: ${isSparse ? 'sparse' : 'SPA'} detected (imgs=${contentDensity.imgs} textLen=${contentDensity.textLen} spa=${isSpa}) — Gemini Vision reconstruction`)
       try {
-        const { generateClone } = await import('@/lib/anthropic')
-        const result = await generateClone(html, screenshotBase64, url)
+        const { generateCloneWithGemini } = await import('@/lib/gemini')
+        const result = await generateCloneWithGemini(html, screenshotBase64, url)
         html = result.html
-        console.log(`[DOM] Pillar 2: vision reconstruction complete — ${html.length} chars, ${result.tokensUsed} tokens`)
+        console.log(`[DOM] Pillar 2: Gemini Vision reconstruction complete — ${html.length} chars, ${result.tokensUsed} tokens`)
       } catch (err) {
-        console.log('[DOM] Pillar 2: vision reconstruction failed (using DOM result):', err)
+        console.log('[DOM] Pillar 2: Gemini Vision failed (using DOM result):', err)
       }
     }
 

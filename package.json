@@ -27,6 +27,7 @@
     "@stripe/stripe-js": "^9.3.1",
     "@supabase/supabase-js": "^2.104.1",
     "cheerio": "^1.2.0",
+    "geoip-lite": "^1.4.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "iron-session": "^8.0.4",
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/geoip-lite": "^1.4.4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
