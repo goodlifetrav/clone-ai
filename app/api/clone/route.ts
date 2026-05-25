@@ -170,8 +170,28 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     //    font the browser loads is uploaded to R2 and a urlMap is returned.
     //    frameworkDetected comes from inside page.evaluate() — it is the only
     //    reliable SPA signal because cleanHtml below strips <script id="__NEXT_DATA__">.
-    const { html: rawHtml, urlMap, screenshotBase64, contentDensity, frameworkDetected } =
-      await extractSite(url, projectId)
+    //
+    //    Retry-once for nav-destroyed contexts: nike.com → nike.com/fr/ geo-redirect
+    //    triggers a client-side Next.js soft-navigation that destroys page.evaluate
+    //    execution contexts mid-extraction. The retry runs against the already-
+    //    redirected URL, so the context stays stable.
+    const navErrorRe = /(Execution context was destroyed|Cannot read properties of null|navigation|target closed)/i
+    let extracted: Awaited<ReturnType<typeof extractSite>>
+    try {
+      extracted = await extractSite(url, projectId)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      // BotProtectionError bubbles up — don't retry, propagate to outer catch
+      if (err instanceof Error && (err as Error & { kind?: string }).kind === 'bot-protection') {
+        throw err
+      }
+      if (!navErrorRe.test(msg)) throw err
+      console.log(`[CLONE] Extract failed with nav error — retrying once: ${msg.slice(0, 120)}`)
+      // brief breather lets any in-flight redirect settle on the target's side
+      await new Promise((r) => setTimeout(r, 1500))
+      extracted = await extractSite(url, projectId)
+    }
+    const { html: rawHtml, urlMap, screenshotBase64, contentDensity, frameworkDetected } = extracted
     let html = rawHtml
     console.log(`[CLONE] Extracted ${html.length} chars, intercepted ${urlMap.size} resources, framework=${frameworkDetected ?? 'none'}`)
 
