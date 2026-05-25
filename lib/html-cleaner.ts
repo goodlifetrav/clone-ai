@@ -461,7 +461,7 @@ export function cleanHtml(html: string, url = ''): string {
   // blocking confirm() dialog on these — which freezes the editor at 0 chars
   // until the user dismisses it. Browsers render them as whitespace anyway, so
   // replacing with a regular space is safe.
-  result = result.replace(/[  ]/g, ' ')
+  result = result.replace(/[\u2028\u2029\u0085\u000B\u000C]/g, ' ')
 
   return result
 }
