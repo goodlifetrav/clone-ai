@@ -764,7 +764,11 @@ export async function extractSite(
       window.scrollTo(0, 0)
     })
 
-    await page.waitForTimeout(1500)
+    // Bumped 1.5s → 4s: catches IntersectionObserver-driven content (delayed
+    // marketing sections, lazy-mounted SPA modules) that fire on a timer or
+    // after the second scroll pass. Adds ~2.5s to every clone but recovers
+    // sections that otherwise never make it into the DOM snapshot.
+    await page.waitForTimeout(4000)
 
     // ── Dismiss cookie banners before capturing ───────────────────────────────
     await page.evaluate(() => {
