@@ -243,12 +243,19 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     // Each Vision result is validated (size, <body>, heading overlap) before
     // replacing the DOM html. Invalid output is treated as failure and falls
     // through to the next tier so a broken Vision attempt can't corrupt the clone.
+    // Sparse-page heuristic: nothing rendered, regardless of why.
     const isSparse = contentDensity.imgs < 4 && contentDensity.textLen < 800
-    const isSpa = frameworkDetected !== null
+    // Empty SPA shell: framework detected AND content is still very thin.
+    // A hydrated Next.js page with hundreds of images is NOT a shell — running
+    // Vision on it would replace a good DOM capture with a flaky reconstruction.
+    const isEmptyShell =
+      frameworkDetected !== null &&
+      (frameworkDetected === 'spa-shell' ||
+        (contentDensity.imgs < 8 && contentDensity.textLen < 2500))
     const domHeadings = extractTopHeadings(html, 5)
 
-    if ((isSparse || isSpa) && screenshotBase64) {
-      console.log(`[CLONE] Pillar 2 trigger: sparse=${isSparse} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
+    if ((isSparse || isEmptyShell) && screenshotBase64) {
+      console.log(`[CLONE] Pillar 2 trigger: sparse=${isSparse} emptyShell=${isEmptyShell} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
       const visionHtml = await runVisionPipeline(html, screenshotBase64, url, domHeadings)
       if (visionHtml) {
         html = visionHtml
@@ -257,7 +264,7 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
         console.log(`[CLONE] Pillar 2: all Vision attempts failed validation — keeping DOM result`)
       }
     } else {
-      console.log(`[CLONE] Pillar 2 skipped: sparse=${isSparse} framework=${frameworkDetected ?? 'none'} hasScreenshot=${!!screenshotBase64}`)
+      console.log(`[CLONE] Pillar 2 skipped: sparse=${isSparse} emptyShell=${isEmptyShell} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
     }
 
     // ── Pillar 3: Final image completeness pass ───────────────────────────────
