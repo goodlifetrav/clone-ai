@@ -483,6 +483,46 @@ export function cleanHtml(html: string, url = ''): string {
     $('head').append('<style>.splide__slide *,.swiper-slide *,.slick-slide *{writing-mode:horizontal-tb!important;text-orientation:mixed!important}</style>')
   }
 
+  // ── Collapse empty AJAX shell sections ────────────────────────────────────
+  // Sites like nike.com leave fixed-height divs in the DOM that get filled by
+  // JS-loaded content (product recommendations, reviews, "shop the look").
+  // After we strip the scripts the containers are still there but empty,
+  // showing up as huge blank gaps near the page bottom. Detect and remove.
+  //
+  // A container is treated as a "dead shell" only when ALL of these hold:
+  //   - text content < 30 chars (after collapsing whitespace)
+  //   - no real <img> children (must have non-empty, non-data: src)
+  //   - no background-image in any descendant inline style
+  //   - has at least 2 descendant divs (it was meant to hold content)
+  // These four conditions together make false-positives extremely unlikely:
+  // real sections always have either text, an image, or a background.
+  $('body section, body > div, [class*="shopify-section"], [class*="section-"], [class*="-section"]').each((_, el) => {
+    const $el = $(el)
+    // Skip if already a placeholder we injected or a known utility shell
+    if ($el.find('[data-igualai-section]').length > 0) return
+    const idCls = ($el.attr('id') ?? '') + ' ' + ($el.attr('class') ?? '')
+    if (SKIP_SECTION_RE.test(idCls)) return
+
+    const text = $el.text().replace(/\s+/g, ' ').trim()
+    if (text.length >= 30) return
+
+    const realImgs = $el.find('img').filter((_, img) => {
+      const src = $(img).attr('src') ?? ''
+      return src.length > 0 && !src.startsWith('data:')
+    }).length
+    if (realImgs > 0) return
+
+    // Background-image check: any descendant (or self) with url() in inline style
+    const hasBgImage = $el.find('[style*="background-image"], [style*="--clone-bg"]').length > 0 ||
+      /background-image|--clone-bg/i.test($el.attr('style') ?? '')
+    if (hasBgImage) return
+
+    const divCount = $el.find('div').length
+    if (divCount < 2) return
+
+    $el.remove()
+  })
+
   let result = $.html()
 
   // Inject labeled placeholders for empty AJAX-loaded sections (product pages only)
