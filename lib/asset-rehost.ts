@@ -3,6 +3,25 @@ import { uploadToR2, isR2Configured } from './r2'
 
 const NON_IMAGE_EXTS = new Set(['css', 'js', 'woff', 'woff2', 'ttf', 'eot', 'svg'])
 
+/**
+ * Split a srcset value into individual `URL DESCRIPTOR` entries.
+ *
+ * srcset entries are comma-separated, BUT modern CDN URLs frequently contain
+ * commas inside the path itself (Cloudinary transforms, HelloFresh, Imgix etc.):
+ *   https://media.hellofresh.com/w_96,q_100,f_auto/logo.png 1x
+ * Naive `.split(',')` corrupts the URL into multiple bogus entries.
+ *
+ * Strategy: split only at commas that are followed by whitespace AND a token
+ * starting with a URL signature (http://, https://, //, /, data:). Anything
+ * else is a comma inside a URL path or query and must stay.
+ */
+export function splitSrcset(srcset: string): string[] {
+  return srcset
+    .split(/\s*,\s*(?=https?:\/\/|\/\/|\/[^,\s]|data:)/i)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 const FONT_EXTS = new Set(['woff', 'woff2', 'ttf', 'eot', 'otf'])
 
 const FONT_CONTENT_TYPE_TO_EXT: Record<string, string> = {
@@ -125,10 +144,11 @@ export async function rehostImages(html: string, projectId: string): Promise<str
     }
 
     // 2. srcset="url [desc], url2 [desc]" — both <img srcset> and <source srcset>
+    //    Use splitSrcset to handle Cloudinary-style URLs with commas in the path.
     const srcsetRe = /\bsrcset=(["'])([^"']+)\1/gi
     while ((m = srcsetRe.exec(html)) !== null) {
-      m[2].split(',').forEach(part => {
-        const url = part.trim().split(/\s+/)[0]
+      splitSrcset(m[2]).forEach(part => {
+        const url = part.split(/\s+/)[0]
         if (url && !url.startsWith('data:')) seen.add(url)
       })
     }
@@ -301,17 +321,19 @@ export function makeUrlsAbsolute(html: string, baseUrl: string): string {
   )
 
   // ── srcset="url [descriptor], ..." ───────────────────────────────────────
+  // CRITICAL: srcset entries may contain commas inside the URL (Cloudinary,
+  // HelloFresh, Imgix). Use splitSrcset which splits only at commas between
+  // entries (comma + space + URL signature), preserving in-URL commas.
   result = result.replace(/\bsrcset=(["'])([^"']+)\1/gi, (match, q, val) => {
-    const parts = val.split(',').map((part: string) => {
-      const trimmed = part.trim()
+    const parts = splitSrcset(val).map((trimmed) => {
       const spaceIdx = trimmed.search(/\s/)
       const urlPart = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx)
       const descriptor = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx)
       const abs = resolveUrl(urlPart)
-      if (!abs || abs === decodeEntities(urlPart.trim())) return part
+      if (!abs || abs === decodeEntities(urlPart.trim())) return trimmed
       return abs + descriptor
     })
-    return `srcset=${q}${parts.join(',')}${q}`
+    return `srcset=${q}${parts.join(', ')}${q}`
   })
 
   // ── url(...) in <style> blocks and inline style attributes ───────────────
