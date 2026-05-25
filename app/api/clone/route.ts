@@ -168,9 +168,12 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     // 1. Extract rendered HTML via headless Chromium.
     //    Passing projectId enables real-time request interception — every image and
     //    font the browser loads is uploaded to R2 and a urlMap is returned.
-    const { html: rawHtml, urlMap, screenshotBase64, contentDensity } = await extractSite(url, projectId)
+    //    frameworkDetected comes from inside page.evaluate() — it is the only
+    //    reliable SPA signal because cleanHtml below strips <script id="__NEXT_DATA__">.
+    const { html: rawHtml, urlMap, screenshotBase64, contentDensity, frameworkDetected } =
+      await extractSite(url, projectId)
     let html = rawHtml
-    console.log(`[DOM] Extracted ${html.length} chars, intercepted ${urlMap.size} resources`)
+    console.log(`[CLONE] Extracted ${html.length} chars, intercepted ${urlMap.size} resources, framework=${frameworkDetected ?? 'none'}`)
 
     // 2. Inline external CSS (replaces <link rel="stylesheet"> with <style>)
     html = await inlineCss(html, url)
@@ -225,29 +228,36 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     html = cleanHtml(html, url)
     console.log(`[DOM] HTML cleaned — ${html.length} chars`)
 
-    // ── Pillar 2: SPA reconstruction via Gemini Vision ───────────────────────
+    // ── Pillar 2: SPA reconstruction via Vision (Gemini → Claude → DOM) ──────
     // Triggers when content is sparse (blank/incomplete DOM) OR when the page is
-    // a JavaScript SPA (Next.js, React, Nuxt, Vue, Angular) whose layout depends
-    // on client-side hydration that a static clone can't run.
-    // Uses Gemini 2.5 Flash Vision (~$0.01/clone) instead of Claude (~$0.50/clone).
+    // a JavaScript SPA whose layout depends on client-side hydration the static
+    // clone can't run. frameworkDetected is captured inside Playwright BEFORE
+    // cleanHtml strips <script id="__NEXT_DATA__"> and friends — the previous
+    // post-cleanHtml regex check always returned false, making this path dead.
+    //
+    // Routing:
+    //   1. Gemini 2.5 Flash Vision (~$0.01/clone) — primary
+    //   2. Claude Sonnet Vision (~$0.05/clone with preprocessHtmlForClone) — fallback
+    //   3. DOM result — last resort (Pillar 2 silently skipped)
+    //
+    // Each Vision result is validated (size, <body>, heading overlap) before
+    // replacing the DOM html. Invalid output is treated as failure and falls
+    // through to the next tier so a broken Vision attempt can't corrupt the clone.
     const isSparse = contentDensity.imgs < 4 && contentDensity.textLen < 800
-    const isSpa = /<script[^>]*id="__NEXT_DATA__"/i.test(html) ||
-      /window\.__NEXT_DATA__/i.test(html) ||
-      /<div[^>]*id="__nuxt__"/i.test(html) ||
-      /window\.__NUXT__/i.test(html) ||
-      /ng-version=/i.test(html) ||
-      (/<div[^>]*id="root"\s*><\/div>/i.test(html)) // empty React root
+    const isSpa = frameworkDetected !== null
+    const domHeadings = extractTopHeadings(html, 5)
 
     if ((isSparse || isSpa) && screenshotBase64) {
-      console.log(`[DOM] Pillar 2: ${isSparse ? 'sparse' : 'SPA'} detected (imgs=${contentDensity.imgs} textLen=${contentDensity.textLen} spa=${isSpa}) — Gemini Vision reconstruction`)
-      try {
-        const { generateCloneWithGemini } = await import('@/lib/gemini')
-        const result = await generateCloneWithGemini(html, screenshotBase64, url)
-        html = result.html
-        console.log(`[DOM] Pillar 2: Gemini Vision reconstruction complete — ${html.length} chars, ${result.tokensUsed} tokens`)
-      } catch (err) {
-        console.log('[DOM] Pillar 2: Gemini Vision failed (using DOM result):', err)
+      console.log(`[CLONE] Pillar 2 trigger: sparse=${isSparse} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
+      const visionHtml = await runVisionPipeline(html, screenshotBase64, url, domHeadings)
+      if (visionHtml) {
+        html = visionHtml
+        console.log(`[CLONE] Pillar 2: Vision reconstruction applied — ${html.length} chars`)
+      } else {
+        console.log(`[CLONE] Pillar 2: all Vision attempts failed validation — keeping DOM result`)
       }
+    } else {
+      console.log(`[CLONE] Pillar 2 skipped: sparse=${isSparse} framework=${frameworkDetected ?? 'none'} hasScreenshot=${!!screenshotBase64}`)
     }
 
     // ── Pillar 3: Final image completeness pass ───────────────────────────────
@@ -318,6 +328,27 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
 
     console.log(`[DOM] Project ${projectId} complete via DOM extraction`)
   } catch (err) {
+    // Bug 4: distinguish bot-protection refusal from a regular pipeline crash.
+    // Saving a Cloudflare challenge page as the user's "clone" is worse than
+    // failing loudly. Mark the project as failed so the editor surfaces the
+    // real reason and doesn't fall through to the screenshot pipeline (which
+    // would re-trigger the same challenge and produce identical garbage).
+    const isBotProtection =
+      err instanceof Error && (err as Error & { kind?: string }).kind === 'bot-protection'
+
+    if (isBotProtection) {
+      console.error(`[CLONE] Bot protection on project ${projectId}: ${(err as Error).message}`)
+      await supabase
+        .from('projects')
+        .update({
+          status: 'failed',
+          clone_method: 'bot-blocked',
+          html_content: `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:48px;text-align:center;color:#333"><h1>Cannot clone this site</h1><p>${(err as Error).message}</p></body></html>`,
+        })
+        .eq('id', projectId)
+      return
+    }
+
     console.error(`[DOM] Pipeline failed for project ${projectId}:`, err)
     // Leave status as 'pending' — generate route will use screenshot fallback
     await supabase
@@ -329,6 +360,91 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
         (e: unknown) => console.error('[DOM] Failed to update clone_method:', e)
       )
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bug 2 helpers: Vision pipeline (Gemini → Claude → null) + output validation
+// ─────────────────────────────────────────────────────────────────────────────
+
+function extractTopHeadings(html: string, max = 5): string[] {
+  const headings: string[] = []
+  const re = /<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html)) !== null && headings.length < max) {
+    const text = m[1]
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;|&#\d+;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+    if (text.length >= 3 && text.length <= 120) headings.push(text)
+  }
+  return headings
+}
+
+function validateVisionOutput(visionHtml: string, domHeadings: string[]): { ok: boolean; reason?: string } {
+  if (!visionHtml || visionHtml.length < 2048) {
+    return { ok: false, reason: `too-small (${visionHtml?.length ?? 0} chars)` }
+  }
+  if (!/<body\b/i.test(visionHtml)) {
+    return { ok: false, reason: 'missing-body' }
+  }
+  if (domHeadings.length === 0) {
+    // No DOM headings to compare — pass on size/body alone (SPA shell case)
+    return { ok: true }
+  }
+  const lowerVision = visionHtml.toLowerCase()
+  const matches = domHeadings.filter((h) => lowerVision.includes(h)).length
+  if (matches < Math.min(2, domHeadings.length)) {
+    return { ok: false, reason: `heading-mismatch (${matches}/${domHeadings.length})` }
+  }
+  return { ok: true }
+}
+
+async function runVisionPipeline(
+  domHtml: string,
+  screenshotBase64: string,
+  url: string,
+  domHeadings: string[]
+): Promise<string | null> {
+  // Tier 1: Gemini 2.5 Flash (primary — cheapest)
+  try {
+    const { generateCloneWithGemini, isGeminiConfigured } = await import('@/lib/gemini')
+    if (isGeminiConfigured()) {
+      console.log('[CLONE] Vision tier 1: Gemini 2.5 Flash')
+      const result = await generateCloneWithGemini(domHtml, screenshotBase64, url)
+      const check = validateVisionOutput(result.html, domHeadings)
+      if (check.ok) {
+        console.log(`[CLONE] Vision tier 1: Gemini accepted (${result.html.length} chars, ${result.tokensUsed} tokens)`)
+        return result.html
+      }
+      console.log(`[CLONE] Vision tier 1: Gemini rejected — ${check.reason}`)
+    } else {
+      console.log('[CLONE] Vision tier 1: skipped — GEMINI_API_KEY not configured')
+    }
+  } catch (err) {
+    console.log('[CLONE] Vision tier 1: Gemini error:', err)
+  }
+
+  // Tier 2: Claude Sonnet 4.6 (fallback — only when Gemini fails or invalid)
+  // generateClone internally runs preprocessHtmlForClone — KEEP IT. Without
+  // preprocessing each call costs ~$0.20; with it, ~$0.05.
+  try {
+    const { generateClone } = await import('@/lib/anthropic')
+    console.log('[CLONE] Vision tier 2: Claude Sonnet 4.6')
+    const result = await generateClone(domHtml, screenshotBase64, url)
+    const check = validateVisionOutput(result.html, domHeadings)
+    if (check.ok) {
+      console.log(`[CLONE] Vision tier 2: Claude accepted (${result.html.length} chars, ${result.tokensUsed} tokens)`)
+      return result.html
+    }
+    console.log(`[CLONE] Vision tier 2: Claude rejected — ${check.reason}`)
+  } catch (err) {
+    console.log('[CLONE] Vision tier 2: Claude error:', err)
+  }
+
+  // Tier 3: both Vision providers failed → caller keeps DOM result
+  return null
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

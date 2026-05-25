@@ -6,6 +6,29 @@
  * fully-rendered outerHTML plus a URL map of original URLs → R2 CDN URLs
  * (populated when projectId is provided and R2 is configured).
  */
+export type FrameworkSignal =
+  | 'next'
+  | 'nuxt'
+  | 'angular'
+  | 'vue'
+  | 'react'
+  | 'spa-shell'
+  | null
+
+/**
+ * Thrown when the target URL serves a bot/CAPTCHA challenge page instead of
+ * the real site. The clone route catches this and returns a clear error to
+ * the user — saving the challenge page as a "clone" would silently corrupt
+ * the project with junk content.
+ */
+export class BotProtectionError extends Error {
+  readonly kind = 'bot-protection' as const
+  constructor(public detector: string) {
+    super(`Site is protected by a bot challenge (${detector}). The clone cannot complete.`)
+    this.name = 'BotProtectionError'
+  }
+}
+
 export async function extractSite(
   url: string,
   projectId?: string
@@ -14,6 +37,7 @@ export async function extractSite(
   urlMap: Map<string, string>
   screenshotBase64: string
   contentDensity: { imgs: number; textLen: number; headings: number }
+  frameworkDetected: FrameworkSignal
 }> {
   // Use playwright-extra with stealth plugin to bypass Cloudflare and other
   // bot-detection systems. Falls back to plain playwright if not installed.
@@ -199,6 +223,54 @@ export async function extractSite(
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() =>
         page.waitForLoadState('load', { timeout: 10000 }).catch(() => {})
       )
+    }
+
+    // ── Bug 4: Bot/CAPTCHA challenge detection ──────────────────────────────
+    // Cloudflare Managed Challenge, Datadome, PerimeterX, and Imperva all serve
+    // a placeholder HTML shell while their JS verifies the browser. Without
+    // detection we'd silently save the challenge page as the "clone" — junk.
+    // Detect via the unique signatures these services leave on the page:
+    //   - <title> ("Just a moment...", "Attention Required", etc.)
+    //   - Cloudflare's #challenge-form / .cf-browser-verification
+    //   - <iframe src="https://challenges.cloudflare.com/...">
+    //   - Datadome's window.dd_cookie_test_xxxx + body class
+    try {
+      const botSignal = await page.evaluate(() => {
+        const title = (document.title ?? '').trim()
+        const challengeTitleRe = /^(just a moment|attention required|access denied|please wait|verifying|one more step|checking your browser|security check|ddos protection)/i
+        if (challengeTitleRe.test(title)) return `title:${title.slice(0, 60)}`
+
+        if (document.querySelector('#challenge-form, #challenge-running, .cf-browser-verification, .cf-challenge-running')) {
+          return 'cf:challenge-form'
+        }
+        if (document.querySelector('iframe[src*="challenges.cloudflare.com"], iframe[src*="hcaptcha.com"], iframe[src*="recaptcha"]')) {
+          return 'cf:turnstile-iframe'
+        }
+        if (document.querySelector('[id*="cf-wrapper"], [class*="cf-error"]')) {
+          return 'cf:wrapper'
+        }
+        // Datadome — the captcha page exposes a specific script and body class
+        if (document.querySelector('script[src*="datadome"], #ddv1-captcha-container, [class*="datadome"]')) {
+          return 'datadome'
+        }
+        // PerimeterX / HUMAN
+        if (document.querySelector('#px-captcha, [class*="_pxCaptcha"]')) {
+          return 'perimeterx'
+        }
+        // Imperva
+        if (document.querySelector('iframe[src*="incapsula"]')) {
+          return 'imperva'
+        }
+        return null
+      })
+
+      if (botSignal) {
+        console.log(`[CLONE] BotProtection detected: ${botSignal} — aborting extraction`)
+        throw new BotProtectionError(botSignal)
+      }
+    } catch (err) {
+      if (err instanceof BotProtectionError) throw err
+      // page.evaluate failure is non-fatal — continue with extraction
     }
 
     // ── Pillar 1: Dismiss modals/popups BEFORE content capture ──────────────
@@ -894,6 +966,45 @@ export async function extractSite(
       console.log('[extractor] Pillar 2 screenshot failed (non-fatal):', err)
     }
 
+    // ── Bug 1 fix: Framework detection MUST run inside the browser ──────────
+    // The previous implementation regex-matched the HTML *after* cleanHtml had
+    // stripped <script id="__NEXT_DATA__"> and other framework markers — so
+    // detection always returned false and Vision reconstruction was dead code.
+    // Detect here while window globals (__NEXT_DATA__, __NUXT__, ng, etc.) and
+    // raw shell markers (#__next, #__nuxt, [data-reactroot]) are still live.
+    let frameworkDetected: FrameworkSignal = null
+    try {
+      frameworkDetected = await page.evaluate(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const w = window as any
+        if (w.__NEXT_DATA__ || document.getElementById('__NEXT_DATA__') || document.getElementById('__next')) {
+          return 'next'
+        }
+        if (w.__NUXT__ || document.getElementById('__nuxt') || document.getElementById('__nuxt__')) {
+          return 'nuxt'
+        }
+        if (document.querySelector('[ng-version]') || w.ng?.probe || w.getAllAngularRootElements) {
+          return 'angular'
+        }
+        if (w.Vue || w.__VUE__ || document.querySelector('[data-v-app]')) {
+          return 'vue'
+        }
+        if (
+          document.querySelector('[data-reactroot]') ||
+          w.__REACT_DEVTOOLS_GLOBAL_HOOK__?.renderers?.size > 0
+        ) {
+          return 'react'
+        }
+        // Empty SPA shell — common React/Vue mount points with no rendered children
+        const shell = document.querySelector('#root, #app')
+        if (shell && shell.children.length === 0) return 'spa-shell'
+        return null
+      }) as FrameworkSignal
+      console.log(`[CLONE] frameworkDetected=${frameworkDetected ?? 'none'}`)
+    } catch (err) {
+      console.log('[CLONE] framework detection failed (non-fatal):', err)
+    }
+
     // ── Pre-serialization: convert inline background-image to CSS custom property ──
     // Chrome ALWAYS re-adds double quotes to url() when you assign to style.backgroundImage
     // (even if you assign url(https://...) without quotes, Chrome normalises it back to
@@ -929,7 +1040,7 @@ export async function extractSite(
       console.log(`[extractor] Intercepted and uploaded ${urlMap.size} resources to R2`)
     }
 
-    return { html, urlMap, screenshotBase64, contentDensity }
+    return { html, urlMap, screenshotBase64, contentDensity, frameworkDetected }
   } finally {
     await browser.close()
   }

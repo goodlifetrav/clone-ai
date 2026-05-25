@@ -156,6 +156,21 @@ export function cleanHtml(html: string, url = ''): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const $ = load(html, { xmlMode: false } as any)
 
+  // ── Bug 3: Unwrap <noscript> fallback content ───────────────────────────
+  // Many sites wrap fallback <img> tags in <noscript> so they only render when
+  // JavaScript is disabled. Since we strip ALL scripts to make the clone static,
+  // the page is effectively script-free — but the browser still has scripting
+  // *enabled*, so <noscript> content stays hidden. Unwrap it here so fallback
+  // images and CSS links surface in the saved clone.
+  $('noscript').each((_, el) => {
+    const inner = $(el).html() ?? ''
+    if (inner.trim()) {
+      $(el).replaceWith(inner)
+    } else {
+      $(el).remove()
+    }
+  })
+
   $('script').each((_, el) => {
     const src = $(el).attr('src') ?? ''
     const inline = $(el).html() ?? ''
@@ -274,6 +289,18 @@ export function cleanHtml(html: string, url = ''): string {
   const consentClasses = ['consent-required', 'no-consent', 'gdpr-required', 'cookie-required', 'privacy-required']
   consentClasses.forEach(cls => bodyEl.removeClass(cls))
 
+  // ── Bug 5: referrerpolicy="no-referrer" on every <img> ────────────────────
+  // R2-hosted images don't need a referrer, and any image whose R2 upload failed
+  // and still points at the origin host will likely 403 if the referrer reveals
+  // an unexpected origin (Hostinger, localhost). no-referrer is the safest default
+  // for a static clone — strips Referer entirely so origin hotlink protection
+  // can't block the fallback fetch.
+  $('img').each((_, el) => {
+    if (!$(el).attr('referrerpolicy')) {
+      $(el).attr('referrerpolicy', 'no-referrer')
+    }
+  })
+
   // Remove SEO / crawl-directive tags that serve no purpose in a standalone clone
   $('link[rel="canonical"]').remove()
   $('meta[name="robots"]').remove()
@@ -373,8 +400,19 @@ export function cleanHtml(html: string, url = ''): string {
     })
   })
 
-  // Step 3: Track — keep overflow hidden, clear JS-set height so rows can wrap
+  // Returns true when el (or its ancestor) is a fullscreen hero slider, not a product carousel.
+  // Fullscreen heroes need the first slide shown at 100% width, not a flex-wrap thumbnail grid.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function isFullscreenHero(el: any): boolean {
+    return $(el).is('[class*="fullscreen"],[class*="-hero"],[class*="hero-"],[class*="-banner"],[class*="banner-"],[class*="page-header"],[class*="n-slideshow"]') ||
+      $(el).closest('[class*="fullscreen"],[class*="n-slideshow"],[class*="-hero"],[class*="hero-"],[class*="-banner"],[class*="banner-"],[class*="page-header"]').length > 0
+  }
+
+  // Step 3: Track — keep overflow hidden, clear JS-set height so rows can wrap.
+  // Skip fullscreen hero containers — their CSS sets the correct height; overriding
+  // with height:auto collapses the slide to zero.
   $('.splide__track, .swiper-container, .swiper, .slick-list').each((_, el) => {
+    if (isFullscreenHero(el)) return
     const s = ($(el).attr('style') ?? '')
       .replace(/overflow\s*:[^;]+;?\s*/gi, '')
       .replace(/height\s*:[^;]+;?\s*/gi, '')
@@ -382,8 +420,22 @@ export function cleanHtml(html: string, url = ''): string {
     $(el).attr('style', s ? `${s};overflow:hidden;height:auto` : 'overflow:hidden;height:auto')
   })
 
-  // Step 4: List — reset transform, enable flex-wrap
+  // Step 4: List — reset transform, enable flex-wrap.
+  // Fullscreen heroes get a different treatment: show only the first slide at 100% width
+  // so the hero image fills the viewport. Product carousels get the flex-wrap grid.
   $('.splide__list, .swiper-wrapper, .slick-track').each((_, el) => {
+    if (isFullscreenHero(el)) {
+      $(el).attr('style', 'display:block;transform:none;width:100%;list-style:none;padding:0;height:100%')
+      $(el).children().each((i, slide) => {
+        $(slide).removeAttr('aria-hidden')
+        if (i === 0) {
+          $(slide).attr('style', 'display:block;width:100%;height:100%')
+        } else {
+          $(slide).attr('style', 'display:none')
+        }
+      })
+      return
+    }
     $(el).attr('style', 'display:flex;flex-wrap:wrap;gap:12px;transform:none;width:100%;list-style:none;padding:0;height:auto')
     $(el).children().each((_, slide) => {
       $(slide).removeAttr('aria-hidden')
