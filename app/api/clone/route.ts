@@ -149,6 +149,31 @@ export async function POST(request: NextRequest) {
 
 async function runDomPipeline(projectId: string, url: string, userId: string): Promise<void> {
   const supabase = createServiceClient()
+  const tPipelineStart = Date.now()
+
+  // [CLONE-DEBUG] helper: emit one structured log line per stage so we can grep
+  // exactly when the HTML changes size, when a stage takes too long, and what
+  // was passed where. Logs ONLY — no behavior changes.
+  const dlog = (stage: string, extra: Record<string, unknown> = {}) => {
+    const payload = { stage, projectId, url, elapsedMs: Date.now() - tPipelineStart, ...extra }
+    console.log(`[CLONE-DEBUG] ${JSON.stringify(payload)}`)
+  }
+  // signalSweep: re-runs the framework signal check on raw HTML (string scan,
+  // not browser eval) at any pipeline stage. Confirms whether cleanHtml or
+  // another transformation has stripped specific SPA markers from the HTML.
+  const signalSweep = (label: string, h: string) => {
+    dlog(`signals.${label}`, {
+      hasNextDataScript: /<script[^>]*id=["']__NEXT_DATA__["']/i.test(h),
+      hasNextDataWindow: /window\.__NEXT_DATA__/i.test(h),
+      hasNuxtRoot: /<div[^>]*id=["']__nuxt(__)?["']/i.test(h),
+      hasNuxtWindow: /window\.__NUXT__/i.test(h),
+      hasReactRoot: /data-reactroot/i.test(h),
+      hasNgVersion: /ng-version=/i.test(h),
+      hasDataVApp: /data-v-app/i.test(h),
+      hasNextRootDiv: /<div[^>]*id=["']__next["']/i.test(h),
+      bodyLen: h.match(/<body[\s\S]*<\/body>/i)?.[0]?.length ?? 0,
+    })
+  }
 
   try {
     const [
@@ -163,6 +188,7 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
       import('@/lib/html-cleaner'),
     ])
 
+    dlog('pipeline.start')
     console.log(`[DOM] Starting pipeline for project ${projectId} — ${url}`)
 
     // 1. Extract rendered HTML via headless Chromium.
@@ -194,10 +220,20 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     const { html: rawHtml, urlMap, screenshotBase64, contentDensity, frameworkDetected } = extracted
     let html = rawHtml
     console.log(`[CLONE] Extracted ${html.length} chars, intercepted ${urlMap.size} resources, framework=${frameworkDetected ?? 'none'}`)
+    dlog('after.extract', {
+      htmlLen: html.length,
+      urlMapSize: urlMap.size,
+      frameworkDetected: frameworkDetected ?? 'none',
+      screenshotBytes: screenshotBase64.length,
+      contentDensity,
+    })
+    signalSweep('after.extract', html)
 
     // 2. Inline external CSS (replaces <link rel="stylesheet"> with <style>)
+    const tInline = Date.now()
     html = await inlineCss(html, url)
     console.log(`[DOM] CSS inlined — ${html.length} chars`)
+    dlog('after.inlineCss', { htmlLen: html.length, stageMs: Date.now() - tInline })
 
     // 3a. Pre-decode &quot; inside CSS url() in style attributes.
     //     Chromium serialises url("https://...") in style= attrs as url(&quot;...&quot;).
@@ -207,11 +243,14 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     html = html.replace(/url\(&apos;([^&]+)&apos;\)/gi, 'url($1)')
 
     // 3b. Rewrite relative asset URLs to absolute
+    const tAbs = Date.now()
     html = makeUrlsAbsolute(html, url)
     console.log(`[DOM] URLs absolutified — ${html.length} chars`)
+    dlog('after.absolutify', { htmlLen: html.length, stageMs: Date.now() - tAbs })
 
     // 4a. Apply URL map from real-time request interception (highest quality —
     //     covers resources loaded by JavaScript, carousels, dynamic backgrounds).
+    const tUrlMap = Date.now()
     if (urlMap.size > 0) {
       const sorted = [...urlMap.entries()].sort((a, b) => b[0].length - a[0].length)
       for (const [orig, r2] of sorted) {
@@ -221,19 +260,24 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
       }
       console.log(`[DOM] Applied ${urlMap.size} interception URL rewrites`)
     }
+    dlog('after.urlMapApply', { htmlLen: html.length, urlMapSize: urlMap.size, stageMs: Date.now() - tUrlMap })
 
     // 4b. Re-host remaining images to R2 (fallback for any URLs missed by interception,
     //     e.g. images injected into inline style attributes by JavaScript after load).
+    const tImg = Date.now()
     console.log('[DOM] Rehosting residual images...')
     html = await rehostImages(html, projectId)
     console.log('[DOM] Images rehosted')
+    dlog('after.rehostImages', { htmlLen: html.length, stageMs: Date.now() - tImg })
 
     // 4b2. Re-host font files to R2 (fallback for web fonts not captured by Playwright
     //      interception — e.g. @font-face fonts inlined from CSS after the browser session).
     //      rehostImages() explicitly skips font extensions, so this is required separately.
+    const tFont = Date.now()
     console.log('[DOM] Rehosting fonts...')
     html = await rehostFonts(html, projectId)
     console.log('[DOM] Fonts rehosted')
+    dlog('after.rehostFonts', { htmlLen: html.length, stageMs: Date.now() - tFont })
 
     // 4c. Resolve var(--clone-bg) → direct url() in style attributes.
     //     The extractor stores background-image URLs in a --clone-bg custom property
@@ -243,10 +287,15 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     //     guaranteeing the browser renders it without CSS custom property resolution.
     html = resolveCloneBg(html)
     console.log('[DOM] var(--clone-bg) resolved')
+    dlog('after.resolveCloneBg', { htmlLen: html.length })
+    signalSweep('before.cleanHtml', html)
 
     // 5. Strip scripts/tracking, add <base target="_blank">, inject AJAX placeholders
+    const tClean = Date.now()
     html = cleanHtml(html, url)
     console.log(`[DOM] HTML cleaned — ${html.length} chars`)
+    dlog('after.cleanHtml', { htmlLen: html.length, stageMs: Date.now() - tClean })
+    signalSweep('after.cleanHtml', html)
 
     // ── Pillar 2: SPA reconstruction via Vision (Gemini → Claude → DOM) ──────
     // Triggers when content is sparse (blank/incomplete DOM) OR when the page is
@@ -281,9 +330,28 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     const hasSubstantialHtml = html.length >= HAS_REAL_CONTENT_BYTES
     const domHeadings = extractTopHeadings(html, 5)
 
-    if ((isSparse || isEmptyShell) && !hasSubstantialHtml && screenshotBase64) {
+    const willTrigger = (isSparse || isEmptyShell) && !hasSubstantialHtml && !!screenshotBase64
+    dlog('pillar2.decision', {
+      isSparse,
+      isEmptyShell,
+      hasSubstantialHtml,
+      hasScreenshot: !!screenshotBase64,
+      willTrigger,
+      frameworkDetected: frameworkDetected ?? 'none',
+      contentDensity,
+      htmlLen: html.length,
+      domHeadingsCount: domHeadings.length,
+    })
+
+    if (willTrigger) {
       console.log(`[CLONE] Pillar 2 trigger: sparse=${isSparse} emptyShell=${isEmptyShell} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
+      const tVision = Date.now()
       const visionHtml = await runVisionPipeline(html, screenshotBase64, url, domHeadings)
+      dlog('pillar2.vision.result', {
+        accepted: !!visionHtml,
+        outputLen: visionHtml?.length ?? 0,
+        stageMs: Date.now() - tVision,
+      })
       if (visionHtml) {
         html = visionHtml
         console.log(`[CLONE] Pillar 2: Vision reconstruction applied — ${html.length} chars`)
@@ -350,6 +418,8 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
 
     // 7. Save to database
     console.log(`[DOM] Saving ${html.length} chars to DB...`)
+    dlog('before.save', { htmlLen: html.length })
+    const tSave = Date.now()
     const { error: saveError } = await supabase
       .from('projects')
       .update({ html_content: html, status: 'complete', clone_method: 'dom' })
@@ -360,6 +430,12 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
       throw new Error(`Supabase save failed: ${saveError.message}`)
     }
 
+    dlog('pipeline.end', {
+      savedHtmlLen: html.length,
+      saveStageMs: Date.now() - tSave,
+      totalMs: Date.now() - tPipelineStart,
+      cloneMethod: 'dom',
+    })
     console.log(`[DOM] Project ${projectId} complete via DOM extraction`)
   } catch (err) {
     // Bug 4: distinguish bot-protection refusal from a regular pipeline crash.
@@ -372,6 +448,11 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
 
     if (isBotProtection) {
       console.error(`[CLONE] Bot protection on project ${projectId}: ${(err as Error).message}`)
+      dlog('pipeline.end', {
+        cloneMethod: 'bot-blocked',
+        totalMs: Date.now() - tPipelineStart,
+        errorMessage: (err as Error).message,
+      })
       await supabase
         .from('projects')
         .update({
@@ -384,6 +465,11 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     }
 
     console.error(`[DOM] Pipeline failed for project ${projectId}:`, err)
+    dlog('pipeline.end', {
+      cloneMethod: 'screenshot',
+      totalMs: Date.now() - tPipelineStart,
+      errorMessage: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+    })
     // Leave status as 'pending' — generate route will use screenshot fallback
     await supabase
       .from('projects')
@@ -441,13 +527,29 @@ async function runVisionPipeline(
   url: string,
   domHeadings: string[]
 ): Promise<string | null> {
+  console.log(`[CLONE-DEBUG] ${JSON.stringify({
+    stage: 'pillar2.vision.input',
+    inputHtmlLen: domHtml.length,
+    screenshotBytes: screenshotBase64.length,
+    domHeadingsCount: domHeadings.length,
+  })}`)
+
   // Tier 1: Gemini 2.5 Flash (primary — cheapest)
   try {
     const { generateCloneWithGemini, isGeminiConfigured } = await import('@/lib/gemini')
     if (isGeminiConfigured()) {
       console.log('[CLONE] Vision tier 1: Gemini 2.5 Flash')
+      const tT1 = Date.now()
       const result = await generateCloneWithGemini(domHtml, screenshotBase64, url)
       const check = validateVisionOutput(result.html, domHeadings)
+      console.log(`[CLONE-DEBUG] ${JSON.stringify({
+        stage: 'pillar2.tier1.gemini',
+        outputLen: result.html.length,
+        tokensUsed: result.tokensUsed,
+        accepted: check.ok,
+        reason: check.reason ?? null,
+        stageMs: Date.now() - tT1,
+      })}`)
       if (check.ok) {
         console.log(`[CLONE] Vision tier 1: Gemini accepted (${result.html.length} chars, ${result.tokensUsed} tokens)`)
         return result.html
@@ -455,9 +557,14 @@ async function runVisionPipeline(
       console.log(`[CLONE] Vision tier 1: Gemini rejected — ${check.reason}`)
     } else {
       console.log('[CLONE] Vision tier 1: skipped — GEMINI_API_KEY not configured')
+      console.log(`[CLONE-DEBUG] ${JSON.stringify({ stage: 'pillar2.tier1.gemini', skipped: true, reason: 'no-api-key' })}`)
     }
   } catch (err) {
     console.log('[CLONE] Vision tier 1: Gemini error:', err)
+    console.log(`[CLONE-DEBUG] ${JSON.stringify({
+      stage: 'pillar2.tier1.gemini',
+      error: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+    })}`)
   }
 
   // Tier 2: Claude Sonnet 4.6 (fallback — only when Gemini fails or invalid)
@@ -466,8 +573,17 @@ async function runVisionPipeline(
   try {
     const { generateClone } = await import('@/lib/anthropic')
     console.log('[CLONE] Vision tier 2: Claude Sonnet 4.6')
+    const tT2 = Date.now()
     const result = await generateClone(domHtml, screenshotBase64, url)
     const check = validateVisionOutput(result.html, domHeadings)
+    console.log(`[CLONE-DEBUG] ${JSON.stringify({
+      stage: 'pillar2.tier2.claude',
+      outputLen: result.html.length,
+      tokensUsed: result.tokensUsed,
+      accepted: check.ok,
+      reason: check.reason ?? null,
+      stageMs: Date.now() - tT2,
+    })}`)
     if (check.ok) {
       console.log(`[CLONE] Vision tier 2: Claude accepted (${result.html.length} chars, ${result.tokensUsed} tokens)`)
       return result.html
@@ -475,6 +591,10 @@ async function runVisionPipeline(
     console.log(`[CLONE] Vision tier 2: Claude rejected — ${check.reason}`)
   } catch (err) {
     console.log('[CLONE] Vision tier 2: Claude error:', err)
+    console.log(`[CLONE-DEBUG] ${JSON.stringify({
+      stage: 'pillar2.tier2.claude',
+      error: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+    })}`)
   }
 
   // Tier 3: both Vision providers failed → caller keeps DOM result

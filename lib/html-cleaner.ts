@@ -156,6 +156,21 @@ export function cleanHtml(html: string, url = ''): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const $ = load(html, { xmlMode: false } as any)
 
+  // [CLONE-DEBUG] checkpoint: record cheerio-rendered body length at each
+  // major sub-step so we can pinpoint which removal call is shrinking the
+  // body unexpectedly. Logs only — no behavior change.
+  const ckpt = (step: string) => {
+    const bodyHtml = $('body').html() ?? ''
+    console.log(`[CLONE-DEBUG] ${JSON.stringify({
+      stage: `cleanHtml.${step}`,
+      bodyLen: bodyHtml.length,
+      imgCount: $('img').length,
+      sectionCount: $('section').length,
+      divCount: $('div').length,
+    })}`)
+  }
+  ckpt('start')
+
   // ── Bug 3: Unwrap <noscript> fallback content ───────────────────────────
   // Many sites wrap fallback <img> tags in <noscript> so they only render when
   // JavaScript is disabled. Since we strip ALL scripts to make the clone static,
@@ -195,6 +210,8 @@ export function cleanHtml(html: string, url = ''): string {
 
   // Remove country/region selector overlays (Apple-style geo-redirect banners)
   $('[id*="country"], [class*="country-selector"], [class*="locale-selector"], [id*="locale"], [class*="region-selector"], [id*="region-selector"], [class*="geo-"], [id*="geo-banner"], [class*="country-banner"]').remove()
+
+  ckpt('after.scripts')
 
   // ── Strip EasyLockdown and similar app content-gate inline styles ────────────
   // These apps set style="display:none" on a wrapper div that contains the full
@@ -289,6 +306,8 @@ export function cleanHtml(html: string, url = ''): string {
   const consentClasses = ['consent-required', 'no-consent', 'gdpr-required', 'cookie-required', 'privacy-required']
   consentClasses.forEach(cls => bodyEl.removeClass(cls))
 
+  ckpt('after.modalsAndPopups')
+
   // ── Bug 5: referrerpolicy="no-referrer" on every <img> ────────────────────
   // R2-hosted images don't need a referrer, and any image whose R2 upload failed
   // and still points at the origin host will likely 403 if the referrer reveals
@@ -329,6 +348,8 @@ export function cleanHtml(html: string, url = ''): string {
       .replace(/writing-mode\s*:\s*sideways-lr/gi, 'writing-mode:horizontal-tb')
     $(styleEl).html(css)
   })
+
+  ckpt('before.carouselNormalize')
 
   // ── Normalize carousel containers to CSS grid ─────────────────────────────
   // Strategy: replace the full carousel with a clean flex-wrap product grid.
@@ -539,15 +560,31 @@ export function cleanHtml(html: string, url = ''): string {
     $('head').append('<style>.splide__slide *,.swiper-slide *,.slick-slide *{writing-mode:horizontal-tb!important;text-orientation:mixed!important}</style>')
   }
 
+  ckpt('after.carouselNormalize')
+
   // Remove sections Playwright tagged as empty AJAX shells. The marking is
   // done from inside the live browser where we know the real rendered height
   // and visible text — far safer than guessing from static HTML.
+  const emptyShellCount = $('[data-igualai-empty="1"]').length
   $('[data-igualai-empty="1"]').remove()
+  console.log(`[CLONE-DEBUG] ${JSON.stringify({
+    stage: 'cleanHtml.after.emptyShellRemove',
+    removed: emptyShellCount,
+    bodyLen: ($('body').html() ?? '').length,
+  })}`)
 
   let result = $.html()
 
   // Inject labeled placeholders for empty AJAX-loaded sections (product pages only)
-  if (url) result = injectAjaxPlaceholders(result, url)
+  if (url) {
+    const lenBefore = result.length
+    result = injectAjaxPlaceholders(result, url)
+    console.log(`[CLONE-DEBUG] ${JSON.stringify({
+      stage: 'cleanHtml.after.ajaxPlaceholders',
+      htmlLen: result.length,
+      delta: result.length - lenBefore,
+    })}`)
+  }
 
   // Strip Unicode line/paragraph separators (U+2028 / U+2029) and other unusual
   // line terminators (U+0085 NEL, U+000B VT, U+000C FF). Monaco editor opens a

@@ -217,6 +217,9 @@ export async function extractSite(
       await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {})
     }
 
+    const tNav = Date.now()
+    console.log(`[CLONE-DEBUG] stage=extract.goto url=${url} finalUrl=${finalUrl}`)
+
     // If the page redirected to a different URL, wait for it to fully settle
     if (finalUrl !== url) {
       console.log(`[extractor] Redirected: ${url} → ${finalUrl}`)
@@ -240,6 +243,43 @@ export async function extractSite(
         }
         if (Date.now() - stableSince >= 3000) break
       }
+    }
+
+    // ── Pre-clean framework signal sweep ────────────────────────────────────
+    // Captures the raw SPA / framework signals from the live page BEFORE any
+    // DOM mutation passes. Logged via [CLONE-DEBUG] for benchmark diagnosis;
+    // does NOT change any extraction behavior.
+    try {
+      const signals = await page.evaluate(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const w = window as any
+        return {
+          nextData_window: !!w.__NEXT_DATA__,
+          nextData_script: !!document.getElementById('__NEXT_DATA__'),
+          nextRoot: !!document.getElementById('__next'),
+          nuxt_window: !!w.__NUXT__,
+          nuxt_root: !!document.getElementById('__nuxt') || !!document.getElementById('__nuxt__'),
+          initialState: !!w.__INITIAL_STATE__,
+          dataReactroot: !!document.querySelector('[data-reactroot]'),
+          ngVersion: !!document.querySelector('[ng-version]'),
+          dataVApp: !!document.querySelector('[data-v-app]'),
+          dataServerRendered: !!document.querySelector('[data-server-rendered]'),
+          vueGlobal: !!w.Vue || !!w.__VUE__,
+          reactDevtools:
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            !!(w.__REACT_DEVTOOLS_GLOBAL_HOOK__ as any)?.renderers?.size,
+          rootEmpty: (() => {
+            const r = document.querySelector('#root, #app')
+            return r ? r.children.length === 0 : false
+          })(),
+          title: (document.title ?? '').slice(0, 80),
+          bodyTextLen: (document.body?.innerText ?? '').replace(/\s+/g, ' ').trim().length,
+          imgCount: document.querySelectorAll('img').length,
+        }
+      })
+      console.log(`[CLONE-DEBUG] stage=extract.signals.pre-clean ${JSON.stringify(signals)}`)
+    } catch (err) {
+      console.log('[CLONE-DEBUG] stage=extract.signals.pre-clean error=', err instanceof Error ? err.message.slice(0, 120) : err)
     }
 
     // ── Bug 4: Bot/CAPTCHA challenge detection ──────────────────────────────
@@ -1114,7 +1154,9 @@ export async function extractSite(
       })
     })
 
+    const tBeforeSerialize = Date.now()
     const html = await page.evaluate(() => document.documentElement.outerHTML)
+    console.log(`[CLONE-DEBUG] stage=extract.serialize htmlLen=${html.length} bodyLen=${(html.match(/<body[\s\S]*<\/body>/i)?.[0]?.length ?? 0)} extractMs=${tBeforeSerialize - tNav}`)
 
     // Wait for all in-flight R2 uploads to complete (max 30s)
     if (uploadPromises.length > 0) {
