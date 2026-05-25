@@ -272,9 +272,16 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
       frameworkDetected !== null &&
       (frameworkDetected === 'spa-shell' ||
         (contentDensity.imgs < 8 && contentDensity.textLen < 2500))
+    // HARD SIZE GUARD: contentDensity has been observed to misreport 0/0 on
+    // nike.com despite a 1.2MB extraction (mid-extraction soft-nav races the
+    // measurement). If the extracted HTML is substantial we trust it over the
+    // density numbers — re-routing 1MB+ of clean DOM through Vision is the
+    // wrong move every time, and it burns ~$0.10/clone on Claude fallbacks.
+    const HAS_REAL_CONTENT_BYTES = 100_000
+    const hasSubstantialHtml = html.length >= HAS_REAL_CONTENT_BYTES
     const domHeadings = extractTopHeadings(html, 5)
 
-    if ((isSparse || isEmptyShell) && screenshotBase64) {
+    if ((isSparse || isEmptyShell) && !hasSubstantialHtml && screenshotBase64) {
       console.log(`[CLONE] Pillar 2 trigger: sparse=${isSparse} emptyShell=${isEmptyShell} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
       const visionHtml = await runVisionPipeline(html, screenshotBase64, url, domHeadings)
       if (visionHtml) {
@@ -284,7 +291,7 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
         console.log(`[CLONE] Pillar 2: all Vision attempts failed validation — keeping DOM result`)
       }
     } else {
-      console.log(`[CLONE] Pillar 2 skipped: sparse=${isSparse} emptyShell=${isEmptyShell} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
+      console.log(`[CLONE] Pillar 2 skipped: sparse=${isSparse} emptyShell=${isEmptyShell} hasSubstantialHtml=${hasSubstantialHtml} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
     }
 
     // ── Pillar 3: Final image completeness pass ───────────────────────────────

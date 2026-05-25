@@ -442,12 +442,60 @@ export function cleanHtml(html: string, url = ''): string {
   })
 
   // Step 4: List — reset transform, enable flex-wrap.
-  // Three layouts:
+  //
+  // Library-agnostic detection: the named selectors below cover Splide, Swiper,
+  // and Slick. After that we ALSO scan for custom carousels (Nike's Next.js
+  // implementation, hand-rolled React/Vue ones) by looking for any <ul>/<ol>/<div>
+  // whose children share a "slide-like" pattern. Without this Nike's <li class="slide
+  // item-N"> list never gets normalized and the products stack vertically.
+  //
+  // Three layouts per container:
   //   - Fullscreen heroes: first slide only, 100% width
   //   - Wide-content carousels (testimonials, quotes, reviews, long text):
   //     vertical stack, each slide at 100% width with a max-width for readability
   //   - Default (product carousels): flex-wrap grid with 180-320px slides
-  $('.splide__list, .swiper-wrapper, .slick-track').each((_, el) => {
+  // All branches cap visible slides at MAX_VISIBLE_SLIDES; the rest get
+  // display:none. Matches the UX of a real carousel (which only shows a few
+  // at a time) and kills excessive vertical scroll on 9+ slide rails.
+  const MAX_VISIBLE_SLIDES = 6
+  const namedCarousels = $('.splide__list, .swiper-wrapper, .slick-track').toArray()
+  const customCarousels: typeof namedCarousels = []
+  $('ul, ol, div').each((_, el) => {
+    if (namedCarousels.includes(el)) return
+    const $el = $(el)
+    const children = $el.children()
+    const n = children.length
+    if (n < 3 || n > 30) return
+    let slideLike = 0
+    children.each((_, c) => {
+      const cls = $(c).attr('class') ?? ''
+      const tag = (c as { tagName?: string }).tagName ?? ''
+      // Match: any token containing the word "slide", or "item-N" suffix,
+      // or carousel-item / carousel_item, or data-slide / data-index attrs.
+      // Also: <li>'s direct under a parent are inherently slide-like in lists.
+      if (
+        /\bslide\b/i.test(cls) ||
+        /\bitem-\d+\b/i.test(cls) ||
+        /\bcarousel[-_]item\b/i.test(cls) ||
+        $(c).attr('data-slide') !== undefined ||
+        $(c).attr('data-index') !== undefined ||
+        $(c).attr('data-slide-index') !== undefined ||
+        (tag.toLowerCase() === 'li' && /\bslide\b|\bitem\b/i.test(cls))
+      ) {
+        slideLike++
+      }
+    })
+    // Need 3+ slide-like children AND they must dominate the container (>=70%).
+    if (slideLike >= 3 && slideLike / n >= 0.7) {
+      customCarousels.push(el)
+    }
+  })
+  const allCarousels = [...namedCarousels, ...customCarousels]
+  if (customCarousels.length > 0) {
+    console.log(`[html-cleaner] Found ${customCarousels.length} custom (non-Splide/Swiper/Slick) carousels`)
+  }
+
+  allCarousels.forEach((el) => {
     if (isFullscreenHero(el)) {
       $(el).attr('style', 'display:block;transform:none;width:100%;list-style:none;padding:0;height:100%')
       $(el).children().each((i, slide) => {
@@ -462,16 +510,24 @@ export function cleanHtml(html: string, url = ''): string {
     }
     if (isWideContentCarousel(el)) {
       $(el).attr('style', 'display:flex;flex-direction:column;gap:24px;transform:none;width:100%;list-style:none;padding:0;height:auto;align-items:center')
-      $(el).children().each((_, slide) => {
+      $(el).children().each((i, slide) => {
         $(slide).removeAttr('aria-hidden')
-        $(slide).attr('style', 'display:block;width:100%;max-width:900px;height:auto;overflow:visible')
+        if (i < MAX_VISIBLE_SLIDES) {
+          $(slide).attr('style', 'display:block;width:100%;max-width:900px;height:auto;overflow:visible')
+        } else {
+          $(slide).attr('style', 'display:none')
+        }
       })
       return
     }
     $(el).attr('style', 'display:flex;flex-wrap:wrap;gap:12px;transform:none;width:100%;list-style:none;padding:0;height:auto')
-    $(el).children().each((_, slide) => {
+    $(el).children().each((i, slide) => {
       $(slide).removeAttr('aria-hidden')
-      $(slide).attr('style', 'flex:1 1 200px;max-width:320px;min-width:180px;display:block;overflow:hidden;height:auto')
+      if (i < MAX_VISIBLE_SLIDES) {
+        $(slide).attr('style', 'flex:1 1 200px;max-width:320px;min-width:180px;display:block;overflow:hidden;height:auto')
+      } else {
+        $(slide).attr('style', 'display:none')
+      }
     })
   })
 
