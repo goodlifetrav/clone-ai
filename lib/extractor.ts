@@ -977,6 +977,60 @@ export async function extractSite(
       })
     })
 
+    // ── Surgical empty-shell detection (runs while live page is open) ───────
+    // AJAX-driven sections (product recommendations, "shop the look", reviews)
+    // reserve real estate on the page even when their content fails to load.
+    // The previous cheerio-side heuristic over-removed entire bodies; here we
+    // use the BROWSER's ground truth: rendered height + innerText + actual
+    // images + computed background-image. Mark each truly-empty shell with
+    // data-igualai-empty="1"; cleanHtml later removes anything carrying that
+    // attribute, no guessing required.
+    try {
+      const markedCount = await page.evaluate(() => {
+        const candidates = Array.from(document.querySelectorAll(
+          'section, main > div, body > div, article > div, [class*="shopify-section"], [data-section-id], [data-section-type]'
+        )) as HTMLElement[]
+        let marked = 0
+        for (const el of candidates) {
+          if (el.closest('header, footer, nav, aside')) continue
+          if (el.hasAttribute('data-igualai-section')) continue
+
+          const rect = el.getBoundingClientRect()
+          if (rect.height < 200) continue
+
+          const visibleText = (el.innerText ?? '').replace(/\s+/g, ' ').trim()
+          if (visibleText.length >= 30) continue
+
+          const realImgs = Array.from(el.querySelectorAll('img')).filter((img) => {
+            const src = (img as HTMLImageElement).src ?? ''
+            return src.length > 0 && !src.startsWith('data:')
+          }).length
+          if (realImgs > 0) continue
+
+          // Self background-image (computed)
+          const cs = window.getComputedStyle(el)
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') continue
+          // Descendant inline url() — cheap O(1) selector vs walking computed styles
+          if (el.querySelector('[style*="url("]')) continue
+
+          el.setAttribute('data-igualai-empty', '1')
+          marked++
+        }
+
+        // Outermost only: clear marker on elements nested under another marked shell.
+        // Prevents double-removal and keeps nested children intact if outer is removed.
+        for (const el of Array.from(document.querySelectorAll('[data-igualai-empty="1"]'))) {
+          const ancestor = el.parentElement?.closest('[data-igualai-empty="1"]')
+          if (ancestor) el.removeAttribute('data-igualai-empty')
+        }
+
+        return marked
+      })
+      console.log(`[extractor] Empty-shell pass: marked ${markedCount} sections for removal`)
+    } catch (err) {
+      console.log('[extractor] Empty-shell marking failed (non-fatal):', err instanceof Error ? err.message.slice(0, 100) : err)
+    }
+
     // ── Pillar 2: Screenshot + content density measurement ───────────────────
     // Take a full-page screenshot AFTER all DOM manipulation. This is the visual
     // ground truth. If content density is sparse (SPA with JS-only content that

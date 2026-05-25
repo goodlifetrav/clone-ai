@@ -483,6 +483,11 @@ export function cleanHtml(html: string, url = ''): string {
     $('head').append('<style>.splide__slide *,.swiper-slide *,.slick-slide *{writing-mode:horizontal-tb!important;text-orientation:mixed!important}</style>')
   }
 
+  // Remove sections Playwright tagged as empty AJAX shells. The marking is
+  // done from inside the live browser where we know the real rendered height
+  // and visible text — far safer than guessing from static HTML.
+  $('[data-igualai-empty="1"]').remove()
+
   let result = $.html()
 
   // Inject labeled placeholders for empty AJAX-loaded sections (product pages only)
