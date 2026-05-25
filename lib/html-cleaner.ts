@@ -456,5 +456,12 @@ export function cleanHtml(html: string, url = ''): string {
   // Inject labeled placeholders for empty AJAX-loaded sections (product pages only)
   if (url) result = injectAjaxPlaceholders(result, url)
 
+  // Strip Unicode line/paragraph separators (U+2028 / U+2029) and other unusual
+  // line terminators (U+0085 NEL, U+000B VT, U+000C FF). Monaco editor opens a
+  // blocking confirm() dialog on these — which freezes the editor at 0 chars
+  // until the user dismisses it. Browsers render them as whitespace anyway, so
+  // replacing with a regular space is safe.
+  result = result.replace(/[  ]/g, ' ')
+
   return result
 }
