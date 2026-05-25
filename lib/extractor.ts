@@ -223,6 +223,23 @@ export async function extractSite(
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() =>
         page.waitForLoadState('load', { timeout: 10000 }).catch(() => {})
       )
+
+      // URL-stability gate: nike.com → /fr/ triggers a Next.js client-side
+      // soft-navigation AFTER networkidle settles. The soft-nav destroys
+      // page.evaluate execution contexts mid-extraction. Watch the URL for
+      // 3 consecutive seconds of no change before proceeding.
+      let stableUrl = page.url()
+      let stableSince = Date.now()
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await page.waitForTimeout(500)
+        const now = page.url()
+        if (now !== stableUrl) {
+          stableUrl = now
+          stableSince = Date.now()
+          console.log(`[extractor] URL changed during settle: → ${now}`)
+        }
+        if (Date.now() - stableSince >= 3000) break
+      }
     }
 
     // ── Bug 4: Bot/CAPTCHA challenge detection ──────────────────────────────
@@ -347,8 +364,8 @@ export async function extractSite(
           })
         })
         // Restore body/html scroll that overlays typically lock
-        document.body.style.removeProperty('overflow')
-        document.documentElement.style.removeProperty('overflow')
+        if (document.body) document.body.style.removeProperty('overflow')
+        document.documentElement?.style.removeProperty('overflow')
       })
     } catch { /* modal dismissal is best-effort — never fail the extraction */ }
 
@@ -813,15 +830,17 @@ export async function extractSite(
         document.querySelectorAll(sel).forEach(el => el.remove())
       })
 
-      const consentBodyClasses = ['consent-required', 'no-consent', 'gdpr-required', 'cookie-required', 'privacy-required']
-      consentBodyClasses.forEach(cls => document.body.classList.remove(cls))
+      if (document.body) {
+        const consentBodyClasses = ['consent-required', 'no-consent', 'gdpr-required', 'cookie-required', 'privacy-required']
+        consentBodyClasses.forEach(cls => document.body.classList.remove(cls))
 
-      document.body.style.removeProperty('display')
-      document.body.style.removeProperty('visibility')
-      document.documentElement.style.removeProperty('overflow')
-      document.body.style.removeProperty('overflow')
-      document.documentElement.style.setProperty('overflow-y', 'auto', 'important')
-      document.body.style.setProperty('overflow-y', 'auto', 'important')
+        document.body.style.removeProperty('display')
+        document.body.style.removeProperty('visibility')
+        document.documentElement.style.removeProperty('overflow')
+        document.body.style.removeProperty('overflow')
+        document.documentElement.style.setProperty('overflow-y', 'auto', 'important')
+        document.body.style.setProperty('overflow-y', 'auto', 'important')
+      }
 
       // ── Remove app-based content gates ────────────────────────────────────────
       // EasyLockdown (and similar Shopify apps) wrap ALL page content in a
@@ -846,30 +865,39 @@ export async function extractSite(
     // Shopify product recommendations is already in the DOM.
     // We check every element in the body — not just known carousel selectors — so
     // this works regardless of the theme's class names.
-    const writingModeFixed = await page.evaluate(() => {
-      let count = 0
-      const sample: string[] = []
-      document.body.querySelectorAll('*').forEach(el => {
-        const tag = el.tagName
-        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK') return
-        const h = el as HTMLElement
-        if (!h.style) return
-        const cs = window.getComputedStyle(h)
-        if (cs.writingMode !== 'horizontal-tb') {
-          h.style.setProperty('writing-mode', 'horizontal-tb', 'important')
-          h.style.setProperty('text-orientation', 'mixed', 'important')
-          const w = parseFloat(cs.width)
-          if (!isNaN(w) && w > 0 && w < 40) {
-            h.style.setProperty('width', 'auto', 'important')
-            h.style.setProperty('min-width', '60px', 'important')
+    // Wrapped in try/catch: nike.com client-side soft-navigates mid-extraction.
+    // If document.body becomes null we lose this pass but the rest of extraction
+    // continues — better than failing the whole clone.
+    let writingModeFixed = { count: 0, sample: [] as string[] }
+    try {
+      writingModeFixed = await page.evaluate(() => {
+        if (!document.body) return { count: 0, sample: [] as string[] }
+        let count = 0
+        const sample: string[] = []
+        document.body.querySelectorAll('*').forEach(el => {
+          const tag = el.tagName
+          if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK') return
+          const h = el as HTMLElement
+          if (!h.style) return
+          const cs = window.getComputedStyle(h)
+          if (cs.writingMode !== 'horizontal-tb') {
+            h.style.setProperty('writing-mode', 'horizontal-tb', 'important')
+            h.style.setProperty('text-orientation', 'mixed', 'important')
+            const w = parseFloat(cs.width)
+            if (!isNaN(w) && w > 0 && w < 40) {
+              h.style.setProperty('width', 'auto', 'important')
+              h.style.setProperty('min-width', '60px', 'important')
+            }
+            count++
+            if (sample.length < 5) sample.push(`${tag}.${String(el.className).slice(0, 40)}`)
           }
-          count++
-          if (sample.length < 5) sample.push(`${tag}.${String(el.className).slice(0, 40)}`)
-        }
+        })
+        return { count, sample }
       })
-      return { count, sample }
-    })
-    console.log(`[extractor] Writing-mode fixed on ${writingModeFixed.count} elements:`, writingModeFixed.sample)
+      console.log(`[extractor] Writing-mode fixed on ${writingModeFixed.count} elements:`, writingModeFixed.sample)
+    } catch (err) {
+      console.log('[extractor] writing-mode pass failed (non-fatal):', err instanceof Error ? err.message.slice(0, 120) : err)
+    }
 
     // ── Wait for all images to finish loading ────────────────────────────────────
     await page.waitForFunction(

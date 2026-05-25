@@ -1,25 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuth } from '@/lib/auth'
+import { getAuth, getSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 
 async function getUserAndProject(userId: string, projectId: string) {
   const supabase = createServiceClient()
 
-  const { data: user } = await supabase
+  // Email-aggregated lookup: historical signup flow created multiple user
+  // rows for the same email. A project may live under any of them, so we
+  // accept it as the current user's if its user_id matches ANY user row
+  // sharing the current session's email.
+  const { data: primaryUser } = await supabase
     .from('users')
-    .select('id')
+    .select('id, email')
     .eq('clerk_id', userId)
     .single()
 
-  if (!user) return { supabase, user: null, project: null }
+  let email = primaryUser?.email
+  if (!email) {
+    const session = await getSession()
+    email = session.email
+  }
+
+  const userIds: string[] = primaryUser ? [primaryUser.id] : []
+  if (email) {
+    const { data: siblings } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+    siblings?.forEach((u) => {
+      if (!userIds.includes(u.id)) userIds.push(u.id)
+    })
+  }
+
+  if (userIds.length === 0) return { supabase, user: null, project: null }
 
   const { data: project } = await supabase
     .from('projects')
     .select('*')
     .eq('id', projectId)
-    .eq('user_id', user.id)
+    .in('user_id', userIds)
     .single()
 
+  // For writes, the caller still needs ONE user id; primaryUser is preferred.
+  const user = primaryUser ?? { id: userIds[0] }
   return { supabase, user, project }
 }
 
