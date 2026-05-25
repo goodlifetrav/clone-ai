@@ -408,6 +408,27 @@ export function cleanHtml(html: string, url = ''): string {
       $(el).closest('[class*="fullscreen"],[class*="n-slideshow"],[class*="-hero"],[class*="hero-"],[class*="-banner"],[class*="banner-"],[class*="page-header"]').length > 0
   }
 
+  // Returns true when the carousel is a testimonial/quote/review/story carousel
+  // with long text per slide. The default flex-wrap grid (180-320px per slide)
+  // crushes long-quote text into one-word-per-line. These need full-width slides
+  // in a vertical stack so each quote is readable.
+  // Detection:
+  //   - container/ancestor class signals: testimonial, quote, review, customer, feedback, story
+  //   - OR average text length per slide > 150 chars (catches custom-named carousels)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function isWideContentCarousel(el: any): boolean {
+    const classHit = $(el).is('[class*="testimonial"],[class*="quote"],[class*="review"],[class*="customer"],[class*="feedback"],[class*="story"]') ||
+      $(el).closest('[class*="testimonial"],[class*="quote"],[class*="review"],[class*="customer"],[class*="feedback"],[class*="story"]').length > 0
+    if (classHit) return true
+    const slides = $(el).children()
+    if (slides.length === 0) return false
+    let totalText = 0
+    slides.each((_, s) => {
+      totalText += $(s).text().replace(/\s+/g, ' ').trim().length
+    })
+    return totalText / slides.length > 150
+  }
+
   // Step 3: Track — keep overflow hidden, clear JS-set height so rows can wrap.
   // Skip fullscreen hero containers — their CSS sets the correct height; overriding
   // with height:auto collapses the slide to zero.
@@ -421,8 +442,11 @@ export function cleanHtml(html: string, url = ''): string {
   })
 
   // Step 4: List — reset transform, enable flex-wrap.
-  // Fullscreen heroes get a different treatment: show only the first slide at 100% width
-  // so the hero image fills the viewport. Product carousels get the flex-wrap grid.
+  // Three layouts:
+  //   - Fullscreen heroes: first slide only, 100% width
+  //   - Wide-content carousels (testimonials, quotes, reviews, long text):
+  //     vertical stack, each slide at 100% width with a max-width for readability
+  //   - Default (product carousels): flex-wrap grid with 180-320px slides
   $('.splide__list, .swiper-wrapper, .slick-track').each((_, el) => {
     if (isFullscreenHero(el)) {
       $(el).attr('style', 'display:block;transform:none;width:100%;list-style:none;padding:0;height:100%')
@@ -433,6 +457,14 @@ export function cleanHtml(html: string, url = ''): string {
         } else {
           $(slide).attr('style', 'display:none')
         }
+      })
+      return
+    }
+    if (isWideContentCarousel(el)) {
+      $(el).attr('style', 'display:flex;flex-direction:column;gap:24px;transform:none;width:100%;list-style:none;padding:0;height:auto;align-items:center')
+      $(el).children().each((_, slide) => {
+        $(slide).removeAttr('aria-hidden')
+        $(slide).attr('style', 'display:block;width:100%;max-width:900px;height:auto;overflow:visible')
       })
       return
     }
