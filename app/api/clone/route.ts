@@ -330,15 +330,22 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     const hasSubstantialHtml = html.length >= HAS_REAL_CONTENT_BYTES
     const domHeadings = extractTopHeadings(html, 5)
 
-    // Partial-render detection: count <h2>/<h3> headers whose section content
-    // (everything between this header and the next header) has <100 chars of
-    // visible text AND <2 real images. If 3+ such empty-section signatures
-    // exist, the page rendered headers but never hydrated their children
-    // (RedBull's Athletes/Articles pattern). This trigger fires Vision EVEN
-    // on big extractions, because the issue is intra-page completeness, not
-    // total HTML size.
+    // Partial-render detection — fires when the DOM has structure but is
+    // visually mostly empty. Two complementary signals:
+    //   1. Empty-headers signature: 3+ <h1-h3> headers with <100 chars of
+    //      following text AND <2 imgs in their section. Catches "Athlètes
+    //      header rendered but no athlete cards underneath" pattern.
+    //   2. Visible-text-to-body ratio: contentDensity.textLen (the browser's
+    //      document.body.innerText, which excludes hidden content) divided
+    //      by html.length. Real rendered pages hit 1-10%; RedBull's broken
+    //      clone hit 0.06% — the structure is there but nothing visible.
+    //      <0.5% is the partial-render threshold.
+    // Either signal triggers Vision regardless of total HTML size.
     const emptyHeaderSections = countEmptyHeaderSections(html)
-    const isPartialRender = emptyHeaderSections >= 3
+    const visibleTextRatio = contentDensity.textLen / Math.max(1, html.length)
+    const isPartialByHeaders = emptyHeaderSections >= 3
+    const isPartialByRatio = html.length > 50_000 && visibleTextRatio < 0.005
+    const isPartialRender = isPartialByHeaders || isPartialByRatio
 
     const willTrigger = !!screenshotBase64 && (
       (isSparse || isEmptyShell || isPartialRender) &&
@@ -348,7 +355,10 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
       isSparse,
       isEmptyShell,
       isPartialRender,
+      isPartialByHeaders,
+      isPartialByRatio,
       emptyHeaderSections,
+      visibleTextRatio: Number(visibleTextRatio.toFixed(5)),
       hasSubstantialHtml,
       hasScreenshot: !!screenshotBase64,
       willTrigger,
