@@ -589,11 +589,15 @@ async function runVisionPipeline(
     domHeadingsCount: domHeadings.length,
   })}`)
 
-  // Tier 1: Gemini 2.5 Flash (primary — cheapest)
+  // Tier 1: Gemini 3.5 Flash (primary — cheapest)
+  // Track the failure reason: if Gemini's output was too small (image too big
+  // for Vision to process meaningfully), Claude will likely hit the same wall.
+  // Skip Claude in that case to avoid burning time + tokens on a hopeless retry.
+  let geminiFailureReason: string | null = null
   try {
     const { generateCloneWithGemini, isGeminiConfigured } = await import('@/lib/gemini')
     if (isGeminiConfigured()) {
-      console.log('[CLONE] Vision tier 1: Gemini 2.5 Flash')
+      console.log('[CLONE] Vision tier 1: Gemini 3.5 Flash')
       const tT1 = Date.now()
       const result = await generateCloneWithGemini(domHtml, screenshotBase64, url)
       const check = validateVisionOutput(result.html, domHeadings)
@@ -610,6 +614,7 @@ async function runVisionPipeline(
         return result.html
       }
       console.log(`[CLONE] Vision tier 1: Gemini rejected — ${check.reason}`)
+      geminiFailureReason = check.reason ?? null
     } else {
       console.log('[CLONE] Vision tier 1: skipped — GEMINI_API_KEY not configured')
       console.log(`[CLONE-DEBUG] ${JSON.stringify({ stage: 'pillar2.tier1.gemini', skipped: true, reason: 'no-api-key' })}`)
@@ -620,6 +625,19 @@ async function runVisionPipeline(
       stage: 'pillar2.tier1.gemini',
       error: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
     })}`)
+  }
+
+  // Skip Claude when Gemini failed for an image-input reason — Claude will hit
+  // the same wall (8000px image limit, similar downscaling). Saves ~$0.05 and
+  // ~30s per partial-render clone.
+  if (geminiFailureReason && /too-small|too small/i.test(geminiFailureReason)) {
+    console.log(`[CLONE] Vision tier 2: skipped — Gemini failed with "${geminiFailureReason}" (likely image-too-big for any Vision model)`)
+    console.log(`[CLONE-DEBUG] ${JSON.stringify({
+      stage: 'pillar2.tier2.claude',
+      skipped: true,
+      reason: 'gemini-image-failure',
+    })}`)
+    return null
   }
 
   // Tier 2: Claude Sonnet 4.6 (fallback — only when Gemini fails or invalid)

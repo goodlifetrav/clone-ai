@@ -1502,7 +1502,11 @@ ${pageSections ? `Page sections to include:\n${pageSections}\n` : ''}
 ${structuredHtml ? `HTML structure reference:\n\`\`\`html\n${structuredHtml}\n\`\`\`` : ''}
 Reconstruct the COMPLETE page exactly as shown. Every section, every color, every font must match.`
 
-  const model = client.getGenerativeModel({ model: FALLBACK_MODEL, systemInstruction: systemPrompt })
+  // Use PRIMARY_MODEL (gemini-3.5-flash) for Vision reconstruction. 3.5 has
+  // better multi-modal reasoning and produces fuller reconstructions on
+  // partial-render pages. Previously pinned to 2.5 while 3.5 was stabilizing;
+  // it's stable now.
+  const model = client.getGenerativeModel({ model: PRIMARY_MODEL, systemInstruction: systemPrompt })
 
   const result = await model.generateContent({
     contents: [{

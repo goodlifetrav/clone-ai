@@ -1121,22 +1121,40 @@ export async function extractSite(
     }
 
     // ── Pillar 2: Screenshot + content density measurement ───────────────────
-    // Take a full-page screenshot AFTER all DOM manipulation. This is the visual
-    // ground truth. If content density is sparse (SPA with JS-only content that
-    // didn't load), the clone route uses Claude Vision to reconstruct from this.
+    // Take a screenshot AFTER all DOM manipulation. This is the visual ground
+    // truth. If content density is sparse OR partial-render (SPA with JS-only
+    // content), the clone route uses Gemini/Claude Vision to reconstruct.
+    //
+    // Height capped at SCREENSHOT_MAX_HEIGHT_PX so Gemini/Claude can process
+    // the image without aggressive downscaling. Both providers fail or
+    // produce degenerate output on full-page screenshots > ~8000px tall
+    // (Claude rejects with "image dimensions exceed max 8000 pixels";
+    // Gemini silently returns garbage as we saw on RedBull with a tall page).
+    // 4000px captures hero + first 2-3 sections at desktop sizing — enough
+    // visual detail for Vision to reconstruct missing components.
+    const SCREENSHOT_MAX_HEIGHT_PX = 4000
     let screenshotBase64 = ''
     let contentDensity = { imgs: 0, textLen: 0, headings: 0 }
     try {
+      const pageHeight = await page.evaluate(() => Math.min(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight,
+        20000
+      ))
+      const clipHeight = Math.min(pageHeight, SCREENSHOT_MAX_HEIGHT_PX)
       ;[screenshotBase64, contentDensity] = await Promise.all([
-        page.screenshot({ fullPage: true, type: 'jpeg', quality: 75 })
-          .then(buf => buf.toString('base64')),
+        page.screenshot({
+          clip: { x: 0, y: 0, width: 1920, height: clipHeight },
+          type: 'jpeg',
+          quality: 75,
+        }).then(buf => buf.toString('base64')),
         page.evaluate(() => ({
           imgs: document.querySelectorAll('img[src]:not([src=""])').length,
           textLen: (document.body.innerText ?? '').replace(/\s+/g, ' ').trim().length,
           headings: document.querySelectorAll('h1,h2,h3').length,
         })),
       ])
-      console.log(`[extractor] Pillar 2: imgs=${contentDensity.imgs} textLen=${contentDensity.textLen} headings=${contentDensity.headings}`)
+      console.log(`[extractor] Pillar 2: imgs=${contentDensity.imgs} textLen=${contentDensity.textLen} headings=${contentDensity.headings} screenshotHeight=${clipHeight}/${pageHeight}`)
     } catch (err) {
       console.log('[extractor] Pillar 2 screenshot failed (non-fatal):', err)
     }
