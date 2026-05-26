@@ -792,14 +792,14 @@ export async function extractSite(
       // These are hover/click-triggered UI that's hidden via opacity:0 by
       // design. Forcing them visible at extract time stacks the whole nav
       // tree visibly at the top of the page (vercel.com regression).
-      const skipRe = /cart[-_]?(?:drawer|notification|items|footer|form)|modal|popup|overlay|sidebar|predictive[-_]?search|search[-_]?modal|quick[-_]?(?:add|view|order)|age[-_]?(?:ver|gate)|cookie|consent|gdpr|intercom|drift|crisp|hubspot|drop[-_]?down|mega[-_]?menu|sub[-_]?(?:menu|nav)|tooltip|fly[-_]?out|nav[-_]?(?:flyout|panel)/i
+      const skipRe = /cart[-_]?(?:drawer|notification|items|footer|form)|modal|popup|overlay|sidebar|predictive[-_]?search|search[-_]?modal|quick[-_]?(?:add|view|order)|age[-_]?(?:ver|gate)|cookie|consent|gdpr|intercom|drift|crisp|hubspot|drop[-_]?down|mega[-_]?menu|sub[-_]?(?:menu|nav)|tooltip|fly[-_]?out|nav[-_]?(?:flyout|panel)|skip[-_]?(?:link|to[-_]?(?:content|main)|nav|navigation)|sr[-_]?only|screen[-_]?reader(?:[-_]?only)?|visually[-_]?hidden|a11y/i
       document.querySelectorAll('body *').forEach((el) => {
         const id = el.id ?? ''
         const cls = typeof el.className === 'string' ? el.className : ''
         if (skipRe.test(id + ' ' + cls)) return
         // Ancestor allowlist: anything inside a known dropdown/mega-menu/cart container
         // is also skipped so we don't reveal sub-items whose parent is supposed to be hidden.
-        const closestSkip = el.closest('[id*="cart-drawer"],[id*="cart-notification"],[class*="cart-drawer"],[id*="modal"],[id*="popup"],[id*="predictive-search"],[class*="dropdown"],[class*="mega-menu"],[class*="megamenu"],[class*="submenu"],[class*="sub-menu"],[class*="subnav"],[class*="sub-nav"],[class*="tooltip"],[class*="flyout"],[class*="fly-out"],[class*="nav-panel"],[class*="nav-flyout"],[aria-hidden="true"]')
+        const closestSkip = el.closest('[id*="cart-drawer"],[id*="cart-notification"],[class*="cart-drawer"],[id*="modal"],[id*="popup"],[id*="predictive-search"],[class*="dropdown"],[class*="mega-menu"],[class*="megamenu"],[class*="submenu"],[class*="sub-menu"],[class*="subnav"],[class*="sub-nav"],[class*="tooltip"],[class*="flyout"],[class*="fly-out"],[class*="nav-panel"],[class*="nav-flyout"],[class*="skip-link"],[class*="skip-to"],[class*="sr-only"],[class*="screen-reader"],[class*="visually-hidden"],[class*="visuallyhidden"],[id*="skip-link"],[id*="skip-to"],[aria-hidden="true"]')
         if (closestSkip) return
 
         const h = el as HTMLElement
