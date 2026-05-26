@@ -855,11 +855,26 @@ export async function extractSite(
       window.scrollTo(0, 0)
     })
 
-    // Bumped 1.5s → 4s: catches IntersectionObserver-driven content (delayed
-    // marketing sections, lazy-mounted SPA modules) that fire on a timer or
-    // after the second scroll pass. Adds ~2.5s to every clone but recovers
-    // sections that otherwise never make it into the DOM snapshot.
-    await page.waitForTimeout(4000)
+    // First long settle window: 6s lets API-driven IntersectionObserver
+    // sections (RedBull athletes / articles, MasterClass accelerator bundle,
+    // any React component that fetches on mount) complete their first fetch.
+    await page.waitForTimeout(6000)
+
+    // ── Pass 5c: Third scroll pass — re-trigger any sections that hydrated
+    // during the 6s wait. Slower steps (200ms) to give the second wave of
+    // IO callbacks time to fire as elements come into viewport.
+    await page.evaluate(async () => {
+      const totalHeight = document.documentElement.scrollHeight
+      const step = Math.floor(window.innerHeight / 2)
+      for (let y = 0; y < totalHeight; y += step) {
+        window.scrollTo(0, y)
+        await new Promise((r) => setTimeout(r, 200))
+      }
+      window.scrollTo(0, 0)
+    })
+
+    // Final 3s settle so the second wave of fetches has time to paint.
+    await page.waitForTimeout(3000)
 
     // ── Dismiss cookie banners before capturing ───────────────────────────────
     await page.evaluate(() => {
