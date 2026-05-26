@@ -1524,8 +1524,26 @@ Reconstruct the COMPLETE page exactly as shown. Every section, every color, ever
     .replace(/\n?```\s*$/, '')
 
   const htmlMatch = raw.match(/<!DOCTYPE\s+html[\s\S]*<\/html>/i) ?? raw.match(/<html[\s\S]*<\/html>/i)
-  const claudeHtml = htmlMatch ? htmlMatch[0] : raw
+  let claudeHtml = htmlMatch ? htmlMatch[0] : raw
   if (!claudeHtml) throw new Error('Gemini returned empty HTML')
+
+  // Ensure the response has <html><body> wrappers — Gemini 3.5 frequently emits
+  // raw section markup (divs/sections/headings) without the document wrapper,
+  // which downstream validation rejects for "missing-body". If we have a
+  // substantial blob of HTML, wrap it; otherwise let validation handle it.
+  const hasHtmlTag = /<html\b/i.test(claudeHtml)
+  const hasBodyTag = /<body\b/i.test(claudeHtml)
+  if (!hasBodyTag && claudeHtml.length >= 1000) {
+    if (hasHtmlTag) {
+      // <html>...</html> without <body>: inject body inside
+      claudeHtml = claudeHtml
+        .replace(/(<html[^>]*>)/i, '$1<body>')
+        .replace(/<\/html>/i, '</body></html>')
+    } else {
+      // raw fragments with no <html> wrapper: wrap the whole thing
+      claudeHtml = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head><body>${claudeHtml}</body></html>`
+    }
+  }
 
   // Replace image tokens with real URLs
   let finalHtml = claudeHtml
