@@ -755,6 +755,28 @@ export async function extractSite(
       await page.waitForTimeout(1000)
     }
 
+    // ── Early outerHTML snapshot (anti-scraping recovery) ──────────────────
+    // Anti-scraping JS on sites like nike.com responds to the bulk inline-style
+    // mutations our Pass 4c and empty-shell passes do (forced layout + style
+    // changes on every body element). The response is typically to wipe
+    // document.body or detach it from the document tree. Without protection,
+    // our final outerHTML extraction returns a document with an empty body.
+    //
+    // The early snapshot captures the DOM AS-IS right after page settles
+    // (scroll/lazy-load passes are done, content is rendered) but BEFORE the
+    // heavy computed-style walks. If a later pass wipes the body, we fall
+    // back to this snapshot at serialization time. For sites that don't
+    // retaliate, the late snapshot wins because it includes Pass 4c's
+    // opacity/visibility/blur fixes and the empty-shell removal.
+    let earlyHtml: string | null = null
+    try {
+      earlyHtml = await page.evaluate(() => document.documentElement.outerHTML)
+      const earlyBodyLen = earlyHtml.match(/<body[\s\S]*?<\/body>/i)?.[0]?.length ?? 0
+      console.log(`[CLONE-DEBUG] stage=extract.early-snapshot htmlLen=${earlyHtml.length} bodyLen=${earlyBodyLen}`)
+    } catch (err) {
+      console.log('[CLONE-DEBUG] stage=extract.early-snapshot failed:', err instanceof Error ? err.message.slice(0, 120) : err)
+    }
+
     // ── Pass 4c: Force computed opacity:0 / visibility:hidden elements visible ──
     // Runs on ALL pages. CSS class-based opacity/visibility (used by Apple hero
     // carousels, animated landing pages, etc.) won't be caught by the inline-style
@@ -1155,8 +1177,23 @@ export async function extractSite(
     })
 
     const tBeforeSerialize = Date.now()
-    const html = await page.evaluate(() => document.documentElement.outerHTML)
-    console.log(`[CLONE-DEBUG] stage=extract.serialize htmlLen=${html.length} bodyLen=${(html.match(/<body[\s\S]*<\/body>/i)?.[0]?.length ?? 0)} extractMs=${tBeforeSerialize - tNav}`)
+    const lateHtml = await page.evaluate(() => document.documentElement.outerHTML)
+    const lateBodyLen = lateHtml.match(/<body[\s\S]*?<\/body>/i)?.[0]?.length ?? 0
+    const earlyBodyLen = earlyHtml?.match(/<body[\s\S]*?<\/body>/i)?.[0]?.length ?? 0
+
+    // Recovery fallback: if the late serialization came back with an
+    // essentially-empty body (<1KB) AND we have a substantial early snapshot
+    // (>=5KB body), prefer the early snapshot. This is the anti-scraping
+    // recovery — sites like nike.com wipe document.body in response to our
+    // computed-style walks; the early snapshot was taken before any of those
+    // walks ran, so it preserves the rendered body.
+    let html = lateHtml
+    let chose: 'late' | 'early' = 'late'
+    if (lateBodyLen < 1000 && earlyHtml && earlyBodyLen >= 5000) {
+      html = earlyHtml
+      chose = 'early'
+    }
+    console.log(`[CLONE-DEBUG] stage=extract.serialize chose=${chose} earlyBodyLen=${earlyBodyLen} lateBodyLen=${lateBodyLen} finalHtmlLen=${html.length} extractMs=${tBeforeSerialize - tNav}`)
 
     // Wait for all in-flight R2 uploads to complete (max 30s)
     if (uploadPromises.length > 0) {
