@@ -330,10 +330,25 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     const hasSubstantialHtml = html.length >= HAS_REAL_CONTENT_BYTES
     const domHeadings = extractTopHeadings(html, 5)
 
-    const willTrigger = (isSparse || isEmptyShell) && !hasSubstantialHtml && !!screenshotBase64
+    // Partial-render detection: count <h2>/<h3> headers whose section content
+    // (everything between this header and the next header) has <100 chars of
+    // visible text AND <2 real images. If 3+ such empty-section signatures
+    // exist, the page rendered headers but never hydrated their children
+    // (RedBull's Athletes/Articles pattern). This trigger fires Vision EVEN
+    // on big extractions, because the issue is intra-page completeness, not
+    // total HTML size.
+    const emptyHeaderSections = countEmptyHeaderSections(html)
+    const isPartialRender = emptyHeaderSections >= 3
+
+    const willTrigger = !!screenshotBase64 && (
+      (isSparse || isEmptyShell || isPartialRender) &&
+      (!hasSubstantialHtml || isPartialRender)
+    )
     dlog('pillar2.decision', {
       isSparse,
       isEmptyShell,
+      isPartialRender,
+      emptyHeaderSections,
       hasSubstantialHtml,
       hasScreenshot: !!screenshotBase64,
       willTrigger,
@@ -344,7 +359,7 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     })
 
     if (willTrigger) {
-      console.log(`[CLONE] Pillar 2 trigger: sparse=${isSparse} emptyShell=${isEmptyShell} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
+      console.log(`[CLONE] Pillar 2 trigger: sparse=${isSparse} emptyShell=${isEmptyShell} partial=${isPartialRender}(${emptyHeaderSections}) framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
       const tVision = Date.now()
       const visionHtml = await runVisionPipeline(html, screenshotBase64, url, domHeadings)
       dlog('pillar2.vision.result', {
@@ -359,7 +374,7 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
         console.log(`[CLONE] Pillar 2: all Vision attempts failed validation — keeping DOM result`)
       }
     } else {
-      console.log(`[CLONE] Pillar 2 skipped: sparse=${isSparse} emptyShell=${isEmptyShell} hasSubstantialHtml=${hasSubstantialHtml} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
+      console.log(`[CLONE] Pillar 2 skipped: sparse=${isSparse} emptyShell=${isEmptyShell} partial=${isPartialRender}(${emptyHeaderSections}) hasSubstantialHtml=${hasSubstantialHtml} framework=${frameworkDetected ?? 'none'} imgs=${contentDensity.imgs} textLen=${contentDensity.textLen}`)
     }
 
     // ── Pillar 3: Final image completeness pass ───────────────────────────────
@@ -485,6 +500,36 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
 // ─────────────────────────────────────────────────────────────────────────────
 // Bug 2 helpers: Vision pipeline (Gemini → Claude → null) + output validation
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Count "empty section" patterns: a header (h1-h3) followed by section content
+// with <100 chars of visible text AND <2 real images before the next header.
+// Used by Pillar 2 to detect partial-render pages where React component
+// containers stayed empty even after our long settle waits (RedBull
+// Athletes/Articles pattern). Triggers Vision reconstruction on otherwise-
+// substantial HTML so dead sections can be filled in from the screenshot.
+function countEmptyHeaderSections(html: string): number {
+  const headerRe = /<h[1-3]\b[^>]*>[\s\S]*?<\/h[1-3]>/gi
+  // boundaries: [h1.start, h1.end, h2.start, h2.end, ...]
+  const boundaries: number[] = []
+  let m: RegExpExecArray | null
+  while ((m = headerRe.exec(html)) !== null) {
+    boundaries.push(m.index)
+    boundaries.push(m.index + m[0].length)
+  }
+  if (boundaries.length < 4) return 0
+  let emptyCount = 0
+  // Walk pairs of (end of header N, start of header N+1) — that's the section body
+  for (let i = 1; i + 1 < boundaries.length; i += 2) {
+    const sectionStart = boundaries[i]
+    const sectionEnd = boundaries[i + 1]
+    if (sectionEnd <= sectionStart) continue
+    const segment = html.slice(sectionStart, sectionEnd)
+    const text = segment.replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;|&#\d+;/gi, ' ').replace(/\s+/g, ' ').trim()
+    const imgCount = (segment.match(/<img\b[^>]*\bsrc=(["'])(?!data:)[^"']+\1/gi) || []).length
+    if (text.length < 100 && imgCount < 2) emptyCount++
+  }
+  return emptyCount
+}
 
 function extractTopHeadings(html: string, max = 5): string[] {
   const headings: string[] = []
