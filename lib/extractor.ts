@@ -1177,23 +1177,40 @@ export async function extractSite(
     })
 
     const tBeforeSerialize = Date.now()
-    const lateHtml = await page.evaluate(() => document.documentElement.outerHTML)
-    const lateBodyLen = lateHtml.match(/<body[\s\S]*?<\/body>/i)?.[0]?.length ?? 0
+    // Wrap the late capture: on nike.com the anti-scraping JS escalates from
+    // "wipe document.body" to "detach document.documentElement entirely",
+    // which makes this page.evaluate throw a null-deref. Without the catch,
+    // the whole extraction fails. With the catch, we fall back to earlyHtml.
+    let lateHtml: string | null = null
+    let lateCaptureError: string | null = null
+    try {
+      lateHtml = await page.evaluate(() => document.documentElement?.outerHTML ?? null)
+    } catch (err) {
+      lateCaptureError = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200)
+    }
+    const lateBodyLen = lateHtml?.match(/<body[\s\S]*?<\/body>/i)?.[0]?.length ?? 0
     const earlyBodyLen = earlyHtml?.match(/<body[\s\S]*?<\/body>/i)?.[0]?.length ?? 0
 
-    // Recovery fallback: if the late serialization came back with an
-    // essentially-empty body (<1KB) AND we have a substantial early snapshot
-    // (>=5KB body), prefer the early snapshot. This is the anti-scraping
-    // recovery — sites like nike.com wipe document.body in response to our
-    // computed-style walks; the early snapshot was taken before any of those
-    // walks ran, so it preserves the rendered body.
-    let html = lateHtml
+    // Recovery fallback: pick whichever capture has more body content.
+    // Anti-scraping wipes (Nike) tend to leave EITHER body=0 OR throw on the
+    // late capture. The early snapshot was taken before our computed-style
+    // walks, so it preserves the rendered body intact.
+    let html: string
     let chose: 'late' | 'early' = 'late'
-    if (lateBodyLen < 1000 && earlyHtml && earlyBodyLen >= 5000) {
+    if (lateHtml && lateBodyLen >= 1000) {
+      html = lateHtml
+    } else if (earlyHtml && earlyBodyLen >= 1000) {
       html = earlyHtml
       chose = 'early'
+    } else if (lateHtml) {
+      html = lateHtml
+    } else if (earlyHtml) {
+      html = earlyHtml
+      chose = 'early'
+    } else {
+      throw new Error(`Both extract snapshots failed (late: ${lateCaptureError ?? 'null'}; early: also null)`)
     }
-    console.log(`[CLONE-DEBUG] stage=extract.serialize chose=${chose} earlyBodyLen=${earlyBodyLen} lateBodyLen=${lateBodyLen} finalHtmlLen=${html.length} extractMs=${tBeforeSerialize - tNav}`)
+    console.log(`[CLONE-DEBUG] stage=extract.serialize chose=${chose} earlyBodyLen=${earlyBodyLen} lateBodyLen=${lateBodyLen} lateError=${lateCaptureError ?? 'none'} finalHtmlLen=${html.length} extractMs=${tBeforeSerialize - tNav}`)
 
     // Wait for all in-flight R2 uploads to complete (max 30s)
     if (uploadPromises.length > 0) {
