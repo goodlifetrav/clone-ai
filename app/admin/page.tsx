@@ -26,12 +26,34 @@ interface Stats {
     totalTokens: number
   }
   clones: { total: number; thisPeriod: number }
-  traffic: { visitorsToday: number; visitorsPeriod: number; sources: { source: string; count: number; pct: number }[] }
+  traffic: { visitorsToday: number; visitorsPeriod: number; sources: { source: string; count: number; pct: number }[]; countries: { country: string; count: number }[] }
   conversions: { signupToPaid: number; visitToSignup: number }
   chartData: { date: string; count: number }[]
   topUsers: { email: string; plan: string; tokens_used: number; clones_count: number }[]
   allPaidUsers: { email: string; plan: string; created_at: string; tokens_used: number }[]
   recentUsers: { email: string; plan: string; created_at: string; tokens_used: number; clones_count: number }[]
+}
+
+const FLAG_EMOJI: Record<string, string> = {
+  US: '🇺🇸', GB: '🇬🇧', CA: '🇨🇦', AU: '🇦🇺', DE: '🇩🇪', FR: '🇫🇷', ES: '🇪🇸', IT: '🇮🇹',
+  BR: '🇧🇷', MX: '🇲🇽', IN: '🇮🇳', JP: '🇯🇵', KR: '🇰🇷', NL: '🇳🇱', SE: '🇸🇪', NO: '🇳🇴',
+  DK: '🇩🇰', FI: '🇫🇮', PL: '🇵🇱', PT: '🇵🇹', AR: '🇦🇷', CO: '🇨🇴', CL: '🇨🇱', PH: '🇵🇭',
+  NG: '🇳🇬', ZA: '🇿🇦', EG: '🇪🇬', AE: '🇦🇪', SA: '🇸🇦', SG: '🇸🇬', MY: '🇲🇾', ID: '🇮🇩',
+  TH: '🇹🇭', VN: '🇻🇳', PK: '🇵🇰', BD: '🇧🇩', TR: '🇹🇷', RU: '🇷🇺', UA: '🇺🇦', CH: '🇨🇭',
+  AT: '🇦🇹', BE: '🇧🇪', NZ: '🇳🇿', IL: '🇮🇱', GH: '🇬🇭', KE: '🇰🇪', TZ: '🇹🇿', ET: '🇪🇹',
+}
+
+const COUNTRY_NAMES: Record<string, string> = {
+  US: 'United States', GB: 'United Kingdom', CA: 'Canada', AU: 'Australia', DE: 'Germany',
+  FR: 'France', ES: 'Spain', IT: 'Italy', BR: 'Brazil', MX: 'Mexico', IN: 'India',
+  JP: 'Japan', KR: 'South Korea', NL: 'Netherlands', SE: 'Sweden', NO: 'Norway',
+  DK: 'Denmark', FI: 'Finland', PL: 'Poland', PT: 'Portugal', AR: 'Argentina',
+  CO: 'Colombia', CL: 'Chile', PH: 'Philippines', NG: 'Nigeria', ZA: 'South Africa',
+  EG: 'Egypt', AE: 'UAE', SA: 'Saudi Arabia', SG: 'Singapore', MY: 'Malaysia',
+  ID: 'Indonesia', TH: 'Thailand', VN: 'Vietnam', PK: 'Pakistan', BD: 'Bangladesh',
+  TR: 'Turkey', RU: 'Russia', UA: 'Ukraine', CH: 'Switzerland', AT: 'Austria',
+  BE: 'Belgium', NZ: 'New Zealand', IL: 'Israel', GH: 'Ghana', KE: 'Kenya',
+  TZ: 'Tanzania', ET: 'Ethiopia',
 }
 
 const PLAN_COLOR: Record<string, string> = {
@@ -347,6 +369,40 @@ export default function AdminPage() {
             )}
           </div>
 
+          {/* Traffic by Country */}
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-blue-500" />
+              <h2 className="font-semibold text-neutral-900 dark:text-white">Traffic by Country</h2>
+              <span className="text-xs text-neutral-400 ml-auto">{periodLabel}</span>
+            </div>
+            {!stats.traffic.countries || stats.traffic.countries.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-6">No country data yet.<br />Will populate as visitors come in.</p>
+            ) : (
+              <div className="space-y-2 overflow-y-auto max-h-72">
+                {(() => {
+                  const total = stats.traffic.countries.reduce((s, c) => s + c.count, 0)
+                  return stats.traffic.countries.map((c) => (
+                    <div key={c.country}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-neutral-700 dark:text-neutral-300">
+                          {FLAG_EMOJI[c.country] ?? '🌐'} {COUNTRY_NAMES[c.country] ?? c.country}
+                        </span>
+                        <span className="text-neutral-500">{c.count} · {total > 0 ? Math.round((c.count / total) * 100) : 0}%</span>
+                      </div>
+                      <div className="h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-400 rounded-full"
+                          style={{ width: `${total > 0 ? Math.round((c.count / total) * 100) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                })()}
+              </div>
+            )}
+          </div>
+
           {/* Recent Signups */}
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 space-y-3">
             <div className="flex items-center gap-2">
@@ -483,7 +539,12 @@ export default function AdminPage() {
               </thead>
               <tbody className="divide-y divide-neutral-50 dark:divide-neutral-800/50">
                 {clones.map((c) => (
-                  <tr key={c.id}>
+                  <tr
+                    key={c.id}
+                    className="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
+                    onClick={() => window.open(`/preview/${c.id}`, '_blank')}
+                    title="Open clone preview in new tab"
+                  >
                     <td className="py-2">
                       {c.status === 'complete' && <CheckCircle className="w-4 h-4 text-green-500" />}
                       {c.status === 'error' && <XCircle className="w-4 h-4 text-red-500" />}
