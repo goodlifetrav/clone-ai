@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { PreviewPane } from './preview-pane'
 import { CodeEditor } from './code-editor'
 import { ChatPanel } from './chat-panel'
@@ -374,56 +375,16 @@ export function SplitView({
           )}
         </Button>
 
-        {/* Overflow menu — Settings + Report consolidated to clean up top bar.
-            Same-new uses the same pattern (avatar/dots → menu of less-frequent
-            actions). Reduces visible-button count from 10 → 6. */}
-        <div className="relative flex-shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs gap-1"
-            onClick={() => setShowMoreMenu((v) => !v)}
-            title="More actions"
-          >
-            <MoreHorizontal className="w-3.5 h-3.5" />
-          </Button>
-          {showMoreMenu && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setShowMoreMenu(false)}
-              />
-              <div className="absolute right-0 top-full mt-1 z-50 min-w-44 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-lg py-1">
-                <Link
-                  href="/settings"
-                  className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-                  onClick={() => setShowMoreMenu(false)}
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  Settings & Domains
-                </Link>
-                <button
-                  type="button"
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                  onClick={() => { setShowMoreMenu(false); setShowReportModal(true); setReportSent(false) }}
-                >
-                  <Flag className="w-3.5 h-3.5" />
-                  Report a Problem
-                </button>
-                <a
-                  href="https://whop.com/joined/igualai/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-                  onClick={() => setShowMoreMenu(false)}
-                >
-                  <LifeBuoy className="w-3.5 h-3.5" />
-                  Support
-                </a>
-              </div>
-            </>
-          )}
-        </div>
+        {/* Overflow menu — Settings + Report + Support consolidated.
+            Rendered via a portal because the top bar uses overflow-x-auto
+            which would otherwise clip the dropdown vertically. We compute
+            the dropdown position from the trigger's bounding rect on click. */}
+        <MoreActionsMenu
+          show={showMoreMenu}
+          onShow={() => setShowMoreMenu(true)}
+          onHide={() => setShowMoreMenu(false)}
+          onOpenReport={() => { setShowReportModal(true); setReportSent(false) }}
+        />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -718,6 +679,85 @@ export function SplitView({
             )}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+function MoreActionsMenu({
+  show,
+  onShow,
+  onHide,
+  onOpenReport,
+}: {
+  show: boolean
+  onShow: () => void
+  onHide: () => void
+  onOpenReport: () => void
+}) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
+
+  useEffect(() => {
+    if (show && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      // top of menu = bottom of button + 4px gap
+      // right of menu = align with right edge of button
+      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    }
+  }, [show])
+
+  return (
+    <div className="flex-shrink-0">
+      <Button
+        ref={triggerRef}
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 text-xs gap-1"
+        onClick={() => (show ? onHide() : onShow())}
+        title="More actions"
+      >
+        <MoreHorizontal className="w-3.5 h-3.5" />
+      </Button>
+      {mounted && show && pos && createPortal(
+        <>
+          <div className="fixed inset-0 z-[100]" onClick={onHide} />
+          <div
+            className="fixed z-[101] min-w-44 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-lg py-1"
+            style={{ top: pos.top, right: pos.right }}
+          >
+            <Link
+              href="/settings"
+              className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+              onClick={onHide}
+            >
+              <Settings className="w-3.5 h-3.5" />
+              Settings & Domains
+            </Link>
+            <button
+              type="button"
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+              onClick={() => { onHide(); onOpenReport() }}
+            >
+              <Flag className="w-3.5 h-3.5" />
+              Report a Problem
+            </button>
+            <a
+              href="https://whop.com/joined/igualai/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+              onClick={onHide}
+            >
+              <LifeBuoy className="w-3.5 h-3.5" />
+              Support
+            </a>
+          </div>
+        </>,
+        document.body
       )}
     </div>
   )

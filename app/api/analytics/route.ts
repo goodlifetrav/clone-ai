@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
+import { getSession } from '@/lib/auth'
+import { isAdminEmail } from '@/lib/admin'
 
 function getIp(request: NextRequest): string {
   const forwarded = request.headers.get('x-forwarded-for')
@@ -37,6 +39,22 @@ export async function POST(request: NextRequest) {
   try {
     const { event_type, page, referrer, utm_source, utm_medium, utm_campaign, user_id } =
       await request.json()
+
+    // Skip analytics for admin accounts so my own visits don't pollute the
+    // metrics. Two checks because both `users.is_admin` and the static
+    // isAdminEmail() allowlist can mark someone as admin.
+    const session = await getSession()
+    if (session.whopUserId) {
+      const supabase = createServiceClient()
+      const { data: me } = await supabase
+        .from('users')
+        .select('is_admin, email')
+        .eq('clerk_id', session.whopUserId)
+        .single()
+      if (me?.is_admin || isAdminEmail(me?.email) || isAdminEmail(session.email)) {
+        return NextResponse.json({ ok: true, skipped: 'admin' })
+      }
+    }
 
     const ip = getIp(request)
     const country = await lookupCountry(ip)
