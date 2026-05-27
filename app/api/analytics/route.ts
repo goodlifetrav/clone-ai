@@ -1,11 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
-import geoip from 'geoip-lite'
 
 function getIp(request: NextRequest): string {
   const forwarded = request.headers.get('x-forwarded-for')
   if (forwarded) return forwarded.split(',')[0].trim()
   return request.headers.get('x-real-ip') ?? ''
+}
+
+// Looks up the 2-letter country code for an IP via ip-api.com.
+// Free tier: 45 req/min from one source IP. No API key required.
+// Returns null on any failure (bad IP, network error, rate-limited, etc.) —
+// analytics must never break the app, so we fail silent.
+async function lookupCountry(ip: string): Promise<string | null> {
+  if (!ip) return null
+  // Skip private/local IPs that can't be geolocated
+  if (/^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|127\.|::1$|fe80:)/i.test(ip)) {
+    return null
+  }
+  try {
+    const res = await fetch(
+      `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,countryCode`,
+      { signal: AbortSignal.timeout(3000) }
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    if (data?.status !== 'success') return null
+    return typeof data.countryCode === 'string' && data.countryCode.length === 2
+      ? data.countryCode
+      : null
+  } catch {
+    return null
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -14,17 +39,14 @@ export async function POST(request: NextRequest) {
       await request.json()
 
     const ip = getIp(request)
-    const geo = ip ? geoip.lookup(ip) : null
-    const country = geo?.country ?? null
+    const country = await lookupCountry(ip)
 
-    // [GEO-DEBUG] temporary diagnostic — capture exactly what we're seeing
-    // from the proxy chain. Will be removed once geo lookups are working.
+    // [GEO-DEBUG] keep one line of diagnostic so we can verify the proxy
+    // chain is forwarding IPs correctly. Remove once stable.
     console.log(`[GEO-DEBUG] ${JSON.stringify({
       ip: ip || '(empty)',
       country: country || '(null)',
       xff: request.headers.get('x-forwarded-for') || '(none)',
-      xri: request.headers.get('x-real-ip') || '(none)',
-      cfip: request.headers.get('cf-connecting-ip') || '(none)',
     })}`)
 
     const supabase = createServiceClient()
