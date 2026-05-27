@@ -31,6 +31,8 @@ import {
   AlertCircle,
   X,
   Flag,
+  MoreHorizontal,
+  LifeBuoy,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { isValidUrl } from '@/lib/utils'
@@ -95,6 +97,7 @@ export function SplitView({
   )
   const [showMoreSheet, setShowMoreSheet] = useState(false)
   const [moreContent, setMoreContent] = useState<'visual' | 'history' | null>(null)
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [activeFolderId, setActiveFolderId] = useState<string | undefined>(project.folder_id ?? undefined)
   const [showReportModal, setShowReportModal] = useState(false)
   const [reportText, setReportText] = useState('')
@@ -194,6 +197,14 @@ export function SplitView({
   const html = project.html_content
 
   const handleDownload = async () => {
+    // Gate download behind a paid plan — free users get redirected to pricing.
+    // Free users can clone, edit via chat, and preview, but exporting the HTML
+    // requires Pro+. Mirrors the standard SaaS try-then-pay pattern (same.new,
+    // v0, bolt, etc. all gate downloads).
+    if (isFreeUser) {
+      window.location.href = '/pricing?from=download'
+      return
+    }
     const res = await fetch(`/api/projects/${project.id}/download`)
     if (!res.ok) return
     const blob = await res.blob()
@@ -208,6 +219,12 @@ export function SplitView({
   }
 
   const handleFork = async () => {
+    // Forking creates a duplicate project — another paid-tier feature. Free
+    // users get redirected to pricing instead.
+    if (isFreeUser) {
+      window.location.href = '/pricing?from=fork'
+      return
+    }
     const res = await fetch(`/api/projects/${project.id}/fork`, { method: 'POST' })
     if (res.ok) {
       const data = await res.json()
@@ -334,9 +351,13 @@ export function SplitView({
           size="sm"
           className="h-7 px-2 text-xs gap-1 flex-shrink-0"
           onClick={handleFork}
+          title={isFreeUser ? 'Fork is a Pro feature' : 'Fork this project'}
         >
           <GitFork className="w-3 h-3" />
           <span className="hidden sm:inline">Fork</span>
+          {isFreeUser && (
+            <span className="ml-0.5 text-[9px] font-semibold px-1 py-px rounded bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">PRO</span>
+          )}
         </Button>
 
         <Button
@@ -344,40 +365,65 @@ export function SplitView({
           size="sm"
           className="h-7 px-2 text-xs gap-1 flex-shrink-0"
           onClick={handleDownload}
+          title={isFreeUser ? 'Download is a Pro feature' : 'Download as HTML'}
         >
           <Download className="w-3 h-3" />
           <span className="hidden sm:inline">Download</span>
+          {isFreeUser && (
+            <span className="ml-0.5 text-[9px] font-semibold px-1 py-px rounded bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">PRO</span>
+          )}
         </Button>
 
-        <Link href="/settings" title="Settings & Custom Domains">
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 flex-shrink-0">
-            <Settings className="w-3 h-3" />
-            <span className="hidden sm:inline">Settings</span>
-          </Button>
-        </Link>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs gap-1 flex-shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-          title="Report a Problem"
-          onClick={() => { setShowReportModal(true); setReportSent(false) }}
-        >
-          <Flag className="w-3 h-3" />
-          <span className="hidden sm:inline">Report</span>
-        </Button>
-
-        <a href="https://whop.com/joined/igualai/" target="_blank" rel="noopener noreferrer">
+        {/* Overflow menu — Settings + Report consolidated to clean up top bar.
+            Same-new uses the same pattern (avatar/dots → menu of less-frequent
+            actions). Reduces visible-button count from 10 → 6. */}
+        <div className="relative flex-shrink-0">
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs gap-1 flex-shrink-0"
-            title="Support"
+            className="h-7 px-2 text-xs gap-1"
+            onClick={() => setShowMoreMenu((v) => !v)}
+            title="More actions"
           >
-            <HelpCircle className="w-3 h-3" />
-            <span className="hidden sm:inline">Support</span>
+            <MoreHorizontal className="w-3.5 h-3.5" />
           </Button>
-        </a>
+          {showMoreMenu && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowMoreMenu(false)}
+              />
+              <div className="absolute right-0 top-full mt-1 z-50 min-w-44 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-lg py-1">
+                <Link
+                  href="/settings"
+                  className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                  onClick={() => setShowMoreMenu(false)}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  Settings & Domains
+                </Link>
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  onClick={() => { setShowMoreMenu(false); setShowReportModal(true); setReportSent(false) }}
+                >
+                  <Flag className="w-3.5 h-3.5" />
+                  Report a Problem
+                </button>
+                <a
+                  href="https://whop.com/joined/igualai/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                  onClick={() => setShowMoreMenu(false)}
+                >
+                  <LifeBuoy className="w-3.5 h-3.5" />
+                  Support
+                </a>
+              </div>
+            </>
+          )}
+        </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

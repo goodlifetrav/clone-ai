@@ -23,6 +23,18 @@ export async function GET(
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
+    // Gate Download behind a paid plan — admins always allowed for testing.
+    // Free users get a 402 (Payment Required) with an upgrade URL; the
+    // frontend already redirects them to /pricing before this is reached,
+    // but the server-side check prevents API-direct bypass.
+    const isAdmin = user.is_admin || isAdminEmail(user.email)
+    if (!isAdmin && user.plan === 'free') {
+      return NextResponse.json(
+        { error: 'Download requires Pro or higher.', upgradeUrl: '/pricing?from=download' },
+        { status: 402 }
+      )
+    }
+
     // Get project
     const { data: project } = await supabase
       .from('projects')

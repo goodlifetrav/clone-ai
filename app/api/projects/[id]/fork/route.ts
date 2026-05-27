@@ -23,6 +23,15 @@ export async function POST(
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
+    // Gate Fork behind a paid plan — admins exempt.
+    const isAdmin = user.is_admin || isAdminEmail(user.email)
+    if (!isAdmin && user.plan === 'free') {
+      return NextResponse.json(
+        { error: 'Fork requires Pro or higher.', upgradeUrl: '/pricing?from=fork' },
+        { status: 402 }
+      )
+    }
+
     // Get original project
     const { data: original } = await supabase
       .from('projects')
