@@ -80,7 +80,10 @@ export async function GET(
   // sites (HubSpot, Apple). Poll until it completes or times out.
   // Stream progress events to the client so the UI doesn't look frozen.
   const POLL_INTERVAL_MS = 2000
-  const POLL_MAX_MS = 90000
+  // 90s was too short — Pillar 2 Vision (Gemini + Claude fallback) can add
+  // 30-60s on top of normal extraction (~30s with Pass 5c long waits).
+  // Bumped to 180s so Vision-needing sites don't time out before completion.
+  const POLL_MAX_MS = 180000
   const progressMessages = [
     'Connecting to site...',
     'Loading page content...',

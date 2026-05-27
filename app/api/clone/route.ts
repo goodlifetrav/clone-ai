@@ -344,7 +344,10 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     const emptyHeaderSections = countEmptyHeaderSections(html)
     const visibleTextRatio = contentDensity.textLen / Math.max(1, html.length)
     const isPartialByHeaders = emptyHeaderSections >= 3
-    const isPartialByRatio = html.length > 50_000 && visibleTextRatio < 0.005
+    // Tightened threshold 0.5% → 0.2%. tesla.com hit 0.4% (image-heavy but
+    // intact); my earlier 0.5% threshold mis-triggered Vision on it. RedBull's
+    // genuinely-broken clone was at 0.06% — still fires on this tighter check.
+    const isPartialByRatio = html.length > 50_000 && visibleTextRatio < 0.002
     const isPartialRender = isPartialByHeaders || isPartialByRatio
 
     const willTrigger = !!screenshotBase64 && (
