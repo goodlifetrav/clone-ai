@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   output: 'standalone',
 
   // Playwright and other native modules must run in Node.js, not Edge runtime
-  serverExternalPackages: ['playwright', 'playwright-core'],
+  serverExternalPackages: ['playwright', 'playwright-core', 'geoip-lite'],
 
   // Allow images from any HTTPS source (for thumbnails/screenshots)
   images: {

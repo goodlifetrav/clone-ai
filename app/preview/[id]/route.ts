@@ -14,6 +14,35 @@ const CSS_RESET = `<style>
   visibility: visible !important;
   opacity: 1 !important;
 }
+/* Salient/Nectar theme: .row-bg starts at opacity:0 and requires JS to add
+   the 'top-level' class to the section before the opacity:1 rule fires.
+   Without JS that class is never added, so the hero background stays invisible.
+   Force all .row-bg elements visible for static clones. */
+.row-bg {
+  opacity: 1 !important;
+}
+/* Fix fullscreen hero sliders (Swiper-based) whose carousel wrapper was normalized
+   by the static layout cleanup to a 320px-wide flex-wrap product grid.
+   Stylesheet !important beats normal inline styles, so this repairs existing clones.
+   Targets containers with "fullscreen" in their class and Nobu's n-slideshow. */
+[class*="fullscreen"] .swiper-wrapper,
+[class*="n-slideshow"] .swiper-wrapper {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  flex-wrap: unset !important;
+}
+[class*="fullscreen"] .swiper-slide,
+[class*="n-slideshow"] .swiper-slide {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  flex: none !important;
+}
+[class*="fullscreen"] .swiper-slide + .swiper-slide,
+[class*="n-slideshow"] .swiper-slide + .swiper-slide {
+  display: none !important;
+}
 </style>`
 
 // Proxy script: runs in-browser on every preview.
@@ -43,6 +72,37 @@ const PROXY_SCRIPT = `<script>
   setTimeout(unlockGates, 0);
   setTimeout(unlockGates, 500);
 
+  // Fix Salient/Nectar: .row-bg.using-image { background-image: none !important }
+  // That CSS rule wipes the inline background-image. Re-apply the inline value with
+  // !important so it wins the cascade. Runs on existing clones where the inline
+  // style lacks !important; harmless on new clones that already have it.
+  function fixRowBgImages() {
+    document.querySelectorAll('.row-bg').forEach(function(el) {
+      var inlineBg = el.style.backgroundImage;
+      if (inlineBg && inlineBg !== 'none') {
+        el.style.setProperty('background-image', inlineBg, 'important');
+      }
+    });
+  }
+  fixRowBgImages();
+  setTimeout(fixRowBgImages, 0);
+  setTimeout(fixRowBgImages, 500);
+
+  // Fix false-positive opacity override: the clone pipeline injects a CSS rule
+  // [style*="opacity: 0"] { opacity: 1 !important } to reveal animated elements,
+  // but "opacity: 0" is a substring of "opacity: 0.5", so overlays and other
+  // semi-transparent elements get forced fully opaque. Restore any element that
+  // has a decimal inline opacity (0.1–0.9) back to its correct value.
+  (function fixDecimalOpacity() {
+    document.querySelectorAll('[style]').forEach(function(el) {
+      var style = el.getAttribute('style') || '';
+      var match = style.match(/opacity:\s*(0\.\d+)/);
+      if (match) {
+        el.style.setProperty('opacity', match[1], 'important');
+      }
+    });
+  })();
+
   // ── CORS image proxy ──────────────────────────────────────────────────────────
   var PROXY = 'https://corsproxy.io/?url=';
   function retry(img) {
@@ -70,8 +130,48 @@ const PROXY_SCRIPT = `<script>
 })();
 </script>`
 
+// Resolve var(--clone-bg) → direct url() so existing projects render correctly.
+// New projects get this resolved at save-time (pipeline step 4c), but projects
+// cloned before that fix still have var(--clone-bg) in their html_content.
+function resolveCloneBg(html: string): string {
+  return html.replace(
+    /(<[a-zA-Z][^>]*\sstyle=")([^"]*var\(--clone-bg\)[^"]*)"/g,
+    (_match, tagPrefix, styleContent) => {
+      const bgMatch = styleContent.match(/--clone-bg:\s*url\(([^)]+)\)/)
+      if (!bgMatch) return _match
+      const bgUrl = bgMatch[1].trim()
+      let resolved = styleContent.replace(/\bvar\(--clone-bg\)/g, `url(${bgUrl})`)
+      resolved = resolved
+        .replace(/;?\s*--clone-bg:[^;]+(;|$)/g, ';')
+        .replace(/;{2,}/g, ';')
+        .replace(/;\s*$/, '')
+      return `${tagPrefix}${resolved}"`
+    }
+  )
+}
+
+// Fix the false-positive opacity CSS rule baked into extracted HTML by the extractor.
+// The extractor injects: [style*="opacity: 0"] { opacity: 1 !important }
+// to reveal animated elements, but the substring selector also matches "opacity: 0.5",
+// "opacity: 0.3", etc. — forcing semi-transparent overlays fully opaque (solid black cover).
+// Add :not([style*="opacity: 0."]) to both selectors to exclude decimal opacity values.
+function fixOpacityOverrideRule(html: string): string {
+  // Match exactly the selectors the extractor generates (with or without * universal selector)
+  return html
+    .replace(
+      /\*?\[style\*="opacity: 0"\]:not\(script\):not\(style\)/g,
+      '[style*="opacity: 0"]:not([style*="opacity: 0."]):not(script):not(style)'
+    )
+    .replace(
+      /\*?\[style\*="opacity:0"\]:not\(script\):not\(style\)/g,
+      '[style*="opacity:0"]:not([style*="opacity:0."]):not(script):not(style)'
+    )
+}
+
 function prepareHtml(raw: string): string {
-  let html = raw.replace(
+  let html = resolveCloneBg(raw)
+  html = fixOpacityOverrideRule(html)
+  html = html.replace(
     /<html([^>]*)>/i,
     (_, attrs) => `<html${attrs.replace(/\s*data-theme=["'][^"']*["']/gi, '')}>`
   )

@@ -9,13 +9,87 @@ interface PreviewPaneProps {
   className?: string
 }
 
+// Resolve var(--clone-bg) → direct url() so background images render in the editor.
+// Same logic as preview/[id]/route.ts — must be kept in sync.
+function resolveCloneBg(html: string): string {
+  return html.replace(
+    /(<[a-zA-Z][^>]*\sstyle=")([^"]*var\(--clone-bg\)[^"]*)"/g,
+    (_match, tagPrefix, styleContent) => {
+      const bgMatch = styleContent.match(/--clone-bg:\s*url\(([^)]+)\)/)
+      if (!bgMatch) return _match
+      const bgUrl = bgMatch[1].trim()
+      let resolved = styleContent.replace(/\bvar\(--clone-bg\)/g, `url(${bgUrl})`)
+      resolved = resolved
+        .replace(/;?\s*--clone-bg:[^;]+(;|$)/g, ';')
+        .replace(/;{2,}/g, ';')
+        .replace(/;\s*$/, '')
+      return `${tagPrefix}${resolved}"`
+    }
+  )
+}
+
 // Inject a <base target="_blank"> so all links open in new tabs,
 // a click interceptor that prevents in-app navigation,
 // and an image proxy that retries blocked images through corsproxy.io.
+// Fix the false-positive opacity CSS rule baked by the extractor.
+// [style*="opacity: 0"] also matches "opacity: 0.5" — add :not([style*="opacity: 0."]).
+function fixOpacityOverrideRule(html: string): string {
+  return html
+    .replace(
+      /\*?\[style\*="opacity: 0"\]:not\(script\):not\(style\)/g,
+      '[style*="opacity: 0"]:not([style*="opacity: 0."]):not(script):not(style)'
+    )
+    .replace(
+      /\*?\[style\*="opacity:0"\]:not\(script\):not\(style\)/g,
+      '[style*="opacity:0"]:not([style*="opacity:0."]):not(script):not(style)'
+    )
+}
+
 function injectLinkInterceptor(html: string): string {
-  const baseTag = '<base target="_blank">'
+  html = resolveCloneBg(html)
+  html = fixOpacityOverrideRule(html)
+  const baseTag = '<base target="_blank"><style>' +
+    '.row-bg{opacity:1!important}' +
+    // Fix fullscreen hero sliders normalized to a 320px flex-wrap grid by the static layout cleanup
+    '[class*="fullscreen"] .swiper-wrapper,[class*="n-slideshow"] .swiper-wrapper{display:block!important;width:100%!important;height:100%!important;flex-wrap:unset!important}' +
+    '[class*="fullscreen"] .swiper-slide,[class*="n-slideshow"] .swiper-slide{width:100%!important;max-width:none!important;min-width:0!important;flex:none!important}' +
+    '[class*="fullscreen"] .swiper-slide + .swiper-slide,[class*="n-slideshow"] .swiper-slide + .swiper-slide{display:none!important}' +
+    '</style>'
   const script = `<script>
 (function(){
+  // ── Fix Salient/Nectar .row-bg.using-image { background-image: none !important } ──
+  // That CSS rule wipes inline background-image values. Re-apply with !important
+  // so the inline value beats the stylesheet rule. Works on old clones (no !important
+  // in inline style) and is harmless on new clones that already have it.
+  function fixRowBgImages() {
+    document.querySelectorAll('.row-bg').forEach(function(el) {
+      var inlineBg = el.style.backgroundImage;
+      if (inlineBg && inlineBg !== 'none') {
+        el.style.setProperty('background-image', inlineBg, 'important');
+      }
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', fixRowBgImages);
+  } else {
+    fixRowBgImages();
+  }
+  setTimeout(fixRowBgImages, 0);
+  setTimeout(fixRowBgImages, 500);
+
+  // ── Fix false-positive opacity override ──────────────────────────────
+  // The clone pipeline injects [style*="opacity: 0"] { opacity: 1 !important }
+  // which also matches "opacity: 0.5" (substring). Restore decimal opacities.
+  (function fixDecimalOpacity() {
+    document.querySelectorAll('[style]').forEach(function(el) {
+      var style = el.getAttribute('style') || '';
+      var match = style.match(/opacity:\s*(0\.\d+)/);
+      if (match) {
+        el.style.setProperty('opacity', match[1], 'important');
+      }
+    });
+  })();
+
   // ── Link interceptor ──────────────────────────────────────────────────
   document.addEventListener('click', function(e){
     var a = e.target.closest('a');

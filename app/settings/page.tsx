@@ -47,6 +47,14 @@ export default function SettingsPage() {
   const [pendingDnsId, setPendingDnsId] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState('')
 
+  const openBillingPortal = async () => {
+    try {
+      const res = await fetch('/api/stripe/portal', { method: 'POST' })
+      const data = await res.json()
+      if (data.url) window.location.href = data.url
+    } catch { /* noop */ }
+  }
+
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       router.push('/')
@@ -257,12 +265,10 @@ export default function SettingsPage() {
               {plan !== 'free' && (
                 <>
                   <Separator />
-                  <a href="https://whop.com/@me/" target="_blank" rel="noopener noreferrer">
-                    <Button variant="outline" size="sm">
-                      Edit Profile on Whop
-                      <ArrowUpRight className="w-3 h-3 ml-1" />
-                    </Button>
-                  </a>
+                  <Button variant="outline" size="sm" onClick={openBillingPortal}>
+                    Manage Subscription
+                    <ArrowUpRight className="w-3 h-3 ml-1" />
+                  </Button>
                 </>
               )}
             </CardContent>
@@ -299,10 +305,8 @@ export default function SettingsPage() {
                     </Link>
                   </Button>
                 ) : (
-                  <Button size="sm" variant="outline" asChild>
-                    <a href="https://whop.com/@me/" target="_blank" rel="noopener noreferrer">
-                      Manage on Whop
-                    </a>
+                  <Button size="sm" variant="outline" onClick={openBillingPortal}>
+                    Manage Plan
                   </Button>
                 )}
               </div>
@@ -513,25 +517,6 @@ export default function SettingsPage() {
               </CardContent>
           </Card>}
 
-          {/* Community */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Zap className="w-4 h-4 text-neutral-500" />
-                <CardTitle className="text-base">Community Access</CardTitle>
-              </div>
-              <CardDescription>Join the IgualAI community on Whop for support, tips, and updates.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <a href="https://whop.com/checkout/plan_RqjBsFXY6jcfP/?redirect_url=https%3A%2F%2Figualai.com%2Fdashboard" target="_blank" rel="noopener noreferrer">
-                <Button variant="outline" size="sm">
-                  Join Community — Free
-                  <ArrowUpRight className="w-3 h-3 ml-1" />
-                </Button>
-              </a>
-            </CardContent>
-          </Card>
-
           {/* Contact Support */}
           <Card>
             <CardHeader>
@@ -574,11 +559,9 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               ) : (
-                <Button variant="outline" size="sm" asChild>
-                  <a href="https://whop.com/@me/" target="_blank" rel="noopener noreferrer">
-                    <CreditCard className="w-3 h-3 mr-2" />
-                    View Billing on Whop
-                  </a>
+                <Button variant="outline" size="sm" onClick={openBillingPortal}>
+                  <CreditCard className="w-3 h-3 mr-2" />
+                  Manage Billing
                 </Button>
               )}
             </CardContent>

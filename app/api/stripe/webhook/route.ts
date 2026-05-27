@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { stripe, PRICE_IDS } from '@/lib/stripe'
 import { createServiceClient } from '@/lib/supabase'
+import { sendAgencyWelcomeEmail, sendWelcomeEmail } from '@/lib/email'
 import type Stripe from 'stripe'
 import type { Plan } from '@/types'
 
@@ -119,6 +120,21 @@ export async function POST(request: NextRequest) {
         }
 
         console.log('checkout.session.completed: plan updated', { clerkId, plan })
+
+        // Send plan-specific welcome email
+        const { data: newUser } = await supabase
+          .from('users')
+          .select('email, name')
+          .eq('clerk_id', clerkId)
+          .single()
+        if (newUser?.email) {
+          const emailName = newUser.name ?? newUser.email.split('@')[0]
+          if (plan === 'agency') {
+            sendAgencyWelcomeEmail(newUser.email, emailName).catch(() => {})
+          } else {
+            sendWelcomeEmail(newUser.email, emailName).catch(() => {})
+          }
+        }
 
         // Upsert billing record
         const { data: user } = await supabase

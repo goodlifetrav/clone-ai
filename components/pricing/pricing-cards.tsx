@@ -22,43 +22,40 @@ const PLANS: PricingPlan[] = [
     id: 'free',
     name: 'Free',
     monthlyPrice: 0,
-    description: 'Get started for free',
+    description: 'Try it — no credit card needed',
     features: [
-      '1 page clone',
-      '75K AI tokens',
-      'Live preview',
-      'Download ZIP',
-      'Community support',
+      '1 page clone to test it out',
+      '75K AI tokens (~1 full rebuild)',
+      'Live preview in the editor',
+      'Download as ZIP',
     ],
   },
   {
     id: 'pro',
     name: 'Pro',
     monthlyPrice: 19,
-    description: 'For professionals',
+    description: 'For marketers, designers & coaches',
     highlighted: true,
     features: [
-      '20 page clones/month',
-      '2M AI tokens/month',
-      'AI Brand Rebuild',
-      'Version history',
-      'Custom domain',
-      'Hosting',
+      '20 page clones per month',
+      '~28 full AI brand rebuilds/month',
+      'AI Brand Rebuild — make any site yours',
+      'Version history & one-click restore',
+      'Custom domain + hosting included',
       'Priority support',
-      'Buy extra tokens',
     ],
   },
   {
     id: 'agency',
     name: 'Agency',
     monthlyPrice: 49,
-    description: 'For teams and agencies',
+    description: 'For agencies running multiple clients',
     features: [
       'Everything in Pro',
-      '60 page clones/month',
-      '6M AI tokens/month',
+      '60 page clones per month',
+      '~85 full AI brand rebuilds/month',
       'Priority support',
-      'Buy extra tokens',
+      'Buy extra tokens anytime',
     ],
   },
 ]
@@ -77,7 +74,7 @@ export function PricingCards({ currentPlan }: { currentPlan?: Plan }) {
 
     setLoading(plan)
     try {
-      const res = await fetch('/api/whop/checkout', {
+      const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan }),

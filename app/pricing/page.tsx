@@ -9,11 +9,15 @@ export default function PricingPage() {
       <main className="pt-24 pb-16 px-4">
         {/* Header */}
         <div className="text-center max-w-xl mx-auto mb-16">
+          <div className="inline-flex items-center gap-2 bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 rounded-full px-4 py-1.5 text-sm text-violet-700 dark:text-violet-300 font-medium mb-6">
+            <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+            Joining 500+ marketers, designers &amp; coaches
+          </div>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-neutral-900 dark:text-white mb-4">
-            Simple, Transparent Pricing
+            Clone it. Rebuild it. Make it yours.
           </h1>
           <p className="text-lg text-neutral-500 dark:text-neutral-400">
-            Start for free. Upgrade as you grow. Cancel anytime.
+            Start free — no credit card required. Upgrade when you&apos;re ready to go faster.
           </p>
         </div>
 
