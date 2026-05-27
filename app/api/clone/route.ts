@@ -343,7 +343,12 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     // Either signal triggers Vision regardless of total HTML size.
     const emptyHeaderSections = countEmptyHeaderSections(html)
     const visibleTextRatio = contentDensity.textLen / Math.max(1, html.length)
-    const isPartialByHeaders = emptyHeaderSections >= 3
+    // Empty-header signal alone fires falsely on big nav/footer-heavy sites
+    // (Apple's mega-menu + footer = 37 "empty" sub-headers but page itself
+    // is fully rendered). Gate empty-header trigger on ALSO low text ratio.
+    // A healthy site with menu sub-sections (Apple at 3.75% ratio) will not
+    // trigger; a partial-hydration page (RedBull's 0.06% ratio) still does.
+    const isPartialByHeaders = emptyHeaderSections >= 3 && visibleTextRatio < 0.02
     // Tightened threshold 0.5% → 0.2%. tesla.com hit 0.4% (image-heavy but
     // intact); my earlier 0.5% threshold mis-triggered Vision on it. RedBull's
     // genuinely-broken clone was at 0.06% — still fires on this tighter check.

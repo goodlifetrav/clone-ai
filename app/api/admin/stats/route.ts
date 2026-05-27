@@ -3,6 +3,9 @@ import { getSession } from '@/lib/auth'
 import { isAdminEmail } from '@/lib/admin'
 import { createServiceClient } from '@/lib/supabase'
 
+// Always re-query — admin stats should never be cached at the framework level
+export const dynamic = 'force-dynamic'
+
 const PLAN_PRICE: Record<string, number> = { pro: 19, agency: 49, max: 99 }
 // All "total" counts are anchored to this date — set via LAUNCH_DATE env var
 const LAUNCH_DATE = process.env.LAUNCH_DATE ?? '2020-01-01T00:00:00.000Z'
@@ -74,6 +77,10 @@ export async function GET(request: NextRequest) {
     ? supabase.from('users').select('email, plan, created_at, tokens_used, clones_count').gte('created_at', pStart).lt('created_at', pEnd).order('created_at', { ascending: false }).limit(20)
     : supabase.from('users').select('email, plan, created_at, tokens_used, clones_count').gte('created_at', pStart).order('created_at', { ascending: false }).limit(20)
 
+  const countriesQ = pEnd
+    ? supabase.from('analytics_events').select('country').eq('event_type', 'page_view').not('country', 'is', null).gte('created_at', pStart).lt('created_at', pEnd)
+    : supabase.from('analytics_events').select('country').eq('event_type', 'page_view').not('country', 'is', null).gte('created_at', pStart)
+
   const [
     { count: totalUsers },
     { count: signupsPeriod },
@@ -87,6 +94,7 @@ export async function GET(request: NextRequest) {
     { count: visitorsPeriod },
     { data: trafficSources },
     { data: recentUsers },
+    { data: countryRows },
   ] = await Promise.all([
     supabase.from('users').select('id', { count: 'exact', head: true }).gte('created_at', LAUNCH_DATE),
     signupsQ,
@@ -104,6 +112,7 @@ export async function GET(request: NextRequest) {
     analyticsQ,
     sourcesQ,
     recentQ,
+    countriesQ,
   ])
 
   // Plan breakdown + MRR
@@ -144,6 +153,17 @@ export async function GET(request: NextRequest) {
       pct: totalSourced > 0 ? Math.round((count / totalSourced) * 100) : 0,
     }))
 
+  // Country aggregation
+  const countryMap: Record<string, number> = {}
+  countryRows?.forEach((e) => {
+    const c = (e as { country: string }).country
+    if (c) countryMap[c] = (countryMap[c] ?? 0) + 1
+  })
+  const countries = Object.entries(countryMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([country, count]) => ({ country, count }))
+
   // Conversion rates
   const signupToPaid = totalUsers ? Math.round((paidCount / (totalUsers as number)) * 100) : 0
   const visitToSignup =
@@ -166,6 +186,7 @@ export async function GET(request: NextRequest) {
       visitorsToday: visitorsToday ?? 0,
       visitorsPeriod: visitorsPeriod ?? 0,
       sources,
+      countries,
     },
     conversions: { signupToPaid, visitToSignup },
     chartData,

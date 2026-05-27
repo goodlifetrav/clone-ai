@@ -154,7 +154,7 @@ export default function AdminPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/admin/stats?period=${p}`)
+      const res = await fetch(`/api/admin/stats?period=${p}&_t=${Date.now()}`, { cache: 'no-store' })
       if (res.status === 401 || res.status === 403) { router.push('/dashboard'); return }
       if (!res.ok) throw new Error('Failed to load stats')
       setStats(await res.json())
