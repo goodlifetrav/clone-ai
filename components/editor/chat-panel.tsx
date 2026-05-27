@@ -6,7 +6,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Send, Loader2, User, Bot, Zap, Upload, ImagePlus, X, Maximize2, Minimize2, Sparkles, History, RotateCcw, Clock } from 'lucide-react'
 import type { ChatMessage, ProjectVersion } from '@/types'
 import { cn, formatDate } from '@/lib/utils'
-import Link from 'next/link'
 
 interface ChatPanelProps {
   projectId: string
@@ -487,12 +486,14 @@ export function ChatPanel({
           <div className="mx-3 mt-3 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5">
             <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-0.5">This is a layout blueprint</p>
             <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-              The clone captures structure and design — not live data. Dynamic sections (product carousels, live inventory) may appear empty. The Brand Rebuild replaces all content with your brand anyway.
+              The clone captures structure and design — some sites clone perfectly, others may have missing images or layout differences. Use chat below for quick tweaks (logo, colors, text), or run the Brand Rebuild to replace all content with your brand.
             </p>
           </div>
         )}
 
-        {/* Brand Rebuild gate — shown before first rebuild */}
+        {/* Brand Rebuild CTA — prominent but non-blocking. Chat input still
+            renders below so users can do micro-edits (logo / color / text)
+            without having to commit to a full rebuild first. */}
         {!showHistory && rebuildRequired && (
           rebuildInProgress ? (
             <div className="px-4 py-5 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex flex-col items-center gap-3 text-center">
@@ -508,28 +509,30 @@ export function ChatPanel({
               </div>
             </div>
           ) : (
-            <div className="px-4 py-5 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex flex-col items-center gap-3 text-center">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-white" />
+            <div className="px-3 py-4 border-t border-neutral-200 dark:border-neutral-800 bg-gradient-to-br from-purple-50 to-purple-100/50 dark:from-purple-950/30 dark:to-purple-900/10 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center flex-shrink-0">
+                <Sparkles className="w-4 h-4 text-white" />
               </div>
-              <div>
-                <p className="text-sm font-semibold text-neutral-900 dark:text-white">Brand Rebuild first</p>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">Apply your brand to the site before making edits</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-neutral-900 dark:text-white">Start with Brand Rebuild</p>
+                <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5">Recommended — make this site yours. Or chat below for quick edits.</p>
               </div>
               <Button
                 size="sm"
-                className="w-full gap-2 bg-purple-600 hover:bg-purple-500 text-white border-0"
+                className="gap-1.5 bg-purple-600 hover:bg-purple-500 text-white border-0 flex-shrink-0"
                 onClick={onOpenRebuild}
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                Start Brand Rebuild
+                Rebuild
               </Button>
             </div>
           )
         )}
 
-        {/* Input area */}
-        {!showHistory && !rebuildRequired && (
+        {/* Input area — always shown (chat works before AND after Brand
+            Rebuild). Only hidden during an in-progress rebuild because the
+            HTML is being regenerated and concurrent edits would conflict. */}
+        {!showHistory && !rebuildInProgress && (
         <div
           className="px-3 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 sticky bottom-0"
           onDragOver={handleDragOver}
@@ -619,35 +622,55 @@ export function ChatPanel({
       {/* Upgrade modal */}
       {showUpgradeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setShowUpgradeModal(false)}
-          />
-          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-xl p-6 max-w-sm w-full border border-neutral-200 dark:border-neutral-800">
-            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-950/50 mx-auto mb-4">
-              <Zap className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowUpgradeModal(false)} />
+          <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl p-7 max-w-sm w-full border border-neutral-200 dark:border-neutral-800">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-violet-100 dark:bg-violet-950/50 mx-auto mb-4">
+              <Zap className="w-6 h-6 text-violet-600 dark:text-violet-400" />
             </div>
-            <h2 className="text-lg font-bold text-neutral-900 dark:text-white text-center mb-2">
-              Token Limit Reached
+            <h2 className="text-xl font-bold text-neutral-900 dark:text-white text-center mb-2">
+              You&apos;re out of AI edits
             </h2>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center mb-6">
-              You&apos;ve used all your AI tokens. Upgrade to Pro for more tokens and unlimited AI modifications.
+            <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center mb-5">
+              Upgrade to Pro for <span className="font-semibold text-neutral-700 dark:text-neutral-300">$19/mo</span> and keep editing — 28+ full AI rebuilds per month, brand wizard, and more.
             </p>
-            <div className="flex flex-col gap-2">
-              <Link href="/pricing" className="w-full">
-                <Button className="w-full gap-2">
-                  <Zap className="w-4 h-4" />
-                  Upgrade Now
-                </Button>
-              </Link>
-              <Button
-                variant="ghost"
-                className="w-full"
-                onClick={() => setShowUpgradeModal(false)}
-              >
-                Cancel
-              </Button>
-            </div>
+            <ul className="space-y-2 mb-6">
+              {[
+                '2M AI tokens — ~28 full rebuilds/month',
+                'AI Brand Rebuild in one click',
+                '20 page clones per month',
+                'Custom domain & hosting included',
+              ].map((f) => (
+                <li key={f} className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                  <span className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center flex-shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-600 dark:bg-violet-400" />
+                  </span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <Button
+              className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/stripe/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plan: 'pro' }),
+                  })
+                  const data = await res.json()
+                  if (data.url) window.location.href = data.url
+                } catch { /* noop */ }
+              }}
+            >
+              <Zap className="w-4 h-4" />
+              Get Pro — $19/mo
+            </Button>
+            <button
+              className="w-full mt-3 text-xs text-neutral-400 hover:text-neutral-500 dark:hover:text-neutral-300 transition-colors"
+              onClick={() => setShowUpgradeModal(false)}
+            >
+              Maybe later
+            </button>
           </div>
         </div>
       )}
