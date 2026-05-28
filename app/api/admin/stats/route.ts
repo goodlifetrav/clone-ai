@@ -69,9 +69,17 @@ export async function GET(request: NextRequest) {
     ? supabase.from('analytics_events').select('id', { count: 'exact', head: true }).eq('event_type', 'page_view').gte('created_at', pStart).lt('created_at', pEnd)
     : supabase.from('analytics_events').select('id', { count: 'exact', head: true }).eq('event_type', 'page_view').gte('created_at', pStart)
 
+  // Traffic by source — every visitor page_view that arrived with utm_source
   const sourcesQ = pEnd
     ? supabase.from('analytics_events').select('utm_source').eq('event_type', 'page_view').not('utm_source', 'is', null).gte('created_at', pStart).lt('created_at', pEnd)
     : supabase.from('analytics_events').select('utm_source').eq('event_type', 'page_view').not('utm_source', 'is', null).gte('created_at', pStart)
+
+  // Signups by source — users created in period, joined with their analytics
+  // events to find their attribution utm_source. We take the first matching
+  // event per user (closest to their landing/signup).
+  const signupSourcesUsersQ = pEnd
+    ? supabase.from('users').select('id, created_at').gte('created_at', pStart).lt('created_at', pEnd)
+    : supabase.from('users').select('id, created_at').gte('created_at', pStart)
 
   const recentQ = pEnd
     ? supabase.from('users').select('email, plan, created_at, tokens_used, clones_count').gte('created_at', pStart).lt('created_at', pEnd).order('created_at', { ascending: false }).limit(20)
@@ -95,6 +103,7 @@ export async function GET(request: NextRequest) {
     { data: trafficSources },
     { data: recentUsers },
     { data: countryRows },
+    { data: signupSourcesUsers },
   ] = await Promise.all([
     supabase.from('users').select('id', { count: 'exact', head: true }).gte('created_at', LAUNCH_DATE),
     signupsQ,
@@ -113,7 +122,45 @@ export async function GET(request: NextRequest) {
     sourcesQ,
     recentQ,
     countriesQ,
+    signupSourcesUsersQ,
   ])
+
+  // Signup-source attribution: for each user created in period, find the
+  // utm_source from their analytics events. One DB hit, then in-memory join.
+  const signupSources: { source: string; count: number; pct: number }[] = []
+  if (signupSourcesUsers && signupSourcesUsers.length > 0) {
+    const userIds = signupSourcesUsers.map((u) => u.id)
+    const { data: attribEvents } = await supabase
+      .from('analytics_events')
+      .select('user_id, utm_source, created_at')
+      .in('user_id', userIds)
+      .not('utm_source', 'is', null)
+      .eq('event_type', 'page_view')
+      .order('created_at', { ascending: true })
+
+    // Take first source per user
+    const userToSource: Record<string, string> = {}
+    attribEvents?.forEach((e) => {
+      const ev = e as { user_id: string; utm_source: string }
+      if (ev.user_id && ev.utm_source && !userToSource[ev.user_id]) {
+        userToSource[ev.user_id] = ev.utm_source
+      }
+    })
+    const signupSourceMap: Record<string, number> = {}
+    for (const src of Object.values(userToSource)) {
+      signupSourceMap[src] = (signupSourceMap[src] ?? 0) + 1
+    }
+    const totalAttribUsers = Object.values(signupSourceMap).reduce((a, b) => a + b, 0)
+    Object.entries(signupSourceMap)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([source, count]) => {
+        signupSources.push({
+          source,
+          count,
+          pct: totalAttribUsers > 0 ? Math.round((count / totalAttribUsers) * 100) : 0,
+        })
+      })
+  }
 
   // Plan breakdown + MRR
   const plans: Record<string, number> = {}
@@ -186,6 +233,7 @@ export async function GET(request: NextRequest) {
       visitorsToday: visitorsToday ?? 0,
       visitorsPeriod: visitorsPeriod ?? 0,
       sources,
+      signupSources,
       countries,
     },
     conversions: { signupToPaid, visitToSignup },

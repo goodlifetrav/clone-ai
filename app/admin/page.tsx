@@ -26,7 +26,7 @@ interface Stats {
     totalTokens: number
   }
   clones: { total: number; thisPeriod: number }
-  traffic: { visitorsToday: number; visitorsPeriod: number; sources: { source: string; count: number; pct: number }[]; countries: { country: string; count: number }[] }
+  traffic: { visitorsToday: number; visitorsPeriod: number; sources: { source: string; count: number; pct: number }[]; signupSources: { source: string; count: number; pct: number }[]; countries: { country: string; count: number }[] }
   conversions: { signupToPaid: number; visitToSignup: number }
   chartData: { date: string; count: number }[]
   topUsers: { email: string; plan: string; tokens_used: number; clones_count: number }[]
@@ -340,11 +340,40 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Traffic Sources */}
+          {/* Signups by Source — attributed via the user's first page_view utm */}
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-green-500" />
+              <h2 className="font-semibold text-neutral-900 dark:text-white">Signups by Source</h2>
+              <span className="text-xs text-neutral-400 ml-auto">{periodLabel}</span>
+            </div>
+            {!stats.traffic.signupSources || stats.traffic.signupSources.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-6">No attributed signups yet.<br />Users sign up but their landing didn&apos;t carry a UTM tag.</p>
+            ) : (
+              <div className="space-y-3">
+                {stats.traffic.signupSources.map((s) => (
+                  <div key={s.source}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="capitalize text-neutral-700 dark:text-neutral-300">{s.source}</span>
+                      <span className="text-neutral-500">{s.count} · {s.pct}%</span>
+                    </div>
+                    <div className="h-2 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${SOURCE_COLOR[s.source.toLowerCase()] ?? 'bg-green-500'}`}
+                        style={{ width: `${s.pct}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Traffic by Source — every visitor page_view with utm_source */}
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 space-y-4">
             <div className="flex items-center gap-2">
               <Globe className="w-4 h-4 text-purple-500" />
-              <h2 className="font-semibold text-neutral-900 dark:text-white">Traffic Sources</h2>
+              <h2 className="font-semibold text-neutral-900 dark:text-white">Traffic by Source</h2>
               <span className="text-xs text-neutral-400 ml-auto">{periodLabel}</span>
             </div>
             {stats.traffic.sources.length === 0 ? (
