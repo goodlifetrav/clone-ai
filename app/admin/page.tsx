@@ -140,7 +140,7 @@ function SignupsChart({ data }: { data: { date: string; count: number }[] }) {
 
 export default function AdminPage() {
   const router = useRouter()
-  const [period, setPeriod] = useState<Period>('7d')
+  const [period, setPeriod] = useState<Period>('today')
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
