@@ -99,6 +99,12 @@ export async function GET(
         try { controller.enqueue(makeEvent(data)) } catch { /* client disconnected */ }
       }
 
+      // safeClose: client may disconnect before our success/error branch
+      // calls close(), which makes the raw close() throw "Controller is
+      // already closed". Wrap every close so disconnect noise doesn't bubble
+      // to the outer catch + Telegram error reporter.
+      const safeClose = () => { try { controller.close() } catch { /* already closed */ } }
+
       try {
         let waited = 0
         let progressIdx = 0
@@ -120,13 +126,13 @@ export async function GET(
 
           if (latest?.status === 'complete') {
             send({ done: true, html: latest.html_content })
-            controller.close()
+            safeClose()
             return
           }
 
           if (latest?.status === 'error') {
             send({ error: 'This site could not be cloned. It may have bot protection or take too long to load. Please try a different URL.' })
-            controller.close()
+            safeClose()
             return
           }
 
@@ -140,12 +146,17 @@ export async function GET(
         send({ error: 'This site could not be cloned. It may have bot protection or take too long to load. Please try a different URL.' })
       } catch (err) {
         const error = err as Error
-        console.error('Generate error:', error)
-        reportError(err, 'GET /api/projects/[id]/generate', { projectId: id, url: project.url })
-        await supabase.from('projects').update({ status: 'error' }).eq('id', id)
-        send({ error: error.message || 'Generation failed' })
+        // "Controller is already closed" = benign client-disconnect race.
+        // Don't spam Telegram with these; only report real errors.
+        const benign = /Controller is already closed/i.test(error.message ?? '')
+        if (!benign) {
+          console.error('Generate error:', error)
+          reportError(err, 'GET /api/projects/[id]/generate', { projectId: id, url: project.url })
+          await supabase.from('projects').update({ status: 'error' }).eq('id', id)
+          send({ error: error.message || 'Generation failed' })
+        }
       } finally {
-        try { controller.close() } catch { /* already closed */ }
+        safeClose()
       }
     },
   })
