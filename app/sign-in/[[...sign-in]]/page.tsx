@@ -17,6 +17,12 @@ export default function SignInPage() {
     const params = new URLSearchParams(window.location.search)
     setIsPopup(params.get('popup') === '1')
     setNext(params.get('next') ?? '/dashboard')
+    const err = params.get('error')
+    if (err === 'email_password_account_exists') {
+      setError('This email is already registered with a password. Please sign in with email and password below.')
+    } else if (err === 'google_auth_failed') {
+      setError('Google sign-in failed. Please try again or sign in with email and password.')
+    }
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {

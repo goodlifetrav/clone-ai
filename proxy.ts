@@ -10,9 +10,18 @@ function isAppHost(host: string): boolean {
   return APP_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`))
 }
 
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET
+  if (secret && secret.length >= 32) return secret
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET environment variable is required in production (min 32 chars)')
+  }
+  return 'fallback-dev-secret-change-in-production-32chars'
+}
+
 const sessionOptions = {
   cookieName: 'igualai_session',
-  password: process.env.SESSION_SECRET ?? 'fallback-dev-secret-change-in-production-32chars',
+  password: getSessionSecret(),
 }
 
 const PROTECTED_PATHS = ['/dashboard', '/editor', '/settings']

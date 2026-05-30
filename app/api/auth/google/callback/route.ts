@@ -66,6 +66,22 @@ export async function GET(request: NextRequest) {
     let userId: string
 
     if (existingUser) {
+      // Refuse to merge a Google sign-in into an account that was created via
+      // email/password — protects against squatter takeover where an attacker
+      // registers victim@gmail.com first, then loses control when the real
+      // owner signs in via Google. Only allow if the existing Supabase Auth
+      // user already has a google identity linked, or if the user predates
+      // Supabase Auth (legacy non-UUID clerk_id).
+      const { data: authUser } = await db.auth.admin.getUserById(existingUser.clerk_id)
+      const isLegacyUser = !authUser?.user
+      const hasGoogleIdentity = (authUser?.user?.identities ?? []).some(
+        (i) => i.provider === 'google'
+      )
+      if (!isLegacyUser && !hasGoogleIdentity) {
+        return NextResponse.redirect(
+          `${appUrl}/sign-in?error=email_password_account_exists`
+        )
+      }
       userId = existingUser.clerk_id
     } else {
       // New user — create a Supabase Auth user so email/password sign-in works later
