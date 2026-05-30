@@ -84,9 +84,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
+    // Whitelist client-supplied fields. Spreading ...body lets a caller pass
+    // status='complete', html_content, id, clones_count, etc. — bypassing
+    // /api/clone plan limits and tampering with billing-relevant columns.
+    // html_content must come from /api/clone (the expensive scrape pipeline).
+    const payload: Record<string, unknown> = { user_id: user.id }
+    if (typeof body.name === 'string') payload.name = body.name
+    if (typeof body.url === 'string') payload.url = body.url
+    if (typeof body.thumbnail_url === 'string') payload.thumbnail_url = body.thumbnail_url
+    if (typeof body.folder_id === 'string' || body.folder_id === null) {
+      payload.folder_id = body.folder_id
+    }
+
     const { data: project, error } = await supabase
       .from('projects')
-      .insert({ ...body, user_id: user.id })
+      .insert(payload)
       .select()
       .single()
 

@@ -80,9 +80,20 @@ export async function PUT(
 
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
+    // Whitelist updatable fields. Spreading ...body would let a caller
+    // overwrite user_id, status, id, clones_count, or other server-managed
+    // columns. Status transitions belong to /api/clone and /api/generate.
+    const payload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (typeof body.name === 'string') payload.name = body.name
+    if (typeof body.html_content === 'string') payload.html_content = body.html_content
+    if (typeof body.thumbnail_url === 'string') payload.thumbnail_url = body.thumbnail_url
+    if (typeof body.folder_id === 'string' || body.folder_id === null) {
+      payload.folder_id = body.folder_id
+    }
+
     const { data: updated, error } = await supabase
       .from('projects')
-      .update({ ...body, updated_at: new Date().toISOString() })
+      .update(payload)
       .eq('id', id)
       .select()
       .single()
