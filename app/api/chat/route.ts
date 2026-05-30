@@ -78,7 +78,12 @@ export async function POST(request: NextRequest) {
 
   // ── Fetch current state ──────────────────────────────────────────────────
   const [{ data: project }, { data: chatHistory }] = await Promise.all([
-    supabase.from('projects').select('html_content, folder_id, url').eq('id', projectId).single(),
+    supabase
+      .from('projects')
+      .select('html_content, folder_id, url')
+      .eq('id', projectId)
+      .eq('user_id', user.id)
+      .single(),
     supabase
       .from('chat_messages')
       .select('role, content')
@@ -86,6 +91,8 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: true })
       .limit(20),
   ])
+
+  if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
   // Only use stored HTML as blueprint if it's a real HTML document — not garbage from a failed generation
   const raw = project?.html_content ?? ''

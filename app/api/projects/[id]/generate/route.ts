@@ -21,10 +21,18 @@ export async function GET(
   const { id } = await params
   const supabase = createServiceClient()
 
+  const { data: user } = await supabase
+    .from('users')
+    .select('id')
+    .eq('clerk_id', userId)
+    .single()
+  if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
   const { data: project } = await supabase
     .from('projects')
     .select('id, url, status, html_content, user_id')
     .eq('id', id)
+    .eq('user_id', user.id)
     .single()
 
   if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })

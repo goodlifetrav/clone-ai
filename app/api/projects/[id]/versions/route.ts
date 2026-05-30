@@ -2,6 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 
+async function verifyProjectOwnership(
+  supabase: ReturnType<typeof createServiceClient>,
+  clerkId: string,
+  projectId: string
+): Promise<boolean> {
+  const { data: user } = await supabase
+    .from('users')
+    .select('id')
+    .eq('clerk_id', clerkId)
+    .single()
+  if (!user) return false
+  const { data: project } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('user_id', user.id)
+    .single()
+  return !!project
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -12,6 +32,10 @@ export async function GET(
 
     const { id } = await params
     const supabase = createServiceClient()
+
+    if (!(await verifyProjectOwnership(supabase, userId, id))) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    }
 
     const { data: versions, error } = await supabase
       .from('project_versions')
@@ -38,6 +62,10 @@ export async function POST(
     const { id } = await params
     const { html_content, label } = await request.json()
     const supabase = createServiceClient()
+
+    if (!(await verifyProjectOwnership(supabase, userId, id))) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    }
 
     // Auto-snapshot the original clone before the first user-saved version.
     // The Brand Rebuild route used to do this, but since chat-edits can now

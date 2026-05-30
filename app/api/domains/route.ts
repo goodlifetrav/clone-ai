@@ -68,6 +68,19 @@ export async function POST(request: NextRequest) {
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
+    // Verify the project belongs to the caller — otherwise an attacker could
+    // attach their own (DNS-verifiable) domain to someone else's project and
+    // hijack the public surface for their html_content.
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', project_id)
+      .eq('user_id', user.id)
+      .single()
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    }
+
     // Check for duplicates
     const { data: existing } = await supabase
       .from('custom_domains')

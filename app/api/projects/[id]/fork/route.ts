@@ -32,11 +32,13 @@ export async function POST(
       )
     }
 
-    // Get original project
+    // Get original project — must belong to the caller. Fork is meant to
+    // duplicate your own project, not to copy arbitrary users' html_content.
     const { data: original } = await supabase
       .from('projects')
       .select('*')
       .eq('id', id)
+      .eq('user_id', user.id)
       .single()
 
     if (!original) return NextResponse.json({ error: 'Project not found' }, { status: 404 })

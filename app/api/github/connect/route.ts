@@ -35,10 +35,19 @@ export async function POST(request: NextRequest) {
     const { createServiceClient } = await import('@/lib/supabase')
 
     const supabase = createServiceClient()
+
+    const { data: user } = await supabase
+      .from('users')
+      .select('id')
+      .eq('clerk_id', userId)
+      .single()
+    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
     const { data: project } = await supabase
       .from('projects')
       .select('*')
       .eq('id', projectId)
+      .eq('user_id', user.id)
       .single()
 
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })

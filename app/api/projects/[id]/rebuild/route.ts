@@ -27,6 +27,7 @@ export async function POST(
     .from('projects')
     .select('html_content, user_id, folder_id, url')
     .eq('id', id)
+    .eq('user_id', user.id)
     .single()
 
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
