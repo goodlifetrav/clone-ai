@@ -1,5 +1,5 @@
 import { Header } from '@/components/header'
-import { UrlInput } from '@/components/url-input'
+import { HomeCta } from '@/components/home-cta'
 import { TypewriterHeadline } from '@/components/typewriter-headline'
 import { Zap } from 'lucide-react'
 import Link from 'next/link'
@@ -52,12 +52,12 @@ export default function Home() {
 
           {/* Subtitle */}
           <p className="text-lg md:text-xl text-neutral-500 dark:text-neutral-400 text-center max-w-xl mb-12 leading-relaxed">
-            Paste a URL and get an editable, AI-powered clone in seconds.
+            Get an editable, AI-powered clone of any website in seconds.
             Rebuild it as your brand. Deploy anywhere.
           </p>
 
-          {/* URL Input */}
-          <UrlInput />
+          {/* CTA */}
+          <HomeCta />
 
           {/* Stats */}
           <p className="mt-6 text-sm text-neutral-400 dark:text-neutral-500">
