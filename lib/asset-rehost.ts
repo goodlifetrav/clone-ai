@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { uploadToR2, isR2Configured } from './r2'
+import { isLiteralPrivateIpUrl } from './url-blocker'
 
 const NON_IMAGE_EXTS = new Set(['css', 'js', 'woff', 'woff2', 'ttf', 'eot', 'svg'])
 
@@ -70,6 +71,7 @@ export async function rehostFonts(html: string, projectId: string): Promise<stri
           if (rawUrl.includes('r2.dev')) return
           const url = rawUrl.startsWith('//') ? 'https:' + rawUrl : rawUrl
           if (!url.startsWith('http://') && !url.startsWith('https://')) return
+          if (isLiteralPrivateIpUrl(url)) return
 
           const res = await fetch(url, {
             signal: AbortSignal.timeout(8000),
@@ -174,6 +176,7 @@ export async function rehostImages(html: string, projectId: string): Promise<str
 
           // Resolve protocol-relative
           const url = rawUrl.startsWith('//') ? 'https:' + rawUrl : rawUrl
+          if (isLiteralPrivateIpUrl(url)) return
 
           // Skip known non-image extensions
           const pathname = url.split('?')[0]

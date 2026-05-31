@@ -308,7 +308,7 @@ export function VisualEditor({
             srcDoc={editableHtml}
             className="border-0"
             style={{ width: DESKTOP_WIDTH, height: scaledHeight, minHeight: '100vh' }}
-            sandbox="allow-scripts allow-same-origin"
+            sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
             title="Visual Editor"
           />
         </div>

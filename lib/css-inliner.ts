@@ -1,4 +1,5 @@
 import { load } from 'cheerio'
+import { isLiteralPrivateIpUrl } from './url-blocker'
 
 /**
  * cssInliner — fetch all external stylesheets and replace <link> tags with
@@ -24,6 +25,7 @@ export async function inlineCss(html: string, baseUrl: string): Promise<string> 
       } catch {
         return
       }
+      if (isLiteralPrivateIpUrl(cssUrl)) return
 
       let css: string
       try {
@@ -47,6 +49,7 @@ export async function inlineCss(html: string, baseUrl: string): Promise<string> 
       for (const { full, href: importHref } of imports) {
         try {
           const resolved = new URL(importHref, cssUrl).href
+          if (isLiteralPrivateIpUrl(resolved)) continue
           const importRes = await fetch(resolved, {
             signal: AbortSignal.timeout(10000),
           })

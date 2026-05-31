@@ -257,7 +257,7 @@ export function PreviewPane({ projectId, html, className = '' }: PreviewPaneProp
           <iframe
             srcDoc={safeHtml}
             className="w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin"
+            sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
             title="Preview"
           />
         ) : (

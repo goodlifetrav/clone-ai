@@ -3,6 +3,30 @@ import { load } from 'cheerio'
 // Scripts that control visual layout are kept; everything else is removed.
 const KEEP_SCRIPT_RE = /carousel|slider|swiper|splide|glide|tabs|accordion|toggle|modal|lightbox|fancybox/i
 
+// External scripts are only kept when loaded from one of these trusted CDNs.
+// Anything else (incl. attacker-controlled domains hosting a "carousel.js")
+// gets stripped even if the URL matches KEEP_SCRIPT_RE.
+const TRUSTED_SCRIPT_HOSTS = new Set([
+  'cdn.shopify.com',
+  'cdn.jsdelivr.net',
+  'cdnjs.cloudflare.com',
+  'unpkg.com',
+  'cdn.statically.io',
+  'code.jquery.com',
+  'ajax.googleapis.com',
+  'maxcdn.bootstrapcdn.com',
+  'stackpath.bootstrapcdn.com',
+])
+
+function isTrustedScriptSrc(src: string): boolean {
+  try {
+    const url = new URL(src, 'https://placeholder.invalid/')
+    return TRUSTED_SCRIPT_HOSTS.has(url.hostname.replace(/^www\./, ''))
+  } catch {
+    return false
+  }
+}
+
 // Scripts with these patterns in src are always removed (even if they look visual).
 const TRACKING_SRC_RE = /track|analytics|pixel|gtm[\./]|\/gtag|ga\.(js|min)|fbq|hotjar|mixpanel|segment|amplitude|klaviyo|intercom|crisp|drift/i
 
@@ -188,7 +212,6 @@ export function cleanHtml(html: string, url = ''): string {
 
   $('script').each((_, el) => {
     const src = $(el).attr('src') ?? ''
-    const inline = $(el).html() ?? ''
 
     // Always remove tracking/analytics scripts by src
     if (TRACKING_SRC_RE.test(src)) {
@@ -196,14 +219,51 @@ export function cleanHtml(html: string, url = ''): string {
       return
     }
 
-    // Keep scripts that drive visual layout widgets
-    if (KEEP_SCRIPT_RE.test(src) || KEEP_SCRIPT_RE.test(inline)) {
+    // Never persist inline scripts. Previously this also kept inline scripts
+    // matching KEEP_SCRIPT_RE, which let an attacker hide a "// slider hack"
+    // comment in front of arbitrary JS and have it survive cleaning.
+    if (!src) {
+      $(el).remove()
+      return
+    }
+
+    // Keep external scripts only when both:
+    //   1. URL matches the visual-widget allowlist (carousel/slider/etc.), and
+    //   2. URL is loaded from a trusted CDN — not an attacker-controlled host.
+    if (KEEP_SCRIPT_RE.test(src) && isTrustedScriptSrc(src)) {
       return
     }
 
     // Remove everything else
     $(el).remove()
   })
+
+  // ── Strip event-handler attributes and javascript: URLs ─────────────────────
+  // The script cleanup above protects against tag-level XSS, but inline event
+  // handlers (onerror, onload, onclick, etc.) and javascript: URLs in href/src
+  // are an entirely separate vector that the old cleaner missed.
+  const EVENT_ATTR_RE = /^on[a-z]+$/i
+  const URL_ATTRS = ['href', 'src', 'action', 'formaction', 'xlink:href', 'data']
+
+  $('*').each((_, el) => {
+    const attribs = (el as { attribs?: Record<string, string> }).attribs
+    if (!attribs) return
+    for (const name of Object.keys(attribs)) {
+      if (EVENT_ATTR_RE.test(name)) {
+        $(el).removeAttr(name)
+        continue
+      }
+      if (URL_ATTRS.includes(name.toLowerCase())) {
+        const v = (attribs[name] ?? '').trim().toLowerCase()
+        if (v.startsWith('javascript:') || v.startsWith('vbscript:') || v.startsWith('data:text/html')) {
+          $(el).removeAttr(name)
+        }
+      }
+    }
+  })
+
+  // Remove tags that can execute code outside our control (Flash, Java, etc.)
+  $('object, embed, applet').remove()
 
   // Remove cookie consent banners / GDPR popups
   $('[id*="cookie"], [class*="cookie"], [id*="consent"], [class*="consent"], [id*="gdpr"], [class*="gdpr"], [id*="privacy-banner"], [class*="privacy-banner"], [id*="cc-"], [class*="cc-banner"], [id*="CookieBanner"], [class*="CookieBanner"], [id*="cookiebanner"], [class*="cookiebanner"], [id*="shopify-pc"], [class*="shopify-pc"], [id*="shopify-privacy"], [class*="shopify-privacy"], [id*="privacy-bar"], [class*="privacy-bar"]').remove()

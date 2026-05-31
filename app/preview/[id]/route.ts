@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
+import { getAuth } from '@/lib/auth'
+import { isAdminEmail } from '@/lib/admin'
 
 // CSS injected into every preview to fix common cloning artifacts.
 // Do NOT add background-color here — it breaks dark-themed stores.
@@ -220,47 +222,73 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    console.log('[preview] GET /preview/' + id)
 
     if (!id) {
-      console.log('[preview] ERROR: no id in params')
       return new Response('Missing project ID', { status: 400 })
     }
 
-    const supabase = createServiceClient()
-    console.log('[preview] Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
+    // Require auth — previously this route was public, which let any visitor
+    // pull any project's html_content by guessing/sniffing UUIDs. Admins may
+    // view any project; non-admins must own it.
+    const { userId } = await getAuth()
+    if (!userId) {
+      return new Response('Unauthorized', { status: 401 })
+    }
 
-    const { data: project, error } = await supabase
+    const supabase = createServiceClient()
+
+    const { data: user } = await supabase
+      .from('users')
+      .select('id, email, is_admin')
+      .eq('clerk_id', userId)
+      .single()
+    if (!user) {
+      return new Response('User not found', { status: 404 })
+    }
+    const isAdmin = user.is_admin || isAdminEmail(user.email)
+
+    const projectQuery = supabase
       .from('projects')
       .select('html_content')
       .eq('id', id)
-      .single()
-
-    console.log('[preview] Supabase error:', error)
-    console.log('[preview] project found:', !!project)
-    console.log('[preview] html_content length:', project?.html_content?.length ?? 0)
-    console.log('[preview] html_content preview:', project?.html_content?.slice(0, 200))
+    if (!isAdmin) projectQuery.eq('user_id', user.id)
+    const { data: project, error } = await projectQuery.single()
 
     if (error || !project) {
-      return new Response(`Project not found: ${error?.message ?? 'no data'}`, { status: 404 })
+      return new Response('Project not found', { status: 404 })
     }
 
     if (!project.html_content) {
-      console.log('[preview] ERROR: html_content is empty/null')
       return new Response('<html><body><p>No HTML content saved for this project yet.</p></body></html>', {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       })
     }
 
     const html = prepareHtml(project.html_content)
-    console.log('[preview] Serving HTML, length:', html.length)
 
     return new Response(html, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
-        // Allow all external images (R2, CDNs, original sites) to load
-        'Content-Security-Policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
+        // Tightened CSP: drops 'unsafe-eval', restricts plugin objects, and
+        // prevents the preview being embedded as an attack frame. Inline
+        // scripts/styles remain allowed because the cloned content and the
+        // injected proxy script both rely on them.
+        'Content-Security-Policy': [
+          "default-src 'self' 'unsafe-inline'",
+          "script-src 'self' 'unsafe-inline'",
+          "style-src * 'unsafe-inline'",
+          "img-src * data: blob:",
+          "font-src * data:",
+          "media-src * data: blob:",
+          "connect-src *",
+          "frame-src https:",
+          "object-src 'none'",
+          "base-uri 'none'",
+          "frame-ancestors 'self'",
+        ].join('; '),
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
       },
     })
   } catch (err) {

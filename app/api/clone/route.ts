@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { extractDomain } from '@/lib/utils'
 import { isAdminEmail } from '@/lib/admin'
 import { reportError } from '@/lib/error-report'
-import { checkUrlBlocked } from '@/lib/url-blocker'
+import { checkUrlBlocked, isSafeRemoteUrl } from '@/lib/url-blocker'
 
 export async function POST(request: NextRequest) {
   let cloneUrl: string | undefined
@@ -19,6 +19,14 @@ export async function POST(request: NextRequest) {
     const block = checkUrlBlocked(url)
     if (block.blocked) {
       return NextResponse.json({ error: block.reason }, { status: 403 })
+    }
+
+    // SSRF guard — reject hosts that resolve to private/internal IPs (incl.
+    // cloud metadata 169.254.169.254). Must run *after* checkUrlBlocked so
+    // we don't waste DNS on already-blocked URLs.
+    const ssrf = await isSafeRemoteUrl(url)
+    if (ssrf.blocked) {
+      return NextResponse.json({ error: ssrf.reason }, { status: 403 })
     }
 
     const supabase = createServiceClient()
