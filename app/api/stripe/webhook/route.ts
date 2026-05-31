@@ -45,6 +45,24 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServiceClient()
 
+  // ── Idempotency: dedupe by Stripe event id ──────────────────────────────────
+  // Stripe retries non-2xx responses, so the same event can fire here twice.
+  // Insert the event id first; ON CONFLICT means we've already processed it
+  // and should just return 200 without re-running side effects (e.g.
+  // double-applying a token-pack purchase, double-resetting tokens_used).
+  const { error: dedupeError } = await supabase
+    .from('stripe_events')
+    .insert({ id: event.id, type: event.type })
+  if (dedupeError) {
+    if (dedupeError.code === '23505') {
+      console.log('Webhook duplicate, skipping:', event.id, event.type)
+      return NextResponse.json({ received: true, deduped: true })
+    }
+    // Unknown DB error — fall through and let Stripe retry.
+    console.error('Webhook dedupe insert failed:', dedupeError)
+    return NextResponse.json({ error: 'Dedupe insert failed' }, { status: 500 })
+  }
+
   try {
     switch (event.type) {
       case 'checkout.session.completed': {
@@ -185,8 +203,21 @@ export async function POST(request: NextRequest) {
             ? stripeStatus
             : 'inactive'
 
+        // Subscriptions in these statuses no longer entitle the user to a
+        // paid plan. past_due/incomplete keep Pro features briefly so a one-off
+        // failed-and-retried payment doesn't yank access from a paying user.
+        // unpaid/canceled/incomplete_expired/paused = revoke access.
+        const REVOKED_STATUSES = new Set([
+          'unpaid',
+          'canceled',
+          'incomplete_expired',
+          'paused',
+        ])
+        const isRevoked = REVOKED_STATUSES.has(stripeStatus)
+
         const priceId = subscription.items.data[0]?.price?.id
-        const newPlan: Plan | null = priceId ? (PRICE_TO_PLAN[priceId] ?? null) : null
+        const mappedPlan: Plan | null = priceId ? (PRICE_TO_PLAN[priceId] ?? null) : null
+        const newPlan: Plan | null = isRevoked ? 'free' : mappedPlan
 
         const { error: billingError } = await supabase
           .from('billing')
@@ -211,12 +242,15 @@ export async function POST(request: NextRequest) {
               priceId,
               newPlan,
               billingStatus,
+              stripeStatus,
+              isRevoked,
             })
           }
         } else {
           console.warn('customer.subscription.updated: could not map price to plan', {
             customerId,
             priceId,
+            stripeStatus,
           })
         }
         break
@@ -280,7 +314,6 @@ export async function POST(request: NextRequest) {
 
         if (!customerId) break
 
-        // Reset billing period on every successful payment
         const { data: paidUser } = await supabase
           .from('users')
           .select('id')
@@ -288,11 +321,20 @@ export async function POST(request: NextRequest) {
           .single()
 
         if (paidUser) {
+          // Reset both billing_period_start AND the per-period usage counters.
+          // Previously only billing_period_start moved forward, so Pro users
+          // hit their lifetime token cap and stayed permanently blocked from
+          // chat across renewals. clones_count gets the same treatment so the
+          // monthly quota resets too.
           await supabase
             .from('users')
-            .update({ billing_period_start: new Date().toISOString() })
+            .update({
+              billing_period_start: new Date().toISOString(),
+              tokens_used: 0,
+              clones_count: 0,
+            })
             .eq('id', paidUser.id)
-          console.log('invoice.payment_succeeded: billing_period_start reset', { customerId })
+          console.log('invoice.payment_succeeded: period + counters reset', { customerId })
         }
         break
       }
