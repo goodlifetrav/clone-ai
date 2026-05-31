@@ -37,23 +37,29 @@ async function lookupCountry(ip: string): Promise<string | null> {
 
 export async function POST(request: NextRequest) {
   try {
-    const { event_type, page, referrer, utm_source, utm_medium, utm_campaign, user_id } =
+    // Intentionally do NOT pull user_id from the request body — that was a
+    // spoofing vector that let any caller attribute events to anyone (and
+    // poison the admin Signups-by-Source panel). user_id is now derived
+    // server-side from the iron-session cookie below.
+    const { event_type, page, referrer, utm_source, utm_medium, utm_campaign } =
       await request.json()
 
     // Skip analytics for admin accounts so my own visits don't pollute the
     // metrics. Two checks because both `users.is_admin` and the static
     // isAdminEmail() allowlist can mark someone as admin.
     const session = await getSession()
+    let derivedUserId: string | null = null
     if (session.whopUserId) {
       const supabase = createServiceClient()
       const { data: me } = await supabase
         .from('users')
-        .select('is_admin, email')
+        .select('id, is_admin, email')
         .eq('clerk_id', session.whopUserId)
         .single()
       if (me?.is_admin || isAdminEmail(me?.email) || isAdminEmail(session.email)) {
         return NextResponse.json({ ok: true, skipped: 'admin' })
       }
+      derivedUserId = me?.id ?? null
     }
 
     const ip = getIp(request)
@@ -75,7 +81,7 @@ export async function POST(request: NextRequest) {
       utm_source: utm_source ?? null,
       utm_medium: utm_medium ?? null,
       utm_campaign: utm_campaign ?? null,
-      user_id: user_id ?? null,
+      user_id: derivedUserId,
       country,
     })
   } catch { /* silently fail — analytics must never break the app */ }

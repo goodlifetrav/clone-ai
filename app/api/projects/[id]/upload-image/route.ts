@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 
+// SVG intentionally excluded: SVG can carry <script> + on*= handlers, and the
+// uploaded file is served from a public bucket and rendered as part of the
+// editor. Until we sanitize SVGs on the server, the safer default is to drop
+// them from the allowlist entirely.
 const ALLOWED_TYPES = new Set([
   'image/jpeg',
   'image/jpg',
   'image/png',
   'image/gif',
   'image/webp',
-  'image/svg+xml',
 ])
 const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
 
@@ -45,7 +48,7 @@ export async function POST(
 
   if (!ALLOWED_TYPES.has(file.type)) {
     return NextResponse.json(
-      { error: 'Invalid file type. Allowed: jpg, png, gif, webp, svg' },
+      { error: 'Invalid file type. Allowed: jpg, png, gif, webp' },
       { status: 400 }
     )
   }

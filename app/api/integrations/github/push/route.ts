@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuth } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
+import { isAdminEmail } from '@/lib/admin'
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,11 +20,21 @@ export async function POST(request: NextRequest) {
 
     const { data: user } = await supabase
       .from('users')
-      .select('id')
+      .select('id, plan, email, is_admin')
       .eq('clerk_id', userId)
       .single()
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
+    // Gate GitHub push behind a paid plan — same pattern as Download/Fork/
+    // Vercel deploy. Admins exempt for testing.
+    const isAdmin = user.is_admin || isAdminEmail(user.email)
+    if (!isAdmin && user.plan === 'free') {
+      return NextResponse.json(
+        { error: 'GitHub push requires Pro or higher.', upgradeUrl: '/pricing?from=github' },
+        { status: 402 }
+      )
+    }
 
     const { data: project } = await supabase
       .from('projects')
