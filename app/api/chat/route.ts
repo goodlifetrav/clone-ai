@@ -6,6 +6,7 @@ import { isAdminEmail } from '@/lib/admin'
 import { reportError } from '@/lib/error-report'
 import { createJob, completeJob, failJob } from '@/lib/chat-jobs'
 import { extractHeaderFooter, replaceHeaderFooter, mergeFontLinks } from '@/lib/header-footer'
+import { limit } from '@/lib/rate-limit'
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,6 +43,17 @@ export async function POST(request: NextRequest) {
   // ── Auth & input validation ──────────────────────────────────────────────
   const { userId } = await getAuth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // 30 chat messages per user per minute. Tokens are already metered, but
+  // without a request-rate cap one user can stampede Gemini and starve
+  // every other user behind the same upstream rate limit.
+  const rl = limit(`chat:${userId}`, { limit: 30, windowMs: 60_000 })
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: 'You are sending messages too quickly. Try again in a moment.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    )
+  }
 
   const body = await request.json()
   const { projectId, message, uploadedImageUrls } = body

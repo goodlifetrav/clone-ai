@@ -5,12 +5,24 @@ import { extractDomain } from '@/lib/utils'
 import { isAdminEmail } from '@/lib/admin'
 import { reportError } from '@/lib/error-report'
 import { checkUrlBlocked, isSafeRemoteUrl } from '@/lib/url-blocker'
+import { limit } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   let cloneUrl: string | undefined
   try {
     const { userId } = await getAuth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // 5 clone requests per user per minute. Each clone runs Playwright +
+    // Gemini Vision (~$0.05-0.10), so unrestrained calls cost real money
+    // and can wedge the queue for everyone else.
+    const rl = limit(`clone:${userId}`, { limit: 5, windowMs: 60_000 })
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: 'Too many clone requests. Slow down and try again in a minute.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+      )
+    }
 
     const { url } = await request.json()
     cloneUrl = url

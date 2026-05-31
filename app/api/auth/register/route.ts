@@ -2,8 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
 import { sendWelcomeEmail, sendCommunityInviteEmail } from '@/lib/email'
+import { limit, getClientIp } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
+  // Signup-flood guard: 5 registrations / hour per source IP.
+  const ip = getClientIp(request)
+  const rl = limit(`register:${ip}`, { limit: 5, windowMs: 60 * 60 * 1000 })
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: 'Too many signup attempts. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    )
+  }
+
   const { email, password, name } = await request.json()
 
   if (!email || !password) {

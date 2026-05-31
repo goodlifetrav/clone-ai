@@ -2,8 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase'
+import { limit, getClientIp } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
+  // Credential-stuffing guard: 10 attempts / 15 min per source IP.
+  const ip = getClientIp(request)
+  const rl = limit(`signin:${ip}`, { limit: 10, windowMs: 15 * 60 * 1000 })
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: 'Too many sign-in attempts. Try again in a few minutes.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    )
+  }
+
   const { email, password } = await request.json()
 
   if (!email || !password) {
