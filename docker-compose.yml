@@ -3,8 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    # Bind to 127.0.0.1 so port 3000 is not reachable from the public
+    # internet — nginx (also on this host) reverse-proxies to it.
+    # Previously "3000:3000" bound to 0.0.0.0, bypassing nginx (and its
+    # rate limits, TLS, and security headers) for anyone hitting the VPS
+    # IP directly on port 3000.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     env_file:
       - .env.local
     restart: unless-stopped

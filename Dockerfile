@@ -21,18 +21,24 @@ COPY --from=builder /app/public           ./public
 COPY --from=builder /app/node_modules     ./node_modules
 
 # Install Playwright Chromium + its OS dependencies into the Docker layer.
-# Baking the browser into the image means:
-#   - No download on container start → instant startup
-#   - startup.sh's cache-check always passes and is a no-op
-#   - No volume mount needed (a volume at the same path would shadow these files)
-RUN npx playwright install chromium --with-deps
+# Browsers go to a shared path under /opt so the runtime can read them as
+# the non-root `node` user regardless of $HOME. apt-get and the chromium
+# download both need root, so they run here before the USER switch.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN mkdir -p /opt/playwright \
+    && npx playwright install chromium --with-deps \
+    && chown -R node:node /opt/playwright /app
 
-COPY startup.sh ./
+COPY --chown=node:node startup.sh ./
 RUN chmod +x startup.sh
 
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
+# Drop root for runtime. A container compromise here lands the attacker
+# in an unprivileged user context inside a Playwright-laden image, not
+# uid 0.
+USER node
 EXPOSE 3000
 CMD ["sh", "startup.sh"]
