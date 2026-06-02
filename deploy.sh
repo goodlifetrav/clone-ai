@@ -18,7 +18,13 @@ cd "$APP_DIR"
 log "Pulling latest code..."
 git pull origin main
 
-# 2. Build Next.js
+# 2. Install any new/updated deps before build. Skips network when the
+#    lockfile already matches node_modules, so it's near-free on no-op
+#    deploys but picks up any package.json changes automatically.
+log "Installing deps (no-op if lockfile matches)..."
+npm install --no-audit --no-fund
+
+# 3. Build Next.js
 log "Building Next.js..."
 npm run build
 

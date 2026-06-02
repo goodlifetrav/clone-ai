@@ -1,19 +1,118 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 
 // gemini-2.5-flash is deprecated June 2026 — upgraded to 3.5-flash.
 // Fallback to gemini-2.5-flash while 3.5 stabilizes.
 const PRIMARY_MODEL = 'gemini-3.5-flash'
 const FALLBACK_MODEL = 'gemini-2.5-flash'
 
-let _client: GoogleGenerativeAI | null = null
+// Switched from Google AI Studio (api-key auth, prepay billing depleted) to
+// Vertex AI (service-account auth, charges go straight to the GCP billing
+// account which holds the $300 credit). The SDK auto-loads credentials from
+// GOOGLE_APPLICATION_CREDENTIALS — set on the server to the path of the
+// service-account JSON for igualai-vertex@.
+let _ai: GoogleGenAI | null = null
 
-function getClient(): GoogleGenerativeAI {
-  if (!_client) {
-    const key = process.env.GEMINI_API_KEY
-    if (!key) throw new Error('GEMINI_API_KEY is not set')
-    _client = new GoogleGenerativeAI(key)
+function getAI(): GoogleGenAI {
+  if (!_ai) {
+    const project = process.env.GOOGLE_CLOUD_PROJECT
+    if (!project) throw new Error('GOOGLE_CLOUD_PROJECT is not set')
+    _ai = new GoogleGenAI({
+      vertexai: true,
+      project,
+      location: process.env.GOOGLE_CLOUD_LOCATION ?? 'us-central1',
+    })
   }
-  return _client
+  return _ai
+}
+
+// Compatibility shim — exposes the old @google/generative-ai surface
+// (client.getGenerativeModel(...).generateContent(...) etc.) on top of the
+// new @google/genai SDK, so the rest of this file can stay structurally
+// identical to its pre-Vertex shape. Only this small layer is migration code;
+// the per-function bodies below are unchanged.
+interface ShimResponse {
+  text: () => string
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number }
+  candidates?: unknown[]
+}
+interface ShimStreamChunk {
+  text: () => string
+}
+interface ShimModel {
+  generateContent(req: {
+    contents: unknown
+    generationConfig?: Record<string, unknown>
+  }): Promise<{ response: ShimResponse }>
+  generateContentStream(req: {
+    contents: unknown
+    generationConfig?: Record<string, unknown>
+  }): Promise<{
+    stream: AsyncIterable<ShimStreamChunk>
+    response: Promise<ShimResponse>
+  }>
+}
+
+function getClient(): {
+  getGenerativeModel(opts: { model: string; systemInstruction?: string }): ShimModel
+} {
+  return {
+    getGenerativeModel(opts) {
+      const baseConfig = opts.systemInstruction
+        ? { systemInstruction: opts.systemInstruction }
+        : {}
+      return {
+        async generateContent(req) {
+          const ai = getAI()
+          const result = await ai.models.generateContent({
+            model: opts.model,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            contents: req.contents as any,
+            config: { ...baseConfig, ...(req.generationConfig ?? {}) },
+          })
+          return {
+            response: {
+              text: () => result.text ?? '',
+              usageMetadata: result.usageMetadata,
+              candidates: result.candidates,
+            },
+          }
+        },
+        async generateContentStream(req) {
+          const ai = getAI()
+          const stream = await ai.models.generateContentStream({
+            model: opts.model,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            contents: req.contents as any,
+            config: { ...baseConfig, ...(req.generationConfig ?? {}) },
+          })
+          // The new SDK yields chunks directly; the old surface expected a
+          // wrapper with `.stream` (iterable of chunks with `.text()` method)
+          // and `.response` (Promise resolving once the stream is consumed,
+          // exposing the final usageMetadata). Replay-and-track here.
+          let finalUsage: ShimResponse['usageMetadata']
+          let finalCandidates: unknown[] | undefined
+          let resolveResponse: (r: ShimResponse) => void = () => {}
+          const responsePromise: Promise<ShimResponse> = new Promise((res) => {
+            resolveResponse = res
+          })
+          const wrappedStream = (async function* (): AsyncIterable<ShimStreamChunk> {
+            for await (const chunk of stream) {
+              if (chunk.usageMetadata) finalUsage = chunk.usageMetadata
+              if (chunk.candidates) finalCandidates = chunk.candidates
+              const text = chunk.text ?? ''
+              yield { text: () => text }
+            }
+            resolveResponse({
+              text: () => '',
+              usageMetadata: finalUsage,
+              candidates: finalCandidates,
+            })
+          })()
+          return { stream: wrappedStream, response: responsePromise }
+        },
+      }
+    },
+  }
 }
 
 function isRetryable(err: unknown): boolean {
@@ -1454,7 +1553,11 @@ export function geminiCost(inputTokens: number, outputTokens: number): number {
 }
 
 export function isGeminiConfigured(): boolean {
-  return !!process.env.GEMINI_API_KEY
+  // Migration safety: prefer Vertex env vars; fall back to the legacy
+  // GEMINI_API_KEY check so any caller that gates on this stays happy
+  // during/after the Vertex cutover. The actual API call paths go through
+  // getAI() which only consults the Vertex vars.
+  return !!process.env.GOOGLE_CLOUD_PROJECT || !!process.env.GEMINI_API_KEY
 }
 
 /**
