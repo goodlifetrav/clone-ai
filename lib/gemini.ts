@@ -1,8 +1,12 @@
 import { GoogleGenAI } from '@google/genai'
 
-// gemini-2.5-flash is deprecated June 2026 — upgraded to 3.5-flash.
-// Fallback to gemini-2.5-flash while 3.5 stabilizes.
-const PRIMARY_MODEL = 'gemini-3.5-flash'
+// Vertex AI lags AI Studio on new model releases; gemini-3.5-flash returns
+// 404 there as of the Jun 2026 migration. 2.5-flash is the available
+// production model on Vertex, so we run both PRIMARY and FALLBACK on it —
+// the retry layer's two-model loop effectively becomes "retry 2.5-flash up
+// to 6 times" which is what we want for transient Gemini hiccups. When
+// Vertex picks up 3.5-flash, swap FALLBACK back to that string.
+const PRIMARY_MODEL = 'gemini-2.5-flash'
 const FALLBACK_MODEL = 'gemini-2.5-flash'
 
 // Switched from Google AI Studio (api-key auth, prepay billing depleted) to
