@@ -1,12 +1,9 @@
 import { GoogleGenAI } from '@google/genai'
 
-// Vertex AI lags AI Studio on new model releases; gemini-3.5-flash returns
-// 404 there as of the Jun 2026 migration. 2.5-flash is the available
-// production model on Vertex, so we run both PRIMARY and FALLBACK on it —
-// the retry layer's two-model loop effectively becomes "retry 2.5-flash up
-// to 6 times" which is what we want for transient Gemini hiccups. When
-// Vertex picks up 3.5-flash, swap FALLBACK back to that string.
-const PRIMARY_MODEL = 'gemini-2.5-flash'
+// gemini-3.5-flash IS available on Vertex — but only via the `global`
+// location, not regional endpoints like us-central1 (where it 404s). The
+// server's GOOGLE_CLOUD_LOCATION is set to `global` so this just works.
+const PRIMARY_MODEL = 'gemini-3.5-flash'
 const FALLBACK_MODEL = 'gemini-2.5-flash'
 
 // Switched from Google AI Studio (api-key auth, prepay billing depleted) to
