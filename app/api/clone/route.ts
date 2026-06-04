@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
 
     if (!isAdmin) {
       const PLAN_MONTHLY_LIMITS: Record<string, number> = {
-        free: 1,
+        free: 3,
         pro: 20,
         agency: 60,
       }

@@ -24,7 +24,7 @@ const PLANS: PricingPlan[] = [
     monthlyPrice: 0,
     description: 'Try it — no credit card needed',
     features: [
-      '1 page clone to test it out',
+      '3 page clones to test it out',
       '75K AI tokens (~1 full rebuild)',
       'Live preview in the editor',
       'Download as ZIP',

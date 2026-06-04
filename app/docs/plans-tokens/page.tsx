@@ -60,7 +60,7 @@ export default function PlansTokensPage() {
       <Section title="Clones limit">
         <p>
           The "clones" limit refers to how many websites you can clone per billing period. The Free
-          plan allows 1 clone. Pro allows 20 per month. Agency allows 60 per month.
+          plan allows 3 clones. Pro allows 20 per month. Agency allows 60 per month.
         </p>
         <p>
           Cloning the same URL again (a re-clone) counts as a new clone. Editing an existing clone
