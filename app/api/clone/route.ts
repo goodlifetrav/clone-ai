@@ -366,9 +366,11 @@ async function runDomPipeline(projectId: string, url: string, userId: string): P
     // Empty-header signal alone fires falsely on big nav/footer-heavy sites
     // (Apple's mega-menu + footer = 37 "empty" sub-headers but page itself
     // is fully rendered). Gate empty-header trigger on ALSO low text ratio.
-    // A healthy site with menu sub-sections (Apple at 3.75% ratio) will not
-    // trigger; a partial-hydration page (RedBull's 0.06% ratio) still does.
-    const isPartialByHeaders = emptyHeaderSections >= 3 && visibleTextRatio < 0.02
+    // 3-empty threshold was too easy to hit — docs sites with a mega-nav
+    // (lenis.dev: 3 empty + 1.5% ratio) tripped it and Vision oversimplified
+    // an already-fine clone. Raised to 5 so the signal really means "many
+    // genuinely-empty sections" not "couple of nav sub-headers".
+    const isPartialByHeaders = emptyHeaderSections >= 5 && visibleTextRatio < 0.02
     // Tightened threshold 0.5% → 0.2%. tesla.com hit 0.4% (image-heavy but
     // intact); my earlier 0.5% threshold mis-triggered Vision on it. RedBull's
     // genuinely-broken clone was at 0.06% — still fires on this tighter check.
@@ -585,12 +587,31 @@ function extractTopHeadings(html: string, max = 5): string[] {
   return headings
 }
 
-function validateVisionOutput(visionHtml: string, domHeadings: string[]): { ok: boolean; reason?: string } {
+function validateVisionOutput(
+  visionHtml: string,
+  domHtml: string,
+  domHeadings: string[]
+): { ok: boolean; reason?: string } {
   if (!visionHtml || visionHtml.length < 2048) {
     return { ok: false, reason: `too-small (${visionHtml?.length ?? 0} chars)` }
   }
   if (!/<body\b/i.test(visionHtml)) {
     return { ok: false, reason: 'missing-body' }
+  }
+  // When the DOM input was substantial (≥50KB), Vision should produce at
+  // least ~25% of that size — anything smaller is a sign Vision dumped a
+  // generic shrunken page rather than faithfully reconstructing the layout.
+  // Catches the lenis.dev (197KB → 19.6KB = 10%) and 4shared.com
+  // (215KB → 15KB = 7%) failure modes where headings match but the result
+  // is unusable. Rejecting falls through to the original DOM clone.
+  if (domHtml.length >= 50_000) {
+    const sizeRatio = visionHtml.length / domHtml.length
+    if (sizeRatio < 0.25) {
+      return {
+        ok: false,
+        reason: `size-shrunk (${visionHtml.length}/${domHtml.length} = ${(sizeRatio * 100).toFixed(1)}%)`,
+      }
+    }
   }
   if (domHeadings.length === 0) {
     // No DOM headings to compare — pass on size/body alone (SPA shell case)
@@ -628,7 +649,7 @@ async function runVisionPipeline(
       console.log('[CLONE] Vision tier 1: Gemini 3.5 Flash')
       const tT1 = Date.now()
       const result = await generateCloneWithGemini(domHtml, screenshotBase64, url)
-      const check = validateVisionOutput(result.html, domHeadings)
+      const check = validateVisionOutput(result.html, domHtml, domHeadings)
       console.log(`[CLONE-DEBUG] ${JSON.stringify({
         stage: 'pillar2.tier1.gemini',
         outputLen: result.html.length,
@@ -676,7 +697,7 @@ async function runVisionPipeline(
     console.log('[CLONE] Vision tier 2: Claude Sonnet 4.6')
     const tT2 = Date.now()
     const result = await generateClone(domHtml, screenshotBase64, url)
-    const check = validateVisionOutput(result.html, domHeadings)
+    const check = validateVisionOutput(result.html, domHtml, domHeadings)
     console.log(`[CLONE-DEBUG] ${JSON.stringify({
       stage: 'pillar2.tier2.claude',
       outputLen: result.html.length,
