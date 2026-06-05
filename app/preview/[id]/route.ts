@@ -173,10 +173,12 @@ function fixOpacityOverrideRule(html: string): string {
 function prepareHtml(raw: string): string {
   let html = resolveCloneBg(raw)
   html = fixOpacityOverrideRule(html)
-  html = html.replace(
-    /<html([^>]*)>/i,
-    (_, attrs) => `<html${attrs.replace(/\s*data-theme=["'][^"']*["']/gi, '')}>`
-  )
+  // Do NOT strip data-theme — sites like Linear use it as the dark-mode
+  // trigger (data-theme="dark" → white text on dark bg). Removing it makes
+  // the page fall back to its default light theme, producing dark text on
+  // an already-dark background (because color-scheme stays via inline
+  // style). The editor PreviewPane never stripped this, so the two render
+  // paths now match.
 
   // ── Strip EasyLockdown content-gate display:none ──────────────────────────────
   // Confirmed structure from Death Wish Coffee (and any site using EasyLockdown):
