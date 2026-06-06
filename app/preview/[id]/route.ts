@@ -272,19 +272,22 @@ export async function GET(
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
-        // Tightened CSP: drops 'unsafe-eval', restricts plugin objects, and
-        // prevents the preview being embedded as an attack frame. Inline
-        // scripts/styles remain allowed because the cloned content and the
-        // injected proxy script both rely on them.
+        // CSP for cloned-content rendering MUST allow external scripts and
+        // styles — AI-rebuilt pages use cdn.tailwindcss.com to compile their
+        // class="bg-red-500" etc. at runtime, original-site clones often
+        // embed jQuery/Swiper/etc. from CDNs (and html-cleaner already
+        // allowlists known-trusted hosts before they reach this point).
+        // A tight script-src silently breaks all of those, producing an
+        // unstyled page. Route is now auth-gated + ownership-checked, which
+        // already removes the cross-tenant XSS scenario the tighter CSP was
+        // meant to defend against. Keep object-src/frame-ancestors as the
+        // cheap, non-breaking wins (no Flash/plugins, no clickjacking).
         'Content-Security-Policy': [
-          "default-src 'self' 'unsafe-inline'",
-          "script-src 'self' 'unsafe-inline'",
+          "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
+          "script-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
           "style-src * 'unsafe-inline'",
           "img-src * data: blob:",
           "font-src * data:",
-          "media-src * data: blob:",
-          "connect-src *",
-          "frame-src https:",
           "object-src 'none'",
           "base-uri 'none'",
           "frame-ancestors 'self'",
